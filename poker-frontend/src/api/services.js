@@ -111,19 +111,21 @@ export const statsService = {
 };
 
 export const authService = {
-    login: async (email, password) => {
-        // 1. Convertimos los datos a formato de Formulario (x-www-form-urlencoded)
-        // Esto es OBLIGATORIO para que FastAPI no te de error 422
-        const formData = new URLSearchParams();
-        
-        // 2. FastAPI exige que la clave sea 'username' y 'password'
-        formData.append('username', email); 
-        formData.append('password', password);
+login: async (email, password) => {
+    const formData = new URLSearchParams();
+    formData.append('username', email);
+    formData.append('password', password);
 
-        // 3. Enviamos la petición
-        const response = await api.post('/auth/login', formData);
-        return response.data;
-    },
+    // 👇 AQUÍ ESTÁ EL CAMBIO CLAVE
+    // Agregamos el tercer argumento con los headers explícitos
+    const response = await api.post('/auth/login', formData, {
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+        }
+    });
+    
+    return response.data;
+},
 
     register: async (userData) => {
         // El registro sí suele ser JSON normal
