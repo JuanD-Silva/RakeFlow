@@ -110,3 +110,30 @@ export const statsService = {
     
 };
 
+export const authService = {
+    login: async (email, password) => {
+        // 1. Convertimos los datos a formato de Formulario (x-www-form-urlencoded)
+        // Esto es OBLIGATORIO para que FastAPI no te de error 422
+        const formData = new URLSearchParams();
+        
+        // 2. FastAPI exige que la clave sea 'username' y 'password'
+        formData.append('username', email); 
+        formData.append('password', password);
+
+        // 3. Enviamos la petición
+        const response = await api.post('/auth/login', formData);
+        return response.data;
+    },
+
+    register: async (userData) => {
+        // El registro sí suele ser JSON normal
+        const response = await api.post('/auth/register', userData);
+        return response.data;
+    },
+
+    getCurrentUser: async () => {
+        const response = await api.get('/users/me');
+        return response.data;
+    }
+};
+
