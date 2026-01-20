@@ -1,7 +1,8 @@
 // src/pages/Login.jsx
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import api from '../api/axios';
+// 👇 1. CAMBIO IMPORTANTE: Importamos el servicio, no 'api' directo
+import { authService } from '../api/services'; 
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -16,26 +17,23 @@ export default function Login() {
     setError('');
 
     try {
-      // 1. Enviar credenciales (Ojo: OAuth2 pide FormData, pero aquí lo enviamos como JSON si tu backend lo acepta,
-      // o como x-www-form-urlencoded. Tu backend usa OAuth2PasswordRequestForm, así que espera form-data).
-      
-      const formData = new FormData();
-      formData.append('username', email); // Backend espera 'username' aunque sea email
-      formData.append('password', password);
+      // 👇 2. USAMOS EL SERVICIO
+      // Ya no necesitas crear FormData aquí manualmente.
+      // authService.login se encarga de convertirlo a URLSearchParams (el formato correcto).
+      const data = await authService.login(email, password);
 
-      const response = await api.post('/auth/login', formData);
+      // 3. Guardar Token (El servicio devuelve response.data, así que accedemos directo)
+      localStorage.setItem('token', data.access_token);
 
-      // 2. Guardar Token
-      const { access_token } = response.data;
-      localStorage.setItem('token', access_token);
-
-      // 3. Entrar al Dashboard
+      // 4. Entrar al Dashboard
       navigate('/dashboard'); 
-      window.location.reload(); // Recarga para asegurar que carguen los datos del club
+      // El reload está bien para limpiar estados anteriores en este MVP
+      window.location.reload(); 
 
     } catch (err) {
       console.error(err);
-      setError('Credenciales inválidas. Verifica tu email y contraseña.');
+      // Mensaje de error más amigable
+      setError('Credenciales incorrectas o error en el servidor.');
     } finally {
       setLoading(false);
     }
@@ -47,8 +45,8 @@ export default function Login() {
         
         {/* LOGO / TITULO */}
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">
-            Poker SaaS
+          <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-500">
+            RakeFlow
           </h1>
           <p className="text-gray-400 mt-2">Gestión profesional de clubes</p>
         </div>
@@ -66,7 +64,7 @@ export default function Login() {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full bg-gray-900 text-white border border-gray-600 rounded-lg p-3 focus:outline-none focus:border-blue-500"
+              className="w-full bg-gray-900 text-white border border-gray-600 rounded-lg p-3 focus:outline-none focus:border-emerald-500 transition-colors"
               placeholder="admin@pokerclub.com"
               required
             />
@@ -78,7 +76,7 @@ export default function Login() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full bg-gray-900 text-white border border-gray-600 rounded-lg p-3 focus:outline-none focus:border-blue-500"
+              className="w-full bg-gray-900 text-white border border-gray-600 rounded-lg p-3 focus:outline-none focus:border-emerald-500 transition-colors"
               placeholder="••••••••"
               required
             />
@@ -87,7 +85,7 @@ export default function Login() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white font-bold py-3 rounded-lg shadow-lg transform transition-all active:scale-95 disabled:opacity-50"
+            className="w-full bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 text-white font-bold py-3 rounded-lg shadow-lg transform transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? 'Validando...' : 'Iniciar Sesión 🚀'}
           </button>
@@ -95,8 +93,8 @@ export default function Login() {
 
         <div className="mt-6 text-center text-sm text-gray-500">
           ¿Aún no tienes cuenta?{' '}
-          <Link to="/register" className="text-blue-400 hover:text-blue-300 font-bold transition-colors">
-            Crea tu Club Gratis
+          <Link to="/register" className="text-emerald-400 hover:text-emerald-300 font-bold transition-colors">
+            Crea tu Club 
           </Link>
         </div>
       </div>
