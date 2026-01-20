@@ -1,0 +1,15 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="64" height="64" rx="16" fill="#1F2937"/>
+  
+  <defs>
+    <linearGradient id="poker_gradient" x1="16" y1="16" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#60A5FA" />
+      <stop offset="1" stop-color="#A855F7" />
+    </linearGradient>
+  </defs>
+
+  <path d="M32 12C32 12 20 22 16 28C13.5 31.5 13.5 36 16.5 39C19.5 42 24 41.5 26 39L32 31L38 39C40 41.5 44.5 42 47.5 39C50.5 36 50.5 31.5 48 28C44 22 32 12 32 12Z" fill="url(#poker_gradient)"/>
+  <path d="M32 36L28 48H36L32 36Z" fill="url(#poker_gradient)"/>
+  
+  <rect x="0.5" y="0.5" width="63" height="63" rx="15.5" stroke="white" stroke-opacity="0.1"/>
+</svg>
