@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react'; // 👈 Agregamos Fragment
+import { ChevronDownIcon, ChevronUpIcon, ClockIcon } from '@heroicons/react/24/solid';
 import api from '../api/axios'; 
 
 export default function PlayerTable({ refreshTrigger }) {
   const [players, setPlayers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [totals, setTotals] = useState({ buyin: 0, cashout: 0, balance: 0 });
+  const [expandedPlayerId, setExpandedPlayerId] = useState(null);
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -12,9 +14,11 @@ export default function PlayerTable({ refreshTrigger }) {
         const response = await api.get('/sessions/current/players-stats');
         const data = response.data;
         
+        // 👇 CHIVATO: Esto imprimirá los datos crudos en tu consola (F12)
+        console.log("📊 DATOS RECIBIDOS DEL BACKEND:", data);
+        
         setPlayers(data);
 
-        // Calcular totales
         const newTotals = data.reduce((acc, p) => ({
           buyin: acc.buyin + p.total_buyin,
           cashout: acc.cashout + p.total_cashout,
@@ -22,7 +26,6 @@ export default function PlayerTable({ refreshTrigger }) {
         }), { buyin: 0, cashout: 0, balance: 0 });
         
         setTotals(newTotals);
-
       } catch (error) {
         console.error("Error cargando tabla:", error);
       } finally {
@@ -35,126 +38,175 @@ export default function PlayerTable({ refreshTrigger }) {
 
   const formatMoney = (amount) => {
     return new Intl.NumberFormat('es-CO', {
-      style: 'currency',
-      currency: 'COP',
-      minimumFractionDigits: 0
+      style: 'currency', currency: 'COP', minimumFractionDigits: 0
     }).format(amount);
   };
 
-  // 👇 HELPER PARA MOSTRAR ICONOS DE PAGO
-  // Nota: El backend idealmente debería devolver un array "payment_methods" para cada jugador.
-  // Como actualmente el endpoint de stats agrupa los montos, asumiremos por ahora
-  // una lógica visual simple o dejaremos preparado el espacio.
-  // 
-  // *MEJORA*: Si tu backend envía 'details' con los métodos, úsalos aquí.
-  // Por ahora, pondremos un indicador visual genérico o basado en si tiene buy-in.
-  
-  const getPaymentBadge = (player) => {
-    // Si tienes el dato del método predominante desde el backend, úsalo aquí.
-    // Si no, podemos mostrar un icono genérico de "Entrada".
-    // Para este ejemplo, mostraré ambos si el jugador tiene historial mixto (simulado) 
-    // o simplemente el icono de dinero.
-    
-    // Si quisieras ser estricto, necesitaríamos que el backend nos diga: 
-    // "Juan: 50k (Cash), 20k (Digital)"
-    
-    // Por ahora, decorativo informativo:
-    return (
-      <span className="ml-2 text-xs" title="Método de pago">
-        {/* Aquí podrías condicionar si tu backend te pasa el dato 'last_method' */}
-        {/* <span role="img" aria-label="cash">💵</span> */}
-      </span>
-    );
+  const formatTime = (dateString) => {
+    if (!dateString) return '--:--';
+    return new Date(dateString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  if (loading) return <div className="text-gray-500 text-center py-4">Cargando puntuaciones...</div>;
-  if (players.length === 0) return <div className="text-gray-500 text-center py-4 italic">No hay jugadores con movimientos aún.</div>;
+  const toggleRow = (playerId) => {
+    setExpandedPlayerId(expandedPlayerId === playerId ? null : playerId);
+  };
+
+  if (loading) return <div className="text-gray-500 text-center py-10 animate-pulse">Cargando mesa...</div>;
+  if (players.length === 0) return <div className="text-gray-500 text-center py-10 italic bg-gray-800 rounded-xl border border-gray-700">Mesa vacía. Esperando jugadores...</div>;
 
   return (
-    <div className="bg-gray-800 rounded-xl shadow-lg border border-gray-700 overflow-hidden mt-6 animate-fade-in">
+    <div className="bg-gray-800 rounded-xl shadow-2xl border border-gray-700 overflow-hidden mt-6 animate-fade-in">
       <div className="overflow-x-auto">
         <table className="w-full text-left border-collapse">
           <thead>
-            <tr className="bg-gray-900 text-gray-400 text-xs uppercase tracking-wider">
+            <tr className="bg-gray-900 text-gray-400 text-xs uppercase tracking-wider border-b border-gray-700">
+              <th className="p-4 font-semibold w-10">#</th>
               <th className="p-4 font-semibold">Jugador</th>
-              <th className="p-4 font-semibold text-right text-green-400">Buy-ins (Entrada)</th>
-              <th className="p-4 font-semibold text-right text-red-400">Cashouts (Salida)</th>
-              <th className="p-4 font-semibold text-right text-yellow-400">Gastos / Otros</th>
-              <th className="p-4 font-semibold text-right text-white">Balance (Neto)</th>
+              <th className="p-4 font-semibold text-right text-green-400">Total Buy-ins</th>
+              <th className="p-4 font-semibold text-right text-red-400">Cashouts</th>
+              <th className="p-4 font-semibold text-right text-yellow-400">Gastos / Premios</th>
+              <th className="p-4 font-semibold text-right text-white">Balance</th>
             </tr>
           </thead>
 
           <tbody className="divide-y divide-gray-700">
-            {players.map((p) => (
-              <tr key={p.player_id} className="hover:bg-gray-750 transition-colors">
-                
-                {/* NOMBRE */}
-                <td className="p-4">
-                  <div className="font-bold text-white">{p.name}</div>
-                  <div className="text-xs text-gray-500 flex items-center gap-1">
-                    {p.total_jackpot > 0 && <span className="text-purple-400">🎁 Jackpot</span>}
-                  </div>
-                </td>
+            {players.map((p) => {
+              const isExpanded = expandedPlayerId === p.player_id;
+              const transactions = p.transactions || []; 
+              
+              // Filtro corregido
+              const buyins = transactions.filter(t => 
+                 t.type === 'BUYIN' || t.type === 'REBUY'
+              );
 
-                {/* BUYIN + ICONO */}
-                <td className="p-4 text-right font-mono text-gray-300">
-                  <div className="flex items-center justify-end gap-2">
-                    {formatMoney(p.total_buyin)}
-                    
-                    {/* 👇 AQUÍ ESTÁ LA MAGIA VISUAL */}
-                    {/* Si tu backend soporta devolver el método, úsalo. 
-                        Si no, por defecto asumimos Cash o mostramos un indicador neutro */}
-                    
-                    {/* Ejemplo: Si el backend devuelve p.has_digital_payments = true */}
-                    {p.has_digital_payments ? (
-                         <span title="Pagos Digitales" className="text-lg cursor-help">📱</span>
-                    ) : (
-                         <span title="Efectivo" className="text-lg cursor-help opacity-50">💵</span>
-                    )}
-                  </div>
-                </td>
+              return (
+                // 👇 AQUÍ ESTÁ LA SOLUCIÓN DEL ERROR ROJO
+                <Fragment key={p.player_id}>
+                  
+                  {/* FILA PRINCIPAL */}
+                  <tr 
+                    onClick={() => toggleRow(p.player_id)} 
+                    className={`cursor-pointer transition-colors ${isExpanded ? 'bg-gray-700/50' : 'hover:bg-gray-750'}`}
+                  >
+                    <td className="p-4 text-gray-500 text-center">
+                      {isExpanded ? <ChevronUpIcon className="w-4 h-4 text-emerald-500" /> : <ChevronDownIcon className="w-4 h-4" />}
+                    </td>
+                    <td className="p-4">
+                      <div className="font-bold text-white text-lg">{p.name}</div>
+                      <div className="flex gap-2 text-[10px] mt-0.5">
+                         {buyins.length > 1 && <span className="text-emerald-400 font-mono">{buyins.length} entradas</span>}
+                         {p.total_jackpot > 0 && <span className="text-purple-400 font-bold">🎁 Jackpot</span>}
+                      </div>
+                    </td>
+                    <td className="p-4 text-right font-mono text-gray-200 text-lg">
+                      <div className="flex items-center justify-end gap-2">
+                        {formatMoney(p.total_buyin)}
+                        {p.has_digital_payments ? <span title="Digital">📱</span> : <span title="Efectivo" className="opacity-30">💵</span>}
+                      </div>
+                    </td>
+                    <td className="p-4 text-right font-mono text-gray-400">
+                      {p.total_cashout > 0 ? formatMoney(p.total_cashout) : "-"}
+                    </td>
+                    <td className="p-4 text-right font-mono text-sm">
+                      {p.total_spend > 0 && <div className="text-red-300">-{formatMoney(p.total_spend)}</div>}
+                      {p.total_jackpot > 0 && <div className="text-purple-300">+{formatMoney(p.total_jackpot)}</div>}
+                      {p.total_spend === 0 && p.total_jackpot === 0 && <span className="text-gray-600">-</span>}
+                      {p.total_bonus > 0 && <div className="text-orange-400">+{formatMoney(p.total_bonus)} (Bono)</div>}
+                    </td>
+                    <td className="p-4 text-right">
+                      <span className={`font-mono font-bold px-3 py-1.5 rounded-lg text-lg ${
+                        p.current_balance >= 0 
+                          ? 'bg-green-900/30 text-green-400 border border-green-500/30' 
+                          : 'bg-red-900/30 text-red-400 border border-red-500/30'
+                      }`}>
+                        {formatMoney(p.current_balance)}
+                      </span>
+                    </td>
+                  </tr>
 
-                {/* CASHOUT */}
-                <td className="p-4 text-right font-mono text-gray-300">
-                  {p.total_cashout > 0 ? formatMoney(p.total_cashout) : "-"}
-                </td>
-
-                {/* GASTOS */}
-                <td className="p-4 text-right font-mono text-gray-400 text-sm">
-                  {p.total_spend > 0 && (
-                    <span className="block text-red-300">-{formatMoney(p.total_spend)} (Bebida)</span>
+                  {/* FILA EXPANDIDA */}
+                  {isExpanded && (
+                    <tr className="bg-gray-900/50 animate-fade-in border-b border-gray-700">
+                      <td colSpan="6" className="p-0">
+                        <div className="p-4 pl-14 grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div>
+                             <h4 className="text-emerald-400 text-xs font-bold uppercase tracking-widest mb-3 flex items-center gap-2">
+                               <ClockIcon className="w-3 h-3" /> Historial de Entradas
+                             </h4>
+                             {/* 👇 OJO: Si sale esto, buyins.length es 0 */}
+                             {buyins.length > 0 ? (
+                               <ul className="space-y-2">
+                                 {buyins.map((tx, idx) => (
+                                   <li key={idx} className="flex justify-between items-center text-sm p-2 rounded hover:bg-white/5 border border-transparent hover:border-white/10 transition-colors">
+                                     <div className="flex flex-col">
+                                        <span className="text-white font-bold">{formatMoney(tx.amount)}</span>
+                                        <span className="text-[10px] text-gray-500 uppercase">{tx.type}</span>
+                                     </div>
+                                     <div className="flex items-center gap-3">
+                                        <span className="text-[10px] bg-gray-800 px-2 py-1 rounded text-gray-400 border border-gray-700">
+                                            {tx.method || 'CASH'}
+                                        </span>
+                                        <span className="text-gray-400 font-mono text-xs">
+                                           {formatTime(tx.created_at)}
+                                        </span>
+                                     </div>
+                                   </li>
+                                 ))}
+                               </ul>
+                             ) : (
+                               <div className="p-3 bg-red-900/20 border border-red-900/50 rounded text-red-200 text-sm">
+                                  ⚠️ No hay detalles disponibles. <br/>
+                                  <span className="text-xs opacity-70">
+                                    Revisa la consola (F12) para ver qué llegó en "transactions".
+                                  </span>
+                               </div>
+                             )}
+                          </div>
+                          
+                          {/* SECCIÓN DE PREMIOS (JACKPOT) */}
+                          {(p.total_jackpot > 0 || p.total_bonus > 0) && (
+  <div>
+      <h4 className="text-purple-400 text-xs font-bold uppercase tracking-widest mb-3">
+        Premios y Bonos
+      </h4>
+      <ul className="space-y-2">
+      {transactions.filter(t => t.type === 'JACKPOT_PAYOUT' || t.type === 'BONUS').map((tx, idx) => (
+          <li key={idx} className={`flex justify-between items-center text-sm p-2 rounded border mb-1
+             ${tx.type === 'BONUS' 
+                ? 'bg-orange-900/10 border-orange-500/20' // Estilo Naranja para Bonos
+                : 'bg-purple-900/10 border-purple-500/20' // Estilo Morado para Jackpot
+             }`}>
+             
+          <div className="flex flex-col">
+             <span className={`font-bold ${tx.type === 'BONUS' ? 'text-orange-300' : 'text-purple-300'}`}>
+                +{formatMoney(tx.amount)}
+             </span>
+             <span className="text-[9px] text-gray-400 uppercase">{tx.type === 'BONUS' ? 'Bono Casa' : 'Jackpot'}</span>
+          </div>
+          
+          <span className="text-gray-400 font-mono text-xs">{formatTime(tx.created_at)}</span>
+          </li>
+      ))}
+    </ul>
+  </div>
+)}
+                        </div>
+                      </td>
+                    </tr>
                   )}
-                  {p.total_jackpot > 0 && (
-                    <span className="block text-purple-300">+{formatMoney(p.total_jackpot)} (Premio)</span>
-                  )}
-                  {p.total_spend === 0 && p.total_jackpot === 0 && "-"}
-                </td>
-
-                {/* BALANCE */}
-                <td className="p-4 text-right">
-                  <span className={`font-mono font-bold px-3 py-1 rounded ${
-                    p.current_balance >= 0 
-                      ? 'bg-green-900/50 text-green-400 border border-green-800' 
-                      : 'bg-red-900/50 text-red-400 border border-red-800'
-                  }`}>
-                    {formatMoney(p.current_balance)}
-                  </span>
-                </td>
-              </tr>
-            ))}
+                </Fragment>
+              );
+            })}
           </tbody>
-
-          {/* FOOTER */}
-          <tfoot className="bg-gray-900/80 border-t border-gray-600 font-bold">
-            <tr>
-              <td className="p-4 text-gray-400 uppercase text-xs">Total Mesa</td>
-              <td className="p-4 text-right text-green-500 font-mono">{formatMoney(totals.buyin)}</td>
-              <td className="p-4 text-right text-red-500 font-mono">{formatMoney(totals.cashout)}</td>
-              <td className="p-4 text-right text-gray-500">-</td>
-              <td className="p-4 text-right text-white font-mono border-t-2 border-gray-500">
-                {formatMoney(totals.balance)}
-              </td>
-            </tr>
+          <tfoot className="bg-gray-900 border-t-2 border-gray-600">
+             <tr className="font-bold">
+               <td className="p-4 text-gray-500 text-center">-</td>
+               <td className="p-4 text-gray-400 uppercase text-xs tracking-wider">Totales Mesa</td>
+               <td className="p-4 text-right text-emerald-500 font-mono text-lg">{formatMoney(totals.buyin)}</td>
+               <td className="p-4 text-right text-red-500 font-mono text-lg">{formatMoney(totals.cashout)}</td>
+               <td className="p-4 text-right text-gray-500">-</td>
+               <td className="p-4 text-right text-white font-mono text-xl">{formatMoney(totals.balance)}</td>
+             </tr>
           </tfoot>
         </table>
       </div>

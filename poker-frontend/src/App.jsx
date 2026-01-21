@@ -17,34 +17,33 @@ function PokerManagerApp({ onLogout }) {
   // Estado de la vista actual (Por defecto 'game')
   const [currentView, setCurrentView] = useState('game');
 
-  return (
-    // Usamos el fondo oscuro global para mantener consistencia con el estilo "Poker Pro"
+return (
+    // Usamos el fondo oscuro global
     <div className="min-h-screen bg-[#0f172a] text-gray-100 font-sans selection:bg-emerald-500 selection:text-white">
       
-      {/* NUEVA BARRA DE NAVEGACIÓN */}
+      {/* BARRA DE NAVEGACIÓN (Ya no necesita onLogout) */}
       <Navigation 
         currentView={currentView} 
         setView={setCurrentView} 
-        onLogout={onLogout} 
       />
 
       <main className="py-8 max-w-7xl mx-auto px-4 md:px-6">
+        
         {/* RENDERIZADO CONDICIONAL DE VISTAS */}
         
         {currentView === 'game' && (
-          <GameControl />
+          // 👇 AQUÍ ES EL CAMBIO IMPORTANTE: Pasamos onLogout a GameControl
+          <GameControl onLogout={onLogout} />
         )}
         
         {currentView === 'history' && (
           <SessionHistory />
         )}
         
-        {/* 'finance' es el ID que usaremos para Pagos/Reporte Semanal */}
         {currentView === 'finance' && (
           <WeeklyReport />
         )} 
         
-        {/* 'ranking' es el ID para Leaderboard */}
         {currentView === 'ranking' && (
           <PlayerLeaderboard />
         )}

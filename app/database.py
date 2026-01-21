@@ -11,19 +11,25 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 # 2. VALIDACIÓN DE SEGURIDAD
 if not DATABASE_URL:
-    # Esto evita errores cripticos si la variable no existe
     raise ValueError("❌ ERROR FATAL: No se encontró la variable DATABASE_URL.")
 
 # 3. EL FIX MÁGICO PARA RAILWAY/RENDER 🛠️
-# Railway entrega la URL comenzando con "postgres://" o "postgresql://"
-# Pero SQLAlchemy Async necesita explícitamente "postgresql+asyncpg://"
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
 elif DATABASE_URL.startswith("postgresql://"):
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 
-# 4. CREAR EL MOTOR CON LA URL CORREGIDA
-engine = create_async_engine(DATABASE_URL, echo=True)
+# 4. CREAR EL MOTOR CON LA CONFIGURACIÓN ANTI-CAÍDAS 🛡️
+engine = create_async_engine(
+    DATABASE_URL,
+    echo=False,          # Cambiado a False para limpiar un poco la terminal (opcional)
+    
+    # 👇 ESTAS SON LAS LÍNEAS QUE EVITAN EL ERROR "ConnectionDoesNotExistError"
+    pool_pre_ping=True,  # Verifica la conexión antes de cada consulta
+    pool_recycle=300,    # Renueva la conexión cada 5 minutos (300 segundos)
+    pool_size=5,         # Mantiene 5 conexiones listas
+    max_overflow=10      # Permite picos de hasta 10 conexiones extra
+)
 
 # 5. CONFIGURAR LA SESIÓN
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

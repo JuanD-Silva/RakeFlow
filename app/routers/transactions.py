@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import func
 from .. import models, schemas
+from datetime import datetime
 # Dependencias SaaS: Traemos el autenticador
 from ..dependencies import get_db, get_current_club
 
@@ -195,6 +196,43 @@ async def create_jackpot_payout(
         type=models.TransactionType.JACKPOT_PAYOUT 
     )
     
+    db.add(new_tx)
+    await db.commit()
+    await db.refresh(new_tx)
+    
+    return new_tx
+
+
+@router.post("/bonus", response_model=schemas.TransactionResponse)
+async def create_bonus(
+    tx_data: schemas.TransactionCreate, 
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club)
+):
+    """
+    Registra un BONO para un jugador.
+    Contablemente: Suma al balance del jugador y se considera un Gasto del Club (resta del Rake).
+    """
+    # 1. Verificar sesión activa
+    stmt = select(models.Session).where(
+        models.Session.id == tx_data.session_id,
+        models.Session.club_id == current_club.id,
+        models.Session.status == models.SessionStatus.OPEN
+    )
+    session = (await db.execute(stmt)).scalars().first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Sesión no encontrada o cerrada")
+
+    # 2. Crear la transacción tipo BONUS
+    new_tx = models.Transaction(
+        session_id=tx_data.session_id,
+        player_id=tx_data.player_id,
+        amount=tx_data.amount,
+        type=models.TransactionType.BONUS, # 👈 Usamos el tipo que agregaste a la DB
+        method="CASH", # Los bonos suelen ser crédito interno, se marca como CASH o INTERNAL
+        timestamp=datetime.utcnow() # O la hora actual
+    )
+
     db.add(new_tx)
     await db.commit()
     await db.refresh(new_tx)

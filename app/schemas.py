@@ -45,6 +45,7 @@ class PlayerSessionStats(BaseModel):
     total_cashout: float
     total_spend: float  # Bebidas/Comida
     total_jackpot: float = 0.0
+    total_bonus: float = 0.0
     current_balance: float # (Cashout - Buyin - Spend) -> Ganancia o Pérdida neta
     last_method: str = "CASH"
 
@@ -73,6 +74,7 @@ class SessionResponse(BaseSchema):
 # --- SCHEMAS DE TRANSACCIONES ---
 class TransactionCreate(BaseSchema):
     player_id: Optional[int] = None
+    session_id: int
     amount: Decimal = Field(..., gt=0, decimal_places=2) 
     # Validamos que sea positivo y tenga max 2 decimales
     method: str = "CASH"
@@ -93,6 +95,7 @@ class AuditResponse(BaseModel):
     total_tips: float
     total_jackpot_payouts: float
     expected_cash_in_box: float 
+    total_bonuses: float = 0.0
     transactions_count: int
 
 # Esquema para crear/editar una regla

@@ -5,7 +5,7 @@ from app.database import engine  # 👈 Importar el motor de base de datos
 from app import models           # 👈 Importar tus modelos
 
 # Importamos todos los módulos donde distribuimos la lógica
-from app.routers import auth, players, sessions, transactions, stats, config, audit
+from app.routers import auth, players, sessions, transactions, stats, config
 
 app = FastAPI(title="Poker Club SaaS", version="2.0")
 
@@ -19,6 +19,13 @@ async def startup_event():
         # Esto crea las tablas sessions, players, clubs, etc.
         await conn.run_sync(models.Base.metadata.create_all)
     print("✅ Tablas listas.")
+
+origins = [
+    "http://localhost:5173",      # Tu Frontend (Vite)
+    "http://127.0.0.1:5173",      # A veces se detecta así
+    "http://localhost:8000",      # Tu Backend (por si acaso)
+    "https://rakeflow-production.up.railway.app" # Tu producción (opcional)
+]
 
 # ---------------------------------------------------------
 # CONFIGURACIÓN DE SEGURIDAD (CORS)
@@ -40,7 +47,6 @@ app.include_router(sessions.router)
 app.include_router(transactions.router)  
 app.include_router(stats.router)         
 app.include_router(config.router)        
-app.include_router(audit.router, prefix="/audit", tags=["audit"])
 
 # ---------------------------------------------------------
 # ENDPOINT DE SALUD

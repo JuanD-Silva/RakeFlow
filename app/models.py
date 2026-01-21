@@ -13,6 +13,7 @@ class TransactionType(str, enum.Enum):
     REBUY = "rebuy"
     TIP = "tip"
     JACKPOT_PAYOUT = "jackpot-payout"
+    BONUS = "BONUS"
 
 class SessionStatus(str, enum.Enum):
     OPEN = "OPEN"

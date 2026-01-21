@@ -44,7 +44,7 @@ createSession: async () => {
 
     // 👇 AGREGA ESTO: Para el botón de auditar
     getAuditData: async () => {
-        const response = await api.get('/audit/current-session');
+        const response = await api.get('/sessions/audit/current-session');
         return response.data;
     }
 };
@@ -65,23 +65,55 @@ export const playerService = {
 
 // --- TRANSACCIONES (DINERO) ---
 export const transactionService = {
-    buyin: async (playerId, amount, method = "CASH") => {
-        return await api.post('/transactions/buyin', { player_id: playerId, amount, method });
+    // 👇 Ahora recibimos sessionId en TODOS
+    buyin: async (playerId, amount, method = "CASH", sessionId) => {
+        return await api.post('/transactions/buyin', { 
+            player_id: playerId, 
+            amount, 
+            method,
+            session_id: sessionId // <--- ¡Esto faltaba!
+        });
     },
 
-    cashout: async (playerId, amount) => {
-        return await api.post('/transactions/cashout', { player_id: playerId, amount });
+    cashout: async (playerId, amount, sessionId) => {
+        return await api.post('/transactions/cashout', { 
+            player_id: playerId, 
+            amount,
+            session_id: sessionId 
+        });
     },
 
-    spend: async (playerId, amount) => { // Gastos de cocina/bebida
-        return await api.post('/transactions/spend', { player_id: playerId, amount });
+    spend: async (playerId, amount, sessionId) => { 
+        return await api.post('/transactions/spend', { 
+            player_id: playerId, 
+            amount,
+            session_id: sessionId 
+        });
     },
 
-    jackpotPayout: async (playerId, amount) => {
-        return await api.post('/transactions/jackpot-payout', { player_id: playerId, amount });
+    jackpotPayout: async (playerId, amount, sessionId) => {
+        return await api.post('/transactions/jackpot-payout', { 
+            player_id: playerId, 
+            amount,
+            session_id: sessionId 
+        });
     },
-    tip: async (playerId, amount) => {
-        return await api.post('/transactions/tip', { player_id: playerId, amount });
+    
+    tip: async (playerId, amount, sessionId) => {
+        return await api.post('/transactions/tip', { 
+            // Tip a veces no lleva player_id, pero sí necesita session_id
+            player_id: playerId, 
+            amount,
+            session_id: sessionId 
+        });
+    },
+
+    bonus: async (playerId, amount, sessionId) => {
+        return await api.post('/transactions/bonus', { 
+            player_id: playerId, 
+            amount, 
+            session_id: sessionId
+        });
     }
 };
 

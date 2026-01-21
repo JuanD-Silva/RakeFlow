@@ -19,10 +19,11 @@ import {
   ClipboardDocumentCheckIcon,
   ClockIcon,
   TableCellsIcon,
-  UserGroupIcon
+  UserGroupIcon,
+  ArrowRightOnRectangleIcon
 } from '@heroicons/react/24/solid';
 
-export default function GameControl() {
+export default function GameControl({ onLogout }) {
   const [activeSession, setActiveSession] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0); 
@@ -203,12 +204,21 @@ const handleStartSession = async () => {
             <PlayIcon className="w-6 h-6 text-emerald-200" />
             <span>Iniciar Nueva Sesión</span>
           </button>
+          <button 
+               onClick={onLogout}
+               className="w-full flex items-center justify-center gap-2 text-gray-500 hover:text-red-400 py-3 rounded-xl hover:bg-red-900/10 border border-transparent hover:border-red-900/30 transition-all"
+            >
+               <ArrowRightOnRectangleIcon className="w-5 h-5" />
+               <span className="font-bold text-sm uppercase tracking-widest">Cerrar Sistema</span>
+            </button>
+
         </div>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4 animate-fade-in-up">
            {/* BOTONES DE ACCIÓN */}
           <ActionButton color="green" label="💰 Buy-in / Rebuy" onClick={() => handleOpenModal("buyin", "Registrar Entrada")} />
           <ActionButton color="red" label="💸 Cashout" onClick={() => handleOpenModal("cashout", "Registrar Salida")} />
+          <ActionButton color="orange" label="🎁 Bono / Promo" onClick={() => handleOpenModal("bonus", "Otorgar Bono")} />
           <ActionButton color="blue" label="🍺 Bebida/Gasto" onClick={() => handleOpenModal("spend", "Registrar Gasto")} />
           <ActionButton color="purple" label="🎁 Jackpot Payout" onClick={() => handleOpenModal("jackpot-payout", "Pagar Premio Jackpot")} />
           <ActionButton color="yellow" label="🤝 Propina Dealer" onClick={() => handleOpenModal("tip", "Registrar Propina")} />     
@@ -234,6 +244,15 @@ const handleStartSession = async () => {
              >
                🔒 Cerrar Sesión Definitivamente
              </button>
+             <div className="pt-4 flex justify-center">
+                <button 
+                   onClick={onLogout}
+                   className="text-gray-600 hover:text-red-400 text-xs font-bold uppercase tracking-widest flex items-center gap-2 transition-colors"
+                >
+                   <ArrowRightOnRectangleIcon className="w-4 h-4" />
+                   Salir del Sistema
+                </button>
+            </div>
           </div>
         </div>
       )}
@@ -252,7 +271,8 @@ const handleStartSession = async () => {
         ) : (
           <TransactionForm 
             type={modalType} 
-            onSuccess={handleTransactionSuccess} 
+            onSuccess={handleTransactionSuccess}
+            sessionId={activeSession?.id} 
           />
         )}
       </Modal>
@@ -289,6 +309,10 @@ const handleStartSession = async () => {
                   <span>(-) Gastos:</span>
                   <span className="font-mono font-bold">${auditData.total_expenses.toLocaleString()}</span>
                 </div>
+                <div className="flex justify-between text-orange-500 font-bold border-t border-gray-800 pt-2">
+      <span>🎁 Bonos Otorgados:</span>
+      <span className="font-mono">${auditData.total_bonuses?.toLocaleString() || 0}</span>
+    </div>
               </div>
 
               <hr className="border-gray-700" />
@@ -323,6 +347,7 @@ function ActionButton({ color, label, onClick }) {
     blue: "bg-blue-600 hover:bg-blue-500 border-blue-800",
     purple: "bg-purple-600 hover:bg-purple-500 border-purple-800",
     yellow: "bg-yellow-600 hover:bg-yellow-500 border-yellow-800 text-black",
+    orange: "bg-orange-600 hover:bg-orange-500 border-orange-800",
   };
 
   return (

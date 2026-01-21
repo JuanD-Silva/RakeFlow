@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { transactionService, playerService, sessionService } from '../api/services';
 
-export default function TransactionForm({ type, onSuccess }) {
+export default function TransactionForm({ type, onSuccess, sessionId, }) {
   // --- ESTADOS DE DATOS ---
   const [players, setPlayers] = useState([]);
   const [playerId, setPlayerId] = useState("");
@@ -120,15 +120,37 @@ export default function TransactionForm({ type, onSuccess }) {
 
       const pId = type === 'tip' ? null : parseInt(finalPlayerId);
 
-      switch (type) {
-        case 'buyin': await transactionService.buyin(pId, amt, paymentMethod); break;
-        case 'cashout': await transactionService.cashout(pId, amt); break;
-        case 'spend': await transactionService.spend(pId, amt); break;
-        case 'jackpot-payout': await transactionService.jackpotPayout(pId, amt); break;
-        case 'tip':
-            if (transactionService.tip) await transactionService.tip(pId, amt);
-            else await transactionService.spend(pId, amt); 
+switch (type) {
+        // 👇 Agregamos sessionId como último parámetro en TODAS las llamadas
+        case 'buyin': 
+            await transactionService.buyin(pId, amt, paymentMethod, sessionId); 
             break;
+            
+        case 'cashout': 
+            await transactionService.cashout(pId, amt, sessionId); 
+            break;
+            
+        case 'spend': 
+            await transactionService.spend(pId, amt, sessionId); 
+            break;
+        
+        case 'bonus': 
+            await transactionService.bonus(pId, amt, sessionId); 
+            break;
+
+        case 'jackpot-payout': 
+            await transactionService.jackpotPayout(pId, amt, sessionId); 
+            break;
+            
+        case 'tip':
+            if (transactionService.tip) {
+                await transactionService.tip(pId, amt, sessionId);
+            } else {
+                // Si usabas spend como fallback
+                await transactionService.spend(pId, amt, sessionId); 
+            }
+            break;
+            
         default: throw new Error("Tipo desconocido");
       }
       onSuccess(); 
@@ -138,6 +160,7 @@ export default function TransactionForm({ type, onSuccess }) {
       setError(err.message || "Error al procesar.");
     } finally {
       setLoading(false);
+      
     }
   };
 
