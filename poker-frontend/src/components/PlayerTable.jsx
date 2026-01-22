@@ -2,7 +2,7 @@ import { useState, useEffect, Fragment } from 'react'; // 👈 Agregamos Fragmen
 import { ChevronDownIcon, ChevronUpIcon, ClockIcon } from '@heroicons/react/24/solid';
 import api from '../api/axios'; 
 
-export default function PlayerTable({ refreshTrigger }) {
+export default function PlayerTable({ refreshTrigger, onPlayerSelect }) {
   const [players, setPlayers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [totals, setTotals] = useState({ buyin: 0, cashout: 0, balance: 0 });
@@ -91,13 +91,29 @@ export default function PlayerTable({ refreshTrigger }) {
                     <td className="p-4 text-gray-500 text-center">
                       {isExpanded ? <ChevronUpIcon className="w-4 h-4 text-emerald-500" /> : <ChevronDownIcon className="w-4 h-4" />}
                     </td>
-                    <td className="p-4">
-                      <div className="font-bold text-white text-lg">{p.name}</div>
-                      <div className="flex gap-2 text-[10px] mt-0.5">
-                         {buyins.length > 1 && <span className="text-emerald-400 font-mono">{buyins.length} entradas</span>}
-                         {p.total_jackpot > 0 && <span className="text-purple-400 font-bold">🎁 Jackpot</span>}
-                      </div>
-                    </td>
+<td className="p-4">
+  {/* 👇👇 COMIENZO DEL CAMBIO 👇👇 */}
+  <div 
+    onClick={(e) => {
+      e.stopPropagation(); // ⛔ Importante: Evita que la fila se expanda/cierre al hacer clic aquí
+      onPlayerSelect(p);   // ✅ Abre el modal de edición
+    }}
+    className="font-bold text-white text-lg cursor-pointer hover:text-blue-400 hover:underline decoration-dotted underline-offset-4 flex items-center gap-2 group w-fit select-none"
+    title="Clic para editar movimientos"
+  >
+    {p.name}
+    {/* Icono de lápiz (aparece al pasar el mouse) */}
+    <span className="opacity-0 group-hover:opacity-100 text-xs bg-gray-700 px-1.5 py-0.5 rounded text-gray-300 font-normal transition-opacity">
+      ✏️
+    </span>
+  </div>
+  {/* 👆👆 FIN DEL CAMBIO 👆👆 */}
+
+  <div className="flex gap-2 text-[10px] mt-0.5">
+      {buyins.length > 1 && <span className="text-emerald-400 font-mono">{buyins.length} entradas</span>}
+      {p.total_jackpot > 0 && <span className="text-purple-400 font-bold">🎁 Jackpot</span>}
+  </div>
+</td>
                     <td className="p-4 text-right font-mono text-gray-200 text-lg">
                       <div className="flex items-center justify-end gap-2">
                         {formatMoney(p.total_buyin)}

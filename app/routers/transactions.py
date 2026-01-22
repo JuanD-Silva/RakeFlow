@@ -3,6 +3,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import func
+from pydantic import BaseModel
+from sqlalchemy.orm import selectinload
 from .. import models, schemas
 from datetime import datetime
 # Dependencias SaaS: Traemos el autenticador
@@ -12,7 +14,9 @@ router = APIRouter(
     prefix="/transactions",
     tags=["Transactions"]
 )
-
+class TransactionUpdate(BaseModel):
+    amount: float
+    method: str = "CASH" # CASH o DIGITAL
 # ---------------------------------------------------------
 # HELPER: Buscar Sesión Activa (Actualizado para SaaS)
 # ---------------------------------------------------------
@@ -65,6 +69,9 @@ async def create_buyin(
     
     return new_tx
 
+
+
+
 # ---------------------------------------------------------
 # 1. CASHOUT (Retiro de Fichas)
 # ---------------------------------------------------------
@@ -91,6 +98,88 @@ async def create_cashout(
     return new_tx
 
 
+# ---------------------------------------------------------
+# 1. EDITAR TRANSACCIÓN (Corregir monto o método) ✏️
+# ---------------------------------------------------------
+@router.put("/{transaction_id}")
+async def update_transaction(
+    transaction_id: int, 
+    data: TransactionUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club)
+):
+    print(f"🔍 DEBUG: Buscando transacción ID {transaction_id} para el Club {current_club.id}")
+
+    # 1. Buscamos la transacción SOLO por ID (sin filtrar club todavía)
+    #    y cargamos la sesión para verificar después.
+    stmt = (
+        select(models.Transaction)
+        .options(selectinload(models.Transaction.session))
+        .where(models.Transaction.id == transaction_id)
+    )
+    result = await db.execute(stmt)
+    tx = result.scalars().first()
+
+    # 2. Diagnóstico de errores
+    if not tx:
+        
+        raise HTTPException(status_code=404, detail="Transacción no encontrada (ID inválido)")
+
+    # 3. Verificaciones de Seguridad Manuales
+    if not tx.session:
+        
+        raise HTTPException(status_code=404, detail="Transacción huérfana")
+
+    
+
+    if tx.session.club_id != current_club.id:
+        
+        raise HTTPException(status_code=404, detail="Transacción no encontrada en este club")
+
+    if tx.session.status == models.SessionStatus.CLOSED:
+        raise HTTPException(status_code=400, detail="No se pueden editar transacciones de sesiones cerradas")
+
+    # 4. Si todo está bien, actualizamos
+    
+    tx.amount = data.amount
+    tx.method = data.method
+    
+    await db.commit()
+    await db.refresh(tx)
+    
+    return {"message": "Transacción actualizada", "id": tx.id, "new_amount": tx.amount}
+# ---------------------------------------------------------
+# 2. ELIMINAR TRANSACCIÓN (Borrar error) 🗑️
+# ---------------------------------------------------------
+@router.delete("/{transaction_id}")
+async def delete_transaction(
+    transaction_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club)
+):
+    # Buscar la transacción Y CARGAR LA SESIÓN
+    stmt = (
+        select(models.Transaction)
+        .options(selectinload(models.Transaction.session)) # 👈 SOLUCIÓN DEL ERROR
+        .join(models.Session)
+        .where(
+            models.Transaction.id == transaction_id,
+            models.Session.club_id == current_club.id
+        )
+    )
+    result = await db.execute(stmt)
+    tx = result.scalars().first()
+
+    if not tx:
+        raise HTTPException(status_code=404, detail="Transacción no encontrada")
+
+    if tx.session.status == models.SessionStatus.CLOSED:
+        raise HTTPException(status_code=400, detail="No se pueden borrar transacciones de sesiones cerradas")
+
+    await db.delete(tx)
+    await db.commit()
+    
+    return {"message": "Transacción eliminada con éxito"}
 # ---------------------------------------------------------
 # 2. SPEND (Gastos / Bebidas)
 # ---------------------------------------------------------

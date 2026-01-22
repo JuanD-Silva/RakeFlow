@@ -126,7 +126,8 @@ async def get_current_session_stats(
     # 4. SQL BLINDADO PARA DETALLES 🛡️
     #    Fusiona: Corrección 'timestamp' + Corrección 'Hora Colombia' + Conversión Texto
     sql_details = text("""
-        SELECT 
+        SELECT
+            id,            
             player_id, 
             CAST(type AS TEXT) as type_str, 
             amount, 
@@ -150,6 +151,7 @@ async def get_current_session_stats(
                 clean_type = raw_type.split('.')[-1] if '.' in raw_type else raw_type
 
                 players_map[tx.player_id]["transactions"].append({
+                    "id": tx.id,
                     "type": clean_type,      
                     "amount": tx.amount,     
                     "created_at": tx.created_at, 

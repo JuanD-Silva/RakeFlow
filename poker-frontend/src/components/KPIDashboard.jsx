@@ -19,7 +19,18 @@ export default function KPIDashboard() {
   }, []);
 
   // Mientras carga o si hay error, no mostramos nada (o podrías poner un spinner)
-  if (!stats) return null; 
+  if (!stats) {
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="bg-gray-800/50 rounded-xl p-4 border border-gray-700 h-24 animate-pulse flex flex-col justify-center">
+            <div className="h-3 w-1/2 bg-gray-700 rounded mb-3"></div> {/* Título falso */}
+            <div className="h-6 w-3/4 bg-gray-600 rounded"></div>   {/* Valor falso */}
+          </div>
+        ))}
+      </div>
+    );
+  }
 
   // Helpers de estilo (Componente interno para las tarjetas)
   const Card = ({ title, value, sub, icon, color }) => (

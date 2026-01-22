@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import TransactionManager from './TransactionManager';
 // 👇 1. Importamos solo los servicios, no axios directo
 import { sessionService } from '../api/services'; 
 
@@ -27,6 +28,7 @@ export default function GameControl({ onLogout }) {
   const [activeSession, setActiveSession] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0); 
+  const [selectedPlayerForHistory, setSelectedPlayerForHistory] = useState(null);
 
   // ESTADOS DEL MODAL
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -111,9 +113,9 @@ const handleStartSession = async () => {
   if (loading) return <div className="text-white text-center p-10 animate-pulse">📡 Conectando con el sistema...</div>;
 
   return (
-    <div className="max-w-4xl mx-auto p-4">
+  <div className="max-w-4xl mx-auto p-4">
       
- {/* HEADER: BARRA DE ESTADO PRO */}
+      {/* HEADER: BARRA DE ESTADO PRO */}
       <header className="bg-gray-800 border-b-4 border-emerald-600 rounded-t-lg shadow-xl p-5 flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
         
         <div className="flex items-center gap-4 w-full md:w-auto">
@@ -163,7 +165,7 @@ const handleStartSession = async () => {
         </div>
       </header>
       {/* ZONA PRINCIPAL */}
-{!activeSession ? (
+        {!activeSession ? (
         // --- VISTA MESA CERRADA (Estilo Casino Pro) ---
         <div className="flex flex-col items-center justify-center py-20 bg-gray-800/30 rounded-2xl border-2 border-dashed border-gray-700/50 backdrop-blur-sm">
           
@@ -226,7 +228,10 @@ const handleStartSession = async () => {
           {/* TABLAS Y PANELES */}
           <div className="col-span-2 md:col-span-3 mt-4">
              <StatsPanel refreshTrigger={refreshKey} />
-             <PlayerTable refreshTrigger={refreshKey} />
+             <PlayerTable 
+       refreshTrigger={refreshKey} 
+       onPlayerSelect={setSelectedPlayerForHistory} 
+   />
           </div>
 
           {/* ZONA DE CIERRE */}
@@ -310,9 +315,9 @@ const handleStartSession = async () => {
                   <span className="font-mono font-bold">${auditData.total_expenses.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between text-orange-500 font-bold border-t border-gray-800 pt-2">
-      <span>🎁 Bonos Otorgados:</span>
-      <span className="font-mono">${auditData.total_bonuses?.toLocaleString() || 0}</span>
-    </div>
+        <span>🎁 Bonos Otorgados:</span>
+        <span className="font-mono">${auditData.total_bonuses?.toLocaleString() || 0}</span>
+        </div>
               </div>
 
               <hr className="border-gray-700" />
@@ -335,6 +340,15 @@ const handleStartSession = async () => {
             </div>
           </div>
         </div>
+      )}
+      {selectedPlayerForHistory && (
+        <TransactionManager 
+          player={selectedPlayerForHistory}
+          onClose={() => setSelectedPlayerForHistory(null)}
+          onUpdate={() => {
+             refresh(); // 🔄 Esto recarga la tabla y los stats automáticamente al editar
+          }}
+        />
       )}
     </div>
   );

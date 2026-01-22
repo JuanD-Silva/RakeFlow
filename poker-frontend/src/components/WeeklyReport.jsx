@@ -1,6 +1,7 @@
 // src/components/WeeklyReport.jsx
 import { useEffect, useState } from 'react';
 import api from '../api/axios';
+import KPIDashboard from '../components/KPIDashboard';
 import { 
   ArrowLeftIcon, 
   ArrowRightIcon, 
@@ -67,6 +68,7 @@ export default function WeeklyReport() {
 
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-8 animate-fade-in">
+      <KPIDashboard />
       
       {/* HEADER Y NAVEGACIÓN */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gray-800/40 p-4 rounded-2xl border border-gray-700/50 backdrop-blur-sm">

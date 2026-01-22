@@ -19,7 +19,7 @@ router = APIRouter(
 # ---------------------------------------------------------
 # 1. DASHBOARD GENERAL (KPIs) 📊
 # ---------------------------------------------------------
-@router.get("/stats/dashboard")
+@router.get("/dashboard")
 async def get_dashboard_stats(
     db: AsyncSession = Depends(get_db), 
     current_club: models.Club = Depends(get_current_club) # ✅ ESTO ESTABA BIEN
@@ -259,15 +259,33 @@ async def get_rankings(
         # Sumamos Cashouts + Jackpots de sesiones cerradas este mes
         # ---------------------------------------------------------------------
         sql_winners = text("""
-            SELECT p.name, SUM(t.amount) as val
+            SELECT p.name, 
+                   SUM(
+                       CASE 
+                           -- SUMAN (Dinero ganado en juego)
+                           WHEN t.type IN ('CASHOUT', 'JACKPOT_PAYOUT') THEN t.amount
+                           
+                           -- RESTAN (Costo de las fichas para jugar)
+                           WHEN t.type IN ('BUYIN', 'REBUY') THEN -t.amount
+                           
+                           -- IGNORAR (Gastos de bar, propinas, etc. no afectan el ranking de habilidad)
+                           ELSE 0 
+                       END
+                   ) as val
             FROM players p
             JOIN transactions t ON p.id = t.player_id
-            JOIN sessions s ON t.session_id = s.id  -- 👈 Unimos con sesión para ver la fecha
+            JOIN sessions s ON t.session_id = s.id
             WHERE p.club_id = :cid 
-              AND (t.type = 'CASHOUT' OR t.type = 'JACKPOT_PAYOUT')
-              AND s.end_time >= :start_date         -- 👈 FILTRO MENSUAL
+              AND s.end_time >= :start_date
               AND s.status = 'CLOSED'
             GROUP BY p.name
+            HAVING SUM(
+                CASE 
+                    WHEN t.type IN ('CASHOUT', 'JACKPOT_PAYOUT', 'BONUS') THEN t.amount
+                    WHEN t.type IN ('BUYIN', 'REBUY') THEN -t.amount
+                    ELSE 0 
+                END
+            ) > 0 
             ORDER BY val DESC
             LIMIT 3
         """)
