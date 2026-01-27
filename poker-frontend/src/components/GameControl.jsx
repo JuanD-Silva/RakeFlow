@@ -8,9 +8,12 @@ import TransactionForm from './TransactionForm';
 import CloseSessionForm from './CloseSessionForm';
 import StatsPanel from './StatsPanel';
 import PlayerTable from './PlayerTable';
+import api from '../api/axios';
+import ConfirmModal from './ConfirmModal';
 
 import { 
-  PlayIcon, 
+  PlayIcon,
+  TrashIcon, 
   BanknotesIcon, 
   ArrowDownTrayIcon, 
   SparklesIcon, 
@@ -34,6 +37,8 @@ export default function GameControl({ onLogout }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalType, setModalType] = useState("buyin"); 
   const [modalTitle, setModalTitle] = useState("");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeletingSession, setIsDeletingSession] = useState(false);
   
   // ESTADOS DE AUDITORÍA
   const [auditData, setAuditData] = useState(null);
@@ -110,6 +115,27 @@ const handleStartSession = async () => {
     }
   };
 
+// 1. Solo abre el modal (Reemplaza a la función vieja)
+const requestDeleteSession = () => {
+   if (!activeSession) return;
+   setShowDeleteConfirm(true);
+};
+
+// 2. Ejecuta el borrado (Se pasa al modal)
+const executeDeleteSession = async () => {
+    setIsDeletingSession(true); // Activa el spinner
+    try {
+        await api.delete(`/sessions/${activeSession.id}`);
+        setActiveSession(null);
+        setShowDeleteConfirm(false);   
+    } catch (error) {
+        console.error(error);
+        alert("Error al eliminar"); // Este alert lo dejamos por ahora como fallback de error crítico
+    } finally {
+        setIsDeletingSession(false);
+    }
+};
+
   if (loading) return <div className="text-white text-center p-10 animate-pulse">📡 Conectando con el sistema...</div>;
 
   return (
@@ -138,6 +164,16 @@ const handleStartSession = async () => {
                       </span>
                       <span className="text-emerald-500 text-xs font-bold uppercase tracking-[0.15em]">Sistema Online</span>
                   </div>
+                  <div className="ml-4 pl-4 border-l border-gray-700">
+           <button
+             onClick={requestDeleteSession}
+             className="group flex flex-col items-center justify-center p-2 rounded-lg hover:bg-red-500/20 transition-all border border-transparent hover:border-red-500/50"
+             title="ELIMINAR ESTA SESIÓN (Borrar todo)"
+           >
+             <TrashIcon className="w-6 h-6 text-gray-600 group-hover:text-red-500 transition-colors" />
+             <span className="text-[10px] text-gray-500 group-hover:text-red-400 font-bold uppercase mt-1">Borrar</span>
+           </button>
+        </div>
               </div>
             </div>
           ) : (
@@ -281,6 +317,14 @@ const handleStartSession = async () => {
           />
         )}
       </Modal>
+      <ConfirmModal 
+    isOpen={showDeleteConfirm}
+    onClose={() => setShowDeleteConfirm(false)}
+    onConfirm={executeDeleteSession}
+    isDeleting={isDeletingSession}
+    title="¿Eliminar Mesa Activa?"
+    message={`Estás a punto de borrar la Sesión #${activeSession?.id}.\n\n⚠️ ESTO ES IRREVERSIBLE.\nSe perderán todos los buy-ins y registros de dinero.`}
+  />
 
       {/* MODAL DE AUDITORÍA (Solo lectura) */}
       {showAuditModal && auditData && (

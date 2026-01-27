@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import func, case, text
+from sqlalchemy import func, case, text, delete
 from typing import List
 from datetime import datetime, date
 import traceback
@@ -497,4 +497,38 @@ async def get_session_details(session_id: int, db: AsyncSession = Depends(get_db
         "players": players_list,
         "distribution": distribution_list
     }
+
+
+@router.delete("/{session_id}")
+async def delete_session(
+    session_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club)
+):
+    # A. Buscar la sesión
+    result = await db.execute(select(models.Session).where(models.Session.id == session_id))
+    session = result.scalars().first()
+
+    if not session:
+        raise HTTPException(status_code=404, detail="Sesión no encontrada")
+
+    # B. Verificar seguridad (que sea del club correcto)
+    if session.club_id != current_club.id:
+        raise HTTPException(status_code=403, detail="No tienes permiso para eliminar esta sesión")
+
+    try:
+        # C. Eliminar primero las transacciones asociadas (Limpieza profunda)
+        # Esto borra buy-ins, cashouts, etc. de esa mesa.
+        await db.execute(delete(models.Transaction).where(models.Transaction.session_id == session_id))
+
+        # D. Eliminar la sesión
+        await db.delete(session)
+        await db.commit()
+        
+        return {"message": "Sesión eliminada correctamente"}
+
+    except Exception as e:
+        await db.rollback()
+        print(f"Error borrando sesión: {e}")
+        raise HTTPException(status_code=500, detail="Error interno al eliminar la sesión")
 
