@@ -29,7 +29,7 @@ class Token(BaseModel):
 # --- SCHEMAS DE JUGADORES (NUEVO) ---
 class PlayerBase(BaseSchema):
     name: str
-    phone: str 
+    phone: Optional[str] = None 
 
 class PlayerCreate(PlayerBase):
     pass
@@ -42,6 +42,7 @@ class PlayerSessionStats(BaseModel):
     player_id: int
     name: str
     total_buyin: float
+    phone: Optional[str] = None
     total_cashout: float
     total_spend: float  # Bebidas/Comida
     total_jackpot: float = 0.0
@@ -139,3 +140,80 @@ class InitialSetupRequest(BaseModel):
 class InitialSetupRequest(BaseModel):
     monthly_goal: float = 0
     partners: List[PartnerSetup] # Lista de socios
+
+class TournamentBase(BaseModel):
+    name: str
+    buyin_amount: int
+    start_time: Optional[datetime] = None
+
+# 2. Creación con los campos nuevos
+class TournamentCreate(BaseModel):
+    name: str
+    buyin_amount: int        
+    rake_percentage: int     
+    dealer_tip_amount: Optional[int] = 0
+    bounty_amount: Optional[int] = 0
+    addon_price: Optional[int] = 0
+    rebuy_price: int = 0
+    double_rebuy_price: int = 0
+    double_addon_price: int = 0
+    payout_structure: List[int] = []
+
+# 3. Esquema de Jugador (Actualizado a from_attributes)
+class TournamentPlayerSchema(BaseModel):
+    id: int
+    player_id: int
+    status: str
+    is_tip_paid: bool
+    
+    # Contadores Generales
+    rebuys_count: int
+    addons_count: int
+    
+    # 👇 ESTO ES LO QUE TE FALTA (IMPORTANTE)
+    double_rebuys_count: int = 0
+    double_addons_count: int = 0
+    
+    rank: Optional[int] = None
+    prize_collected: int
+    
+    class Config:
+        from_attributes = True
+# 4. Respuesta completa para el Dashboard
+class TournamentResponse(BaseModel):
+    id: int
+    name: str
+    status: str
+    
+    # Costos
+    buyin_amount: int
+    rake_percentage: int      
+    dealer_tip_amount: int    
+    bounty_amount: int = 0      # Agregado por seguridad
+    rebuy_price: int
+    double_rebuy_price: int
+    addon_price: int
+    double_addon_price: int      # Agregado por seguridad
+    
+    start_time: datetime
+    end_time: Optional[datetime] = None
+    
+    # Metadatos calculados (con valores por defecto 0)
+    total_players: int = 0
+    total_prize_pool: int = 0
+    
+    # Lista de jugadores
+    players: List[TournamentPlayerSchema] = []
+
+    payout_structure: List[int] = []
+
+    class Config:
+        from_attributes = True
+
+
+class WinnerAssignment(BaseModel):
+    rank: int       # 1, 2, 3...
+    player_id: int  # ID del jugador
+
+class TournamentFinalize(BaseModel):
+    winners: List[WinnerAssignment]

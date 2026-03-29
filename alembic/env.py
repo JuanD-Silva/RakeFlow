@@ -27,8 +27,12 @@ if config.config_file_name is not None:
 # Leemos la URL del .env, tal como lo hace la app
 db_url = os.getenv("DATABASE_URL")
 if db_url:
+    # 🛡️ FIX MÁGICO: Forzar el driver asíncrono si no viene en la URL
+    if db_url.startswith("postgresql://"):
+        db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    
+    # Ahora sí, guardamos la URL corregida en la configuración
     config.set_main_option("sqlalchemy.url", db_url)
-
 # --- MODIFICACIÓN 4: Enlazar los metadatos ---
 target_metadata = Base.metadata
 

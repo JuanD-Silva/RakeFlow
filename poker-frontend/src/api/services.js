@@ -56,9 +56,28 @@ export const playerService = {
         return response.data;
     },
 
-    create: async (name, phone) => {
-        // Asumimos club_id = 1 por defecto para este MVP
-        const response = await api.post('/players/', { name, phone, club_id: 1 });
+   create: async (data, phone = null) => {
+        // Lógica inteligente:
+        // Si 'data' es un string, asumimos que es el nombre y el 2do argumento es el teléfono.
+        // Si 'data' es un objeto, lo usamos tal cual.
+
+        let payload = {};
+
+        if (typeof data === 'string') {
+            payload = { 
+                name: data, 
+                phone: phone, // Aquí usamos el 2do argumento
+                club_id: 1 
+            };
+        } else {
+            // Si ya viene como objeto {name: "Juan", phone: "300...", club_id: 1}
+            payload = { 
+                ...data, 
+                club_id: data.club_id || 1 
+            };
+        }
+
+        const response = await api.post('/players/', payload);
         return response.data;
     }
 };
@@ -170,4 +189,82 @@ login: async (email, password) => {
         return response.data;
     }
 };
+
+export const tournamentService = {
+  // Buscar si hay un torneo corriendo
+  findActive: async () => {
+    try {
+      const response = await api.get('/tournaments/active');
+      return response.data;
+    } catch (error) {
+      console.error("Error buscando torneo activo:", error);
+      return null;
+    }
+  },
+  registerPlayer: async (tournamentId, data) => {
+     // data: { player_id: 1, pay_buyin: true, pay_tip: true }
+     const response = await api.post(`/tournaments/${tournamentId}/register`, data);
+     return response.data;
+  },
+
+  // 2. PAGAR TIP TARDE (Nivel 6, etc)
+  payLateTip: async (tournamentId, playerId) => {
+    const response = await api.post(`/tournaments/${tournamentId}/players/${playerId}/pay-tip`);
+    return response.data;
+  },
+
+  // Crear un torneo nuevo
+  create: async (data) => {
+    // data debe tener: { name, buyin_amount, fee_amount, bounty_amount }
+    const response = await api.post('/tournaments/', data);
+    return response.data;
+  },
+
+endTournament: async (tournamentId) => {
+    // Asumimos que crearás este endpoint en el backend pronto
+    // OJO: Si aún no tienes el endpoint DELETE o PUT para cerrar, 
+    // tendremos que crearlo en Python primero.
+    const response = await api.post(`/tournaments/${tournamentId}/end`); 
+    return response.data;
+  },
+
+  addRebuy: async (tournamentId, playerId, type) => {
+      // type debe ser "SINGLE" o "DOUBLE"
+      const response = await api.post(`/tournaments/${tournamentId}/rebuy`, { player_id: playerId, type });
+      return response.data;
+  },
+
+  addAddon: async (tournamentId, playerId, type) => {
+      const response = await api.post(`/tournaments/${tournamentId}/addon`, { player_id: playerId, type });
+      return response.data;
+  },
+
+  finalize: async (tournamentId, winnersList) => {
+      // winnersList debe ser: [{ rank: 1, player_id: 5 }, { rank: 2, player_id: 8 }]
+      const response = await api.post(`/tournaments/${tournamentId}/finalize`, { winners: winnersList });
+      return response.data;
+  },
+  getDetails: async (id) => {
+    const response = await api.get(`/tournaments/${id}/details`);
+    return response.data;
+  },
+};
+
+export const historyService = {
+    getAll: async () => {
+        const response = await api.get('/history/'); 
+        return response.data;
+    }
+};
+
+const getAll = async () => {
+    // Llamamos al endpoint que acabamos de crear
+    const response = await api.get('/stats/history-mixed');
+    return response.data;
+};
+
+export default {
+    getAll,
+};
+
 

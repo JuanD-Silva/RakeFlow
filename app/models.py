@@ -1,5 +1,5 @@
 # app/models.py
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Boolean, Enum as SqEnum
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Boolean, Enum as SqEnum, JSON
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
@@ -14,6 +14,10 @@ class TransactionType(str, enum.Enum):
     TIP = "tip"
     JACKPOT_PAYOUT = "jackpot-payout"
     BONUS = "BONUS"
+    TOURNAMENT_ENTRY = "TOURNAMENT_ENTRY"
+    TOURNAMENT_TIP = "TOURNAMENT_TIP"
+    TOURNAMENT_REBUY = "TOURNAMENT_REBUY" 
+    TOURNAMENT_ADDON = "TOURNAMENT_ADDON"
 
 class SessionStatus(str, enum.Enum):
     OPEN = "OPEN"
@@ -53,6 +57,7 @@ class Club(Base):
     players = relationship("Player", back_populates="club")
     sessions = relationship("Session", back_populates="club")
     rules = relationship("DistributionRule", back_populates="club") # Agregado
+    tournaments = relationship("Tournament", back_populates="club")
 
 class User(Base):
     """
@@ -129,7 +134,9 @@ class Transaction(Base):
     __tablename__ = "transactions"
 
     id = Column(Integer, primary_key=True, index=True)
-    session_id = Column(Integer, ForeignKey("sessions.id"), nullable=False)
+    session_id = Column(Integer, ForeignKey("sessions.id"), nullable=True)
+
+    tournament_id = Column(Integer, ForeignKey("tournaments.id"), nullable=True)
     # 👇 Se cambia a nullable=True para permitir propinas anónimas
     player_id = Column(Integer, ForeignKey("players.id"), nullable=True) 
 
@@ -138,9 +145,11 @@ class Transaction(Base):
     method = Column(String, default="CASH")
     
     timestamp = Column(DateTime, default=datetime.utcnow)
+    description = Column(String, nullable=True)
 
     # Relaciones
     session = relationship("Session", back_populates="transactions")
+    tournament = relationship("Tournament", foreign_keys=[tournament_id])
     player = relationship("Player", back_populates="transactions")
 
 
@@ -175,3 +184,63 @@ class FinancialDistribution(Base):
     percentage_applied = Column(Float, default=0.0) 
     
     session = relationship("Session", back_populates="distributions")
+
+# ---------------------------------------------------------
+# TORNEOS
+# ---------------------------------------------------------
+class Tournament(Base):
+    __tablename__ = "tournaments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"))
+    
+    name = Column(String, nullable=False)
+    start_time = Column(DateTime, default=datetime.utcnow)  
+    end_time = Column(DateTime, nullable=True)
+    
+    # --- ESTRUCTURA DE COSTOS ---
+    buyin_amount = Column(Integer, default=0)    # Costo base de entrada (Va al Pozo Bruto)
+    rake_percentage = Column(Integer, default=10) # % que la casa quita del Pozo Bruto al final
+    rebuy_price = Column(Integer, default=0)          # Rebuy Sencillo
+    double_rebuy_price = Column(Integer, default=0)
+    addon_price = Column(Integer, default=0)          # Add-on Sencillo
+    double_addon_price = Column(Integer, default=0)
+    # EXTRAS (Pagos Adicionales Fijos)
+    dealer_tip_amount = Column(Integer, default=0) # Ej: 10.000 (Va a Dealers, no al pozo)
+    addon_price = Column(Integer, default=0)       # Ej: 50.000 (Va al Pozo Bruto)
+    bounty_amount = Column(Integer, default=0)     # Ej: 20.000 (Va directo al jugador que elimina)
+    
+    # Estado
+    status = Column(String, default="REGISTERING") 
+    
+    # Relaciones
+    club = relationship("Club", back_populates="tournaments")
+    players = relationship("TournamentPlayer", back_populates="tournament", cascade="all, delete-orphan", lazy="selectin")
+
+    payout_structure = Column(JSON, default=[]) 
+
+class TournamentPlayer(Base):
+    __tablename__ = "tournament_players"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tournament_id = Column(Integer, ForeignKey("tournaments.id"))
+    player_id = Column(Integer, ForeignKey("players.id"))
+    
+    # Estado
+    status = Column(String, default="ACTIVE") # ACTIVE, ELIMINATED
+
+    is_tip_paid = Column(Boolean, default=False)
+    
+    # Contadores de Dinero
+    rebuys_count = Column(Integer, default=0) # Cantidad de recompras hechas
+    addons_count = Column(Integer, default=0) # Cantidad de add-ons hechos
+
+    double_rebuys_count = Column(Integer, default=0) 
+    double_addons_count = Column(Integer, default=0)
+    
+    # Resultados
+    rank = Column(Integer, nullable=True) 
+    prize_collected = Column(Integer, default=0)
+
+    tournament = relationship("Tournament", back_populates="players")
+    player = relationship("Player")

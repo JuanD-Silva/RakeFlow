@@ -1,15 +1,14 @@
-// src/components/WeeklyReport.jsx
 import { useEffect, useState } from 'react';
 import api from '../api/axios';
 import KPIDashboard from '../components/KPIDashboard';
 import { 
   ArrowLeftIcon, 
   ArrowRightIcon, 
-  BanknotesIcon, 
   UserGroupIcon, 
   CalendarDaysIcon,
-  WalletIcon
-} from '@heroicons/react/24/outline'; // Si no tienes heroicons, puedes usar emojis
+  WalletIcon,
+  ScaleIcon // Ícono para la Meta
+} from '@heroicons/react/24/outline'; 
 
 export default function WeeklyReport() {
   const [data, setData] = useState(null);
@@ -39,9 +38,16 @@ export default function WeeklyReport() {
 
       const formatDate = (d) => d.toISOString().split('T')[0];
       const res = await api.get(`/stats/weekly-distribution?start_date=${formatDate(start)}&end_date=${formatDate(end)}`);
-      setData(res.data);
+      
+      if (res.data.error) {
+        console.error("Server Error:", res.data.error);
+        setData({ error: res.data.error });
+      } else {
+        setData(res.data);
+      }
     } catch (error) {
       console.error("Error cargando reporte:", error);
+      setData({ error: "Error de conexión" });
     } finally {
       setLoading(false);
     }
@@ -57,6 +63,10 @@ export default function WeeklyReport() {
     setReferenceDate(newDate);
   };
 
+  const formatMoney = (amount) => {
+    return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(amount || 0);
+  };
+
   if (loading) return (
     <div className="flex flex-col items-center justify-center h-64 space-y-4">
       <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
@@ -64,7 +74,41 @@ export default function WeeklyReport() {
     </div>
   );
 
+  if (data?.error) return (
+    <div className="flex justify-center items-center h-64">
+        <div className="bg-red-500/10 border border-red-500/50 p-6 rounded-2xl text-center">
+            <p className="text-red-500 font-bold mb-2">Error de Cálculo</p>
+            <p className="text-gray-400 font-mono text-xs">{data.error}</p>
+            <button onClick={fetchData} className="mt-4 px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded text-xs">Reintentar</button>
+        </div>
+    </div>
+  );
+
   if (!data) return <div className="text-center text-gray-500 mt-10">No hay datos disponibles.</div>;
+
+  // --- LÓGICA DE CLASIFICACIÓN ---
+  const isMetaFunc = (name) => {
+      const n = name.toLowerCase();
+      return n.includes('meta') || n.includes('deuda') || n.includes('quota');
+  };
+
+  const isFondoFunc = (name) => {
+      const n = name.toLowerCase();
+      return n.includes('caja') || n.includes('fondo') || n.includes('reserva') || n.includes('operativo');
+  };
+
+  // Calculamos totales para las tarjetas (Filtrando correctamente)
+  const totalSocios = data.distribution
+    .filter(d => !isFondoFunc(d.name) && !isMetaFunc(d.name))
+    .reduce((acc, curr) => acc + curr.total, 0);
+    
+  const totalFondos = data.distribution
+    .filter(d => isFondoFunc(d.name))
+    .reduce((acc, curr) => acc + curr.total, 0);
+
+  const totalMeta = data.distribution
+    .filter(d => isMetaFunc(d.name))
+    .reduce((acc, curr) => acc + curr.total, 0);
 
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-8 animate-fade-in">
@@ -109,21 +153,32 @@ export default function WeeklyReport() {
 
       {/* KPI CARDS (RESUMEN RÁPIDO) */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {/* Total Generado (CORREGIDO: usa total_week) */}
         <div className="bg-gradient-to-br from-green-900/20 to-transparent border border-green-500/20 p-5 rounded-2xl">
           <p className="text-[10px] font-bold text-green-500 uppercase tracking-widest mb-1">Total Generado</p>
-          <p className="text-3xl font-black text-white font-mono">${data.total_week.toLocaleString()}</p>
+          <p className="text-3xl font-black text-white font-mono">
+            {formatMoney(data.total_week || 0)} 
+          </p>
         </div>
+        
+        {/* Meta / Deuda (Si hay) */}
+        {totalMeta > 0 ? (
+             <div className="bg-gradient-to-br from-emerald-900/20 to-transparent border border-emerald-500/20 p-5 rounded-2xl">
+                <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mb-1">Abono a Meta</p>
+                <p className="text-3xl font-black text-white font-mono">{formatMoney(totalMeta)}</p>
+             </div>
+        ) : (
+            /* Si no hay meta, mostramos Fondos */
+            <div className="bg-gradient-to-br from-purple-900/20 to-transparent border border-purple-500/20 p-5 rounded-2xl">
+                <p className="text-[10px] font-bold text-purple-500 uppercase tracking-widest mb-1">Fondos Operativos</p>
+                <p className="text-3xl font-black text-white font-mono">{formatMoney(totalFondos)}</p>
+            </div>
+        )}
+        
+        {/* Socios */}
         <div className="bg-gradient-to-br from-blue-900/20 to-transparent border border-blue-500/20 p-5 rounded-2xl">
           <p className="text-[10px] font-bold text-blue-500 uppercase tracking-widest mb-1">Participación Socios</p>
-          <p className="text-3xl font-black text-white font-mono">
-            ${data.distribution.filter(d => !d.name.toLowerCase().includes('caja')).reduce((acc, curr) => acc + curr.total, 0).toLocaleString()}
-          </p>
-        </div>
-        <div className="bg-gradient-to-br from-purple-900/20 to-transparent border border-purple-500/20 p-5 rounded-2xl">
-          <p className="text-[10px] font-bold text-purple-500 uppercase tracking-widest mb-1">Fondos Operativos</p>
-          <p className="text-3xl font-black text-white font-mono">
-            ${data.distribution.filter(d => d.name.toLowerCase().includes('caja')).reduce((acc, curr) => acc + curr.total, 0).toLocaleString()}
-          </p>
+          <p className="text-3xl font-black text-white font-mono">{formatMoney(totalSocios)}</p>
         </div>
       </div>
 
@@ -131,25 +186,58 @@ export default function WeeklyReport() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {data.distribution.length > 0 ? (
           data.distribution.map((item, idx) => {
-            const isCaja = item.name.toLowerCase().includes('caja');
+            const isMeta = isMetaFunc(item.name);
+            const isFondo = isFondoFunc(item.name);
+
+            // DEFINIR ESTILOS
+            let theme = {
+                icon: UserGroupIcon,
+                label: "Utilidad de Socio",
+                mainColor: "text-blue-400",
+                bgColor: "bg-blue-600/20",
+                borderColor: "border-blue-500/30",
+                hoverBorder: "hover:border-blue-500/50",
+                bottomBar: "bg-blue-500/0 group-hover:bg-blue-500/50"
+            };
+
+            if (isMeta) {
+                theme = {
+                    icon: ScaleIcon,
+                    label: "Pago Prioritario (Meta)",
+                    mainColor: "text-emerald-400",
+                    bgColor: "bg-emerald-600/20",
+                    borderColor: "border-emerald-500/30",
+                    hoverBorder: "hover:border-emerald-500/50",
+                    bottomBar: "bg-emerald-500/0 group-hover:bg-emerald-500/50"
+                };
+            } else if (isFondo) {
+                theme = {
+                    icon: WalletIcon,
+                    label: "Gasto Operativo / Fondo",
+                    mainColor: "text-purple-400",
+                    bgColor: "bg-purple-600/20",
+                    borderColor: "border-purple-500/30",
+                    hoverBorder: "hover:border-purple-500/50",
+                    bottomBar: "bg-purple-500/0 group-hover:bg-purple-500/50"
+                };
+            }
+
             return (
               <div 
                 key={idx} 
-                className="group relative bg-gray-800 border border-gray-700 rounded-2xl p-6 transition-all hover:border-blue-500/50 hover:shadow-2xl hover:shadow-blue-500/10"
+                className={`group relative bg-gray-800 border border-gray-700 rounded-2xl p-6 transition-all hover:shadow-2xl ${theme.hoverBorder}`}
               >
                 <div className="flex justify-between items-start">
                   <div className="flex items-center gap-4">
-                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg transition-transform group-hover:scale-110 ${
-                      isCaja ? "bg-purple-600/20 text-purple-400 border border-purple-500/30" : "bg-blue-600/20 text-blue-400 border border-blue-500/30"
-                    }`}>
-                      {isCaja ? <WalletIcon className="w-7 h-7" /> : <UserGroupIcon className="w-7 h-7" />}
+                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg transition-transform group-hover:scale-110 ${theme.bgColor} ${theme.mainColor} ${theme.borderColor} border`}>
+                      <theme.icon className="w-7 h-7" />
                     </div>
                     <div>
-                      <h3 className="text-xl font-black text-white group-hover:text-blue-400 transition-colors uppercase tracking-tighter">
+                      <h3 className={`text-xl font-black text-white group-hover:${theme.mainColor} transition-colors uppercase tracking-tighter`}>
                         {item.name}
                       </h3>
                       <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">
-                        {isCaja ? "Gasto Operativo / Fondo" : "Utilidad de Socio"}
+                        {theme.label}
                       </p>
                     </div>
                   </div>
@@ -158,15 +246,13 @@ export default function WeeklyReport() {
                       + GANANCIA
                     </div>
                     <p className="text-3xl font-black font-mono text-white leading-none">
-                      ${item.total.toLocaleString()}
+                      {formatMoney(item.total)}
                     </p>
                   </div>
                 </div>
                 
                 {/* Decoración inferior */}
-                <div className={`absolute bottom-0 left-6 right-6 h-0.5 rounded-full transition-all duration-500 ${
-                  isCaja ? "bg-purple-500/0 group-hover:bg-purple-500/50" : "bg-blue-500/0 group-hover:bg-blue-500/50"
-                }`}></div>
+                <div className={`absolute bottom-0 left-6 right-6 h-0.5 rounded-full transition-all duration-500 ${theme.bottomBar}`}></div>
               </div>
             );
           })

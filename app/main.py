@@ -5,7 +5,7 @@ from app.database import engine  # 👈 Importar el motor de base de datos
 from app import models           # 👈 Importar tus modelos
 
 # Importamos todos los módulos donde distribuimos la lógica
-from app.routers import auth, players, sessions, transactions, stats, config
+from app.routers import auth, players, sessions, transactions, stats, config, tournaments, history
 
 app = FastAPI(title="Poker Club SaaS", version="2.0")
 
@@ -46,7 +46,9 @@ app.include_router(players.router)
 app.include_router(sessions.router)      
 app.include_router(transactions.router)  
 app.include_router(stats.router)         
-app.include_router(config.router)        
+app.include_router(config.router)   
+app.include_router(tournaments.router) 
+app.include_router(history.router)    
 
 # ---------------------------------------------------------
 # ENDPOINT DE SALUD

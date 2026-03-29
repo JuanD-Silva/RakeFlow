@@ -96,7 +96,7 @@ async def get_current_session_stats(
         FROM players p
         JOIN transactions t ON p.id = t.player_id
         WHERE t.session_id = :sid
-        GROUP BY p.id, p.name
+        GROUP BY p.id, p.name, p.phone
     """)
     
     result = await db.execute(sql, {"sid": session.id})
