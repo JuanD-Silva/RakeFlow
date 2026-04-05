@@ -119,9 +119,13 @@ async def register_player(
     current_club: models.Club = Depends(get_current_club)
 ):
     # A. Obtener Torneo
-    result = await db.execute(select(models.Tournament).where(models.Tournament.id == tournament_id))
+    result = await db.execute(
+        select(models.Tournament)
+        .where(models.Tournament.id == tournament_id)
+        .where(models.Tournament.club_id == current_club.id)
+    )
     tournament = result.scalars().first()
-    
+
     if not tournament or tournament.status == "FINISHED":
         raise HTTPException(status_code=400, detail="Torneo no válido o finalizado")
 
@@ -198,8 +202,12 @@ async def pay_late_dealer_tip(
     if t_player.is_tip_paid:
         raise HTTPException(status_code=400, detail="Este jugador YA pagó el Dealer Tip")
 
-    # B. Obtener monto del torneo
-    tournament_result = await db.execute(select(models.Tournament).where(models.Tournament.id == tournament_id))
+    # B. Obtener monto del torneo (validando que pertenezca al club)
+    tournament_result = await db.execute(
+        select(models.Tournament)
+        .where(models.Tournament.id == tournament_id)
+        .where(models.Tournament.club_id == current_club.id)
+    )
     tournament = tournament_result.scalars().first()
 
     if tournament.dealer_tip_amount <= 0:
@@ -237,9 +245,13 @@ async def register_rebuy(
     current_club: models.Club = Depends(get_current_club)
 ):
     # 1. Buscar Torneo y Jugador
-    t_result = await db.execute(select(models.Tournament).where(models.Tournament.id == tournament_id))
+    t_result = await db.execute(
+        select(models.Tournament)
+        .where(models.Tournament.id == tournament_id)
+        .where(models.Tournament.club_id == current_club.id)
+    )
     tournament = t_result.scalars().first()
-    
+
     p_result = await db.execute(
         select(models.TournamentPlayer)
         .where(models.TournamentPlayer.tournament_id == tournament_id)
@@ -295,7 +307,11 @@ async def register_addon(
     current_club: models.Club = Depends(get_current_club)
 ):
     # (Lógica casi idéntica a Rebuy, pero con Addon)
-    t_result = await db.execute(select(models.Tournament).where(models.Tournament.id == tournament_id))
+    t_result = await db.execute(
+        select(models.Tournament)
+        .where(models.Tournament.id == tournament_id)
+        .where(models.Tournament.club_id == current_club.id)
+    )
     tournament = t_result.scalars().first()
     
     p_result = await db.execute(
@@ -345,13 +361,15 @@ async def register_addon(
 async def finalize_tournament(
     tournament_id: int,
     data: schemas.TournamentFinalize,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club)
 ):
     # 1. Traer el Torneo y Jugadores
     result = await db.execute(
         select(models.Tournament)
         .options(selectinload(models.Tournament.players))
         .where(models.Tournament.id == tournament_id)
+        .where(models.Tournament.club_id == current_club.id)
     )
     tournament = result.scalars().first()
     if not tournament:
@@ -511,7 +529,7 @@ async def delete_tournament(
         )
 
         # 3. Borrar el Torneo
-        await db.delete(tournament)
+        await db.execute(delete(models.Tournament).where(models.Tournament.id == tournament_id))
         await db.commit()
         
         return None # 204 No Content

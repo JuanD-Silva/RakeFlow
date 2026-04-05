@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import func, case, text, delete
 from typing import List
+from decimal import Decimal
 from datetime import datetime, date
 import traceback
 import logging
@@ -229,27 +230,29 @@ async def close_session(session_id: int, input_data: schemas.SessionCloseRequest
     MODO TOTAL: Suma todo (Físico + Digital) al esperado.
     CORRECCIÓN: Calcula el % efectivo de la utilidad para que no salga 0%.
     """
-    # 1. Validar Sesión
+    # 1. Validar Sesión (con lock para evitar cierre simultáneo)
     result = await db.execute(
-        select(models.Session).where(
+        select(models.Session)
+        .where(
             models.Session.id == session_id,
             models.Session.club_id == current_club.id
         )
+        .with_for_update()
     )
     session = result.scalars().first()
-    
+
     if not session or session.status == models.SessionStatus.CLOSED:
         raise HTTPException(status_code=400, detail="Sesión inválida o cerrada")
 
     # -----------------------------------------------------------------------
-    # 2. CALCULAR AUDITORÍA (TOTAL GLOBAL 🌎)
+    # 2. CALCULAR AUDITORÍA (TOTAL GLOBAL)
     # -----------------------------------------------------------------------
     async def get_global_sum(tx_type_list):
         stmt = select(func.sum(models.Transaction.amount)).where(
             models.Transaction.session_id == session_id,
             models.Transaction.type.in_(tx_type_list)
         )
-        return (await db.execute(stmt)).scalar() or 0.0
+        return Decimal(str((await db.execute(stmt)).scalar() or 0))
 
     total_buyins = await get_global_sum([models.TransactionType.BUYIN, models.TransactionType.REBUY])
     total_cashouts = await get_global_sum([models.TransactionType.CASHOUT])
@@ -261,17 +264,17 @@ async def close_session(session_id: int, input_data: schemas.SessionCloseRequest
     # -----------------------------------------------------------------------
     # 3. VERIFICAR DESCUADRE
     # -----------------------------------------------------------------------
-    declared_rake = float(input_data.declared_rake_cash)
-    declared_jackpot = float(input_data.declared_jackpot_cash)
-    
+    declared_rake = input_data.declared_rake_cash
+    declared_jackpot = input_data.declared_jackpot_cash
+
     total_declared = declared_rake + declared_jackpot
-    
-    difference = total_declared - float(expected_total) 
-    is_valid = abs(difference) <= 2000 
+
+    difference = total_declared - expected_total
+    is_valid = abs(difference) <= 2000
 
     if not is_valid and not input_data.force_close:
         return JSONResponse(
-            status_code=409, 
+            status_code=409,
             content={
                 "detail": "Descuadre detectado",
                 "expected": float(expected_total),
@@ -283,11 +286,11 @@ async def close_session(session_id: int, input_data: schemas.SessionCloseRequest
     # ---------------------------------------------------
     # 4. ALGORITMO DE DISTRIBUCIÓN
     # ---------------------------------------------------
-    final_debt_payment = 0.0
-    final_partner_profit = 0.0
-    
-    cash_remaining = float(declared_rake)
-    calculation_base = float(declared_rake) 
+    final_debt_payment = Decimal(0)
+    final_partner_profit = Decimal(0)
+
+    cash_remaining = declared_rake
+    calculation_base = declared_rake
 
     stmt_rules = (
         select(models.DistributionRule)
@@ -302,37 +305,30 @@ async def close_session(session_id: int, input_data: schemas.SessionCloseRequest
     if rules:
         for rule in rules:
             if cash_remaining <= 0: break
-            
-            amount_to_pay = 0.0
-            
+
+            amount_to_pay = Decimal(0)
+
             # --- LÓGICA DE REGLA FIJA (META/DEUDA) ---
             if rule.rule_type == models.RuleType.FIXED:
-                # 1. Calcular cuánto se ha pagado de ESTA meta en el mes actual
                 start_of_month = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-                
-                # Sumamos todas las distribuciones con el mismo nombre en este club y mes
+
                 paid_stmt = select(func.sum(models.FinancialDistribution.amount)).join(models.Session).where(
                     models.Session.club_id == current_club.id,
                     models.FinancialDistribution.name == rule.name,
                     models.Session.end_time >= start_of_month,
                     models.Session.status == models.SessionStatus.CLOSED
                 )
-                total_paid_already = (await db.execute(paid_stmt)).scalar() or 0.0
-                
-                # 2. Determinar el saldo pendiente de la meta
-                remaining_gap = max(0.0, float(rule.value) - float(total_paid_already))
-                
-                # 3. Solo tomamos lo que falte para completar la meta, sin exceder el rake actual
+                total_paid_already = Decimal(str((await db.execute(paid_stmt)).scalar() or 0))
+
+                remaining_gap = max(Decimal(0), Decimal(str(rule.value)) - total_paid_already)
                 amount_to_pay = min(remaining_gap, cash_remaining)
-                
-                # Restamos de la base para que los socios no cobren sobre la deuda pagada
-                calculation_base -= amount_to_pay 
+
+                calculation_base -= amount_to_pay
                 final_debt_payment += amount_to_pay
 
             # --- LÓGICA DE REGLA PORCENTUAL (SOCIOS) ---
             elif rule.rule_type == models.RuleType.PERCENTAGE:
-                # Ajuste de porcentaje (maneja 45 o 0.45)
-                percentage = rule.value / 100.0 if rule.value > 1 else rule.value
+                percentage = Decimal(str(rule.value)) / Decimal(100) if rule.value > 1 else Decimal(str(rule.value))
                 amount_to_pay = min(calculation_base * percentage, cash_remaining)
                 final_partner_profit += amount_to_pay
 
@@ -341,7 +337,7 @@ async def close_session(session_id: int, input_data: schemas.SessionCloseRequest
                 db.add(models.FinancialDistribution(
                     session_id=session.id,
                     name=rule.name,
-                    amount=amount_to_pay,
+                    amount=float(amount_to_pay),
                     percentage_applied=rule.value if rule.rule_type == models.RuleType.PERCENTAGE else 0.0
                 ))
                 cash_remaining -= amount_to_pay
@@ -352,52 +348,49 @@ async def close_session(session_id: int, input_data: schemas.SessionCloseRequest
             db.add(models.FinancialDistribution(
                 session_id=session.id,
                 name="Utilidad Socios (Sobrante)",
-                amount=cash_remaining,
+                amount=float(cash_remaining),
                 percentage_applied=0.0
             ))
-            final_partner_profit += cash_remaining
 
     else:
         # C. FALLBACK (Sin reglas)
-        MONTHLY_TARGET = 400000.0 
-        
+        MONTHLY_TARGET = Decimal(400000)
+
         current_month = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         stmt_paid = select(func.sum(models.Session.debt_payment)).where(
             models.Session.club_id == current_club.id,
             models.Session.status == models.SessionStatus.CLOSED,
             models.Session.end_time >= current_month
         )
-        paid_so_far = (await db.execute(stmt_paid)).scalar() or 0.0
-        remaining_debt = max(0.0, MONTHLY_TARGET - paid_so_far)
-        
+        paid_so_far = Decimal(str((await db.execute(stmt_paid)).scalar() or 0))
+        remaining_debt = max(Decimal(0), MONTHLY_TARGET - paid_so_far)
+
         if declared_rake >= remaining_debt:
             final_debt_payment = remaining_debt
             final_partner_profit = declared_rake - remaining_debt
         else:
             final_debt_payment = declared_rake
-            final_partner_profit = 0.0
-            
+            final_partner_profit = Decimal(0)
+
         # REGISTROS EXPLÍCITOS CON % CALCULADO
         if final_debt_payment > 0:
-            # Calculamos qué % del rake total se fue a deuda
-            effective_pct_debt = (final_debt_payment / declared_rake) if declared_rake > 0 else 0.0
-            
+            effective_pct_debt = (final_debt_payment / declared_rake) if declared_rake > 0 else Decimal(0)
+
             db.add(models.FinancialDistribution(
                 session_id=session.id,
                 name="Caja (Gastos Fijos)",
-                amount=final_debt_payment,
-                percentage_applied=effective_pct_debt
+                amount=float(final_debt_payment),
+                percentage_applied=float(effective_pct_debt)
             ))
-            
+
         if final_partner_profit > 0:
-            # 👇 CÁLCULO DEL PORCENTAJE REAL
-            effective_pct_profit = (final_partner_profit / declared_rake) if declared_rake > 0 else 0.0
+            effective_pct_profit = (final_partner_profit / declared_rake) if declared_rake > 0 else Decimal(0)
 
             db.add(models.FinancialDistribution(
                 session_id=session.id,
                 name="Utilidad Socios",
-                amount=final_partner_profit,
-                percentage_applied=effective_pct_profit # Guardamos el % calculado
+                amount=float(final_partner_profit),
+                percentage_applied=float(effective_pct_profit)
             ))
 
     # ---------------------------------------------------
@@ -405,11 +398,11 @@ async def close_session(session_id: int, input_data: schemas.SessionCloseRequest
     # ---------------------------------------------------
     session.end_time = datetime.utcnow()
     session.status = models.SessionStatus.CLOSED
-    session.declared_rake_cash = declared_rake
-    session.declared_jackpot_cash = declared_jackpot
-    
-    session.debt_payment = final_debt_payment
-    session.partner_profit = final_partner_profit
+    session.declared_rake_cash = float(declared_rake)
+    session.declared_jackpot_cash = float(declared_jackpot)
+
+    session.debt_payment = float(final_debt_payment)
+    session.partner_profit = float(final_partner_profit)
     
     await db.commit()
 
@@ -421,10 +414,10 @@ async def close_session(session_id: int, input_data: schemas.SessionCloseRequest
 
     return {
         "status": "CLOSED",
-        "declared_rake_cash": declared_rake,
-        "declared_jackpot_cash": declared_jackpot,
-        "debt_payment": final_debt_payment,       
-        "partner_profit": final_partner_profit,
+        "declared_rake_cash": float(declared_rake),
+        "declared_jackpot_cash": float(declared_jackpot),
+        "debt_payment": float(final_debt_payment),
+        "partner_profit": float(final_partner_profit),
         # 2. Enviamos la lista detallada
         "distributions": [
             {
@@ -522,7 +515,7 @@ async def delete_session(
         await db.execute(delete(models.Transaction).where(models.Transaction.session_id == session_id))
 
         # D. Eliminar la sesión
-        await db.delete(session)
+        await db.execute(delete(models.Session).where(models.Session.id == session_id))
         await db.commit()
         
         return {"message": "Sesión eliminada correctamente"}

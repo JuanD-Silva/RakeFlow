@@ -1,10 +1,12 @@
 # app/auth_utils.py
+import os
 from passlib.context import CryptContext
 from datetime import datetime, timedelta
 from jose import jwt
 
-# ⚠️ EN PRODUCCIÓN: Cambia esto por una variable de entorno real
-SECRET_KEY = "POKER_SAAS_SUPER_SECRET_KEY_2024" 
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    raise ValueError("SECRET_KEY no encontrada en variables de entorno.")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 12 # 12 Horas de sesión
 
