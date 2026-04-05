@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import TransactionManager from './TransactionManager';
-// 👇 UNIFICAMOS IMPORTS
-import { sessionService, tournamentService } from '../api/services'; 
+import { sessionService, tournamentService } from '../api/services';
 import CreateTournamentForm from './CreateTournamentForm';
 
 import Modal from './Modal';
@@ -12,16 +11,17 @@ import PlayerTable from './PlayerTable';
 import api from '../api/axios';
 import ConfirmModal from './ConfirmModal';
 import TournamentPlayerTable from './TournamentPlayerTable';
+import { useAuth } from '../context/AuthContext';
 
-import { 
+import {
   PlayIcon,
-  TrashIcon, 
-  BanknotesIcon, 
-  ArrowDownTrayIcon, 
-  SparklesIcon, 
-  BeakerIcon, 
-  HandThumbUpIcon, 
-  LockClosedIcon, 
+  TrashIcon,
+  BanknotesIcon,
+  ArrowDownTrayIcon,
+  SparklesIcon,
+  BeakerIcon,
+  HandThumbUpIcon,
+  LockClosedIcon,
   ClipboardDocumentCheckIcon,
   ClockIcon,
   TableCellsIcon,
@@ -32,7 +32,8 @@ import {
   ArrowRightOnRectangleIcon
 } from '@heroicons/react/24/solid';
 
-export default function GameControl({ onLogout }) {
+export default function GameControl() {
+  const { logout } = useAuth();
   const [activeSession, setActiveSession] = useState(null);
   const [activeTournament, setActiveTournament] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -368,7 +369,7 @@ const handleCreateTournament = async (formData) => {
               </button>
               
               <div className="pt-4 flex justify-center">
-                 <button onClick={onLogout} className="text-gray-600 hover:text-red-400 text-xs font-bold uppercase tracking-widest flex items-center gap-2 transition-colors">
+                 <button onClick={logout} className="text-gray-600 hover:text-red-400 text-xs font-bold uppercase tracking-widest flex items-center gap-2 transition-colors">
                     <ArrowRightOnRectangleIcon className="w-4 h-4" />
                     Salir del Sistema
                  </button>
@@ -426,7 +427,7 @@ const handleCreateTournament = async (formData) => {
 
                <div className="h-px bg-gray-700 w-full my-2"></div>
 
-               <button onClick={onLogout} className="w-full flex items-center justify-center gap-2 text-gray-500 hover:text-red-400 py-2 rounded-xl hover:bg-red-900/10 transition-all text-sm font-bold uppercase tracking-widest">
+               <button onClick={logout} className="w-full flex items-center justify-center gap-2 text-gray-500 hover:text-red-400 py-2 rounded-xl hover:bg-red-900/10 transition-all text-sm font-bold uppercase tracking-widest">
                   <ArrowRightOnRectangleIcon className="w-4 h-4" /> Cerrar Sistema
                </button>
            </div>           

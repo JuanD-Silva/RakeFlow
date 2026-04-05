@@ -2,8 +2,8 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import api from '../api/axios';
-// 👇 1. IMPORTAMOS EL SERVICIO
 import { authService } from '../api/services';
+import { useAuth } from '../context/AuthContext';
 
 export default function Register() {
   const [formData, setFormData] = useState({
@@ -14,6 +14,7 @@ export default function Register() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const { login } = useAuth();
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -25,21 +26,10 @@ export default function Register() {
     setError('');
 
     try {
-      // 1. Registro (Esto suele ser JSON, así que api.post directo está bien)
       await api.post('/auth/register', formData);
-      
-      // 👇 2. AUTO-LOGIN CORREGIDO
-      // En lugar de crear FormData manual (que da error 422),
-      // usamos el servicio que ya sabe cómo hablar con FastAPI.
       const loginResponse = await authService.login(formData.email, formData.password);
-      
-      // 3. Guardar Token y redirigir
-      localStorage.setItem('token', loginResponse.access_token); // Ojo: a veces authService devuelve 'access_token' directo o dentro de data. 
-      // Revisando authService: devuelve response.data. Así que loginResponse ya es el objeto { access_token: "..." }
-
-      navigate('/setup'); // O '/dashboard' si no tienes setup
-      window.location.reload();
-
+      login(loginResponse.access_token);
+      navigate('/setup');
     } catch (err) {
       console.error(err);
       if (err.response && err.response.data && err.response.data.detail) {

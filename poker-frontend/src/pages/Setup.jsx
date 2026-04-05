@@ -68,7 +68,6 @@ export default function Setup() {
       });
 
       navigate('/dashboard');
-      window.location.reload();
       
     } catch (error) {
       console.error(error);

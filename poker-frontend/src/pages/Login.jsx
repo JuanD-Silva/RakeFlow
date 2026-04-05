@@ -1,8 +1,8 @@
 // src/pages/Login.jsx
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-// 👇 1. IMPORTAMOS EL SERVICIO (El que tiene el arreglo del header y URLSearchParams)
-import { authService } from '../api/services'; 
+import { authService } from '../api/services';
+import { useAuth } from '../context/AuthContext';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -10,6 +10,7 @@ export default function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const { login } = useAuth();
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -17,17 +18,9 @@ export default function Login() {
     setError('');
 
     try {
-      // 👇 2. USAMOS LA LÓGICA CENTRALIZADA
-      // authService.login ya se encarga de convertir a URLSearchParams
-      // y poner los headers correctos. ¡No uses new FormData() aquí!
       const data = await authService.login(email, password);
-
-      // 3. Guardamos el token
-      localStorage.setItem('token', data.access_token);
-
+      login(data.access_token);
       navigate('/dashboard');
-      window.location.reload(); 
-
     } catch (err) {
       console.error(err);
       setError('Credenciales inválidas. Verifica tu email y contraseña.');
