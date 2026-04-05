@@ -7,7 +7,9 @@ from pydantic import BaseModel
 from sqlalchemy.orm import selectinload
 from .. import models, schemas
 from datetime import datetime
-# Dependencias SaaS: Traemos el autenticador
+import logging
+
+logger = logging.getLogger(__name__)
 from ..dependencies import get_db, get_current_club
 
 router = APIRouter(
@@ -108,7 +110,7 @@ async def update_transaction(
     db: AsyncSession = Depends(get_db),
     current_club: models.Club = Depends(get_current_club)
 ):
-    print(f"🔍 DEBUG: Buscando transacción ID {transaction_id} para el Club {current_club.id}")
+    logger.debug("Buscando transacción ID %d para club %d", transaction_id, current_club.id)
 
     # 1. Buscamos la transacción SOLO por ID (sin filtrar club todavía)
     #    y cargamos la sesión para verificar después.

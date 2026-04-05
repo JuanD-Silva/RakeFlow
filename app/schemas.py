@@ -1,5 +1,5 @@
 # app/schemas.py
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 from decimal import Decimal
 from typing import Optional, List
 from datetime import datetime
@@ -7,29 +7,34 @@ from .models import TransactionType, SessionStatus
 from enum import Enum
 
 
-# Asegúrate de tener este Enum para validación
 class RuleTypeEnum(str, Enum):
     FIXED = "FIXED"
     MONTHLY_QUOTA = "QUOTA"
     PERCENTAGE = "PERCENTAGE"
 
-# Base Config to handle Decimal serialization nicely
+# Base Config to handle Decimal serialization
 class BaseSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+# --- AUTH ---
 class ClubCreate(BaseModel):
-    name: str
-    email: str
-    password: str
+    name: str = Field(..., min_length=2, max_length=100)
+    email: str = Field(..., min_length=5, max_length=150)
+    password: str = Field(..., min_length=6, max_length=128)
 
 class Token(BaseModel):
     access_token: str
     token_type: str
 
-# --- SCHEMAS DE JUGADORES (NUEVO) ---
+# --- JUGADORES ---
 class PlayerBase(BaseSchema):
-    name: str
-    phone: Optional[str] = None 
+    name: str = Field(..., min_length=1, max_length=100)
+    phone: Optional[str] = Field(None, max_length=20)
+
+    @field_validator('name')
+    @classmethod
+    def strip_name(cls, v):
+        return v.strip()
 
 class PlayerCreate(PlayerBase):
     pass
@@ -44,13 +49,13 @@ class PlayerSessionStats(BaseModel):
     total_buyin: float
     phone: Optional[str] = None
     total_cashout: float
-    total_spend: float  # Bebidas/Comida
+    total_spend: float
     total_jackpot: float = 0.0
     total_bonus: float = 0.0
-    current_balance: float # (Cashout - Buyin - Spend) -> Ganancia o Pérdida neta
+    current_balance: float
     last_method: str = "CASH"
 
-# --- SCHEMAS DE SESIÓN ---
+# --- SESIONES ---
 class SessionCreate(BaseSchema):
     blind_level: str = "500/1000"
     default_rake_per_hour: Decimal = Decimal(0)
@@ -64,20 +69,17 @@ class SessionResponse(BaseSchema):
     id: int
     status: SessionStatus
     start_time: datetime
-    end_time: Optional[datetime]
-    rake_per_hour: Optional[Decimal]
+    end_time: Optional[datetime] = None
     declared_rake_cash: Optional[Decimal] = Decimal(0)
     declared_jackpot_cash: Optional[Decimal] = Decimal(0)
     rake_per_hour: float = 0.0
-    audited_with_error: bool = False
-    debt_payment: float
+    debt_payment: float = 0.0
 
-# --- SCHEMAS DE TRANSACCIONES ---
+# --- TRANSACCIONES ---
 class TransactionCreate(BaseSchema):
     player_id: Optional[int] = None
     session_id: int
-    amount: Decimal = Field(..., gt=0, decimal_places=2) 
-    # Validamos que sea positivo y tenga max 2 decimales
+    amount: Decimal = Field(..., gt=0, decimal_places=2)
     method: str = "CASH"
 
 class TransactionResponse(BaseSchema):
@@ -88,36 +90,22 @@ class TransactionResponse(BaseSchema):
     timestamp: datetime
     player_id: Optional[int] = None
 
-
 class AuditResponse(BaseModel):
     total_buyins: float
     total_cashouts: float
     total_expenses: float
     total_tips: float
     total_jackpot_payouts: float
-    expected_cash_in_box: float 
+    expected_cash_in_box: float
     total_bonuses: float = 0.0
     transactions_count: int
 
-# Esquema para crear/editar una regla
-class DistributionRuleCreate(BaseModel):
-    name: str
-    percent: float = Field(..., gt=0, le=1.0, description="Debe ser entre 0 y 1")
-
-class DistributionRuleResponse(DistributionRuleCreate):
-    id: int
-    active: bool
-
-    class Config:
-        from_attributes = True
-
 # --- DISTRIBUTION RULES ---
-
 class DistributionRuleBase(BaseModel):
-    name: str
-    rule_type: RuleTypeEnum # Nuevo: FIXED, QUOTA, PERCENTAGE
-    value: float            # Nuevo: Puede ser dinero (400000) o decimal (0.25)
-    priority: int = 10      # Nuevo: Orden de cobro
+    name: str = Field(..., min_length=1, max_length=100)
+    rule_type: RuleTypeEnum
+    value: float = Field(..., ge=0, le=100000000)
+    priority: int = Field(default=10, ge=1, le=100)
 
 class DistributionRuleCreate(DistributionRuleBase):
     pass
@@ -130,27 +118,20 @@ class DistributionRuleResponse(DistributionRuleBase):
     class Config:
         from_attributes = True
 
+# --- SETUP ---
 class PartnerSetup(BaseModel):
-    name: str
-    percentage: float # Ej: 45.0
+    name: str = Field(..., min_length=1, max_length=100)
+    percentage: float = Field(..., ge=0, le=100)
 
 class InitialSetupRequest(BaseModel):
-    monthly_goal: float = 0
+    monthly_goal: float = Field(default=0, ge=0)
+    partners: List[PartnerSetup] = []
 
-class InitialSetupRequest(BaseModel):
-    monthly_goal: float = 0
-    partners: List[PartnerSetup] # Lista de socios
-
-class TournamentBase(BaseModel):
-    name: str
-    buyin_amount: int
-    start_time: Optional[datetime] = None
-
-# 2. Creación con los campos nuevos
+# --- TORNEOS ---
 class TournamentCreate(BaseModel):
-    name: str
-    buyin_amount: int        
-    rake_percentage: int     
+    name: str = Field(..., min_length=1, max_length=100)
+    buyin_amount: int = Field(..., ge=0)
+    rake_percentage: int = Field(..., ge=0, le=100)
     dealer_tip_amount: Optional[int] = 0
     bounty_amount: Optional[int] = 0
     addon_price: Optional[int] = 0
@@ -159,61 +140,46 @@ class TournamentCreate(BaseModel):
     double_addon_price: int = 0
     payout_structure: List[int] = []
 
-# 3. Esquema de Jugador (Actualizado a from_attributes)
 class TournamentPlayerSchema(BaseModel):
     id: int
     player_id: int
     status: str
     is_tip_paid: bool
-    
-    # Contadores Generales
     rebuys_count: int
     addons_count: int
-    
-    # 👇 ESTO ES LO QUE TE FALTA (IMPORTANTE)
     double_rebuys_count: int = 0
     double_addons_count: int = 0
-    
     rank: Optional[int] = None
     prize_collected: int
-    
+
     class Config:
         from_attributes = True
-# 4. Respuesta completa para el Dashboard
+
 class TournamentResponse(BaseModel):
     id: int
     name: str
     status: str
-    
-    # Costos
     buyin_amount: int
-    rake_percentage: int      
-    dealer_tip_amount: int    
-    bounty_amount: int = 0      # Agregado por seguridad
+    rake_percentage: int
+    dealer_tip_amount: int
+    bounty_amount: int = 0
     rebuy_price: int
     double_rebuy_price: int
     addon_price: int
-    double_addon_price: int      # Agregado por seguridad
-    
+    double_addon_price: int
     start_time: datetime
     end_time: Optional[datetime] = None
-    
-    # Metadatos calculados (con valores por defecto 0)
     total_players: int = 0
     total_prize_pool: int = 0
-    
-    # Lista de jugadores
     players: List[TournamentPlayerSchema] = []
-
     payout_structure: List[int] = []
 
     class Config:
         from_attributes = True
 
-
 class WinnerAssignment(BaseModel):
-    rank: int       # 1, 2, 3...
-    player_id: int  # ID del jugador
+    rank: int = Field(..., ge=1)
+    player_id: int
 
 class TournamentFinalize(BaseModel):
     winners: List[WinnerAssignment]

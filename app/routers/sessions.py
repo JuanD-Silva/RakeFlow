@@ -9,7 +9,8 @@ from decimal import Decimal
 from datetime import datetime, date
 import traceback
 import logging
-import sys
+
+logger = logging.getLogger(__name__)
 
 # Importamos modelos y esquemas
 from .. import models, schemas
@@ -159,7 +160,7 @@ async def get_current_session_stats(
                     "method": tx.method_str or "CASH"
                 })
         except Exception as e:
-            print(f"⚠️ Error saltado en transacción: {e}")
+            logger.warning("Error procesando transacción: %s", e)
             continue
 
     # 6. Retornar lista
@@ -202,11 +203,7 @@ async def audit_current_session(
     data = result.fetchone()
 
     # 3. 🕵️‍♂️ DEBUG EN TERMINAL (Ahora sí lo verás)
-    print("\n" + "="*40, flush=True)
-    print(f"⚡ AUDITORÍA: ID Sesión {session.id}", flush=True)
-    print(f"💰 Buy-ins: ${data.total_buyins:,.0f}", flush=True)
-    print(f"🎁 Bonos (SQL): ${data.total_bonuses:,.0f}", flush=True)
-    print("="*40 + "\n", flush=True)
+    logger.info("Auditoría sesión %d: buyins=%.0f, bonos=%.0f", session.id, data.total_buyins, data.total_bonuses)
 
     # 4. CÁLCULO DE CAJA
     expected_cash = (data.total_buyins) - data.total_cashouts - data.total_expenses - data.total_jackpot_payouts - data.total_tips
@@ -522,6 +519,6 @@ async def delete_session(
 
     except Exception as e:
         await db.rollback()
-        print(f"Error borrando sesión: {e}")
+        logger.error("Error borrando sesión %d: %s", session_id, e)
         raise HTTPException(status_code=500, detail="Error interno al eliminar la sesión")
 

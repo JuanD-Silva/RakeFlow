@@ -5,8 +5,11 @@ from sqlalchemy import select, desc, delete
 from sqlalchemy.orm import selectinload
 from app import models, schemas
 from datetime import datetime
-from pydantic import BaseModel 
+from pydantic import BaseModel
+import logging
 from ..dependencies import get_db, get_current_club
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/tournaments",
@@ -536,5 +539,5 @@ async def delete_tournament(
 
     except Exception as e:
         await db.rollback()
-        print(f"❌ Error crítico borrando torneo: {e}")
+        logger.error("Error borrando torneo %d: %s", tournament_id, e)
         raise HTTPException(status_code=500, detail=f"Error interno BD: {str(e)}")

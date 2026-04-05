@@ -14,11 +14,8 @@ app = FastAPI(title="Poker Club SaaS", version="2.0")
 # ---------------------------------------------------------
 @app.on_event("startup")
 async def startup_event():
-    print("🔄 Verificando tablas en la base de datos...")
     async with engine.begin() as conn:
-        # Esto crea las tablas sessions, players, clubs, etc.
         await conn.run_sync(models.Base.metadata.create_all)
-    print("✅ Tablas listas.")
 
 origins = [
     "http://localhost:5173",      # Tu Frontend (Vite)

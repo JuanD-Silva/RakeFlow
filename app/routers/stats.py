@@ -5,11 +5,12 @@ from sqlalchemy import func, text, desc, or_
 from sqlalchemy.orm import selectinload
 from typing import List
 from datetime import datetime, timedelta, time
+import logging
 
-# Importamos modelos y esquemas
 from .. import models, schemas
-# Dependencias SaaS
 from ..dependencies import get_db, get_current_club
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/stats",
@@ -111,7 +112,7 @@ async def get_dashboard_stats(
         }
 
     except Exception as e:
-        print(f"❌ ERROR DASHBOARD: {e}")
+        logger.error("Error dashboard: %s", e)
         return {}
 
 # ---------------------------------------------------------
@@ -210,7 +211,7 @@ async def get_weekly_distribution(
         }
 
     except Exception as e:
-        print(f"❌ Error Weekly: {e}")
+        logger.error("Error weekly distribution: %s", e)
         return {"error": str(e)}
 
 # ---------------------------------------------------------
@@ -323,20 +324,22 @@ async def get_rankings(
         )
         tournaments = q_tourneys.scalars().all()
 
+        # Precargar nombres de jugadores que solo juegan torneos (evita N+1 queries)
+        tourney_player_ids = {p.player_id for t in tournaments for p in t.players if p.player_id not in names_map}
+        if tourney_player_ids:
+            names_result = await db.execute(
+                select(models.Player.id, models.Player.name).where(models.Player.id.in_(tourney_player_ids))
+            )
+            for row in names_result.all():
+                names_map[row.id] = row.name
+
         for t in tournaments:
-            # Calcular duración del torneo en horas
             tourney_duration = 0.0
             if t.start_time and t.end_time:
                 tourney_duration = (t.end_time - t.start_time).total_seconds() / 3600
 
             for p in t.players:
                 pid = p.player_id
-                
-                # Asegurar nombre
-                if pid not in names_map:
-                    # Si el jugador solo juega torneos y no cash, buscamos su nombre
-                    n = await db.execute(select(models.Player.name).where(models.Player.id == pid))
-                    names_map[pid] = n.scalar() or "Desconocido"
 
                 # 1. Calcular Profit (Premio - Inversión)
                 inv = t.buyin_amount + \
@@ -371,7 +374,7 @@ async def get_rankings(
         }
 
     except Exception as e:
-        print(f"❌ Error Rankings: {e}")
+        logger.error("Error rankings: %s", e)
         # En caso de error devolvemos listas vacías para que el front no explote
         return {"winners": [], "spenders": [], "active": []}
 
