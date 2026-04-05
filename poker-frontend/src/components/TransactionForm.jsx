@@ -184,8 +184,6 @@ export default function TransactionForm({ type, onSuccess, sessionId }) {
     ? [2000, 5000, 10000, 20000] 
     : [50000, 100000, 200000, 500000];
 
-    console.log("Jugadores cargados:", filteredPlayers);
-
   return (
     <form onSubmit={handleSubmit} className="space-y-6 animate-fade-in relative">
       

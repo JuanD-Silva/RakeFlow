@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import api from '../api/axios';
 import { historyService, tournamentService } from '../api/services';
+import { formatMoney } from '../utils/formatters';
 import ConfirmModal from './ConfirmModal';
 import { 
   CalendarIcon, ClockIcon, CurrencyDollarIcon, UserGroupIcon, 
@@ -76,7 +77,6 @@ export default function SessionHistory() {
   };
 
   // --- FORMATTERS ---
-  const formatMoney = (amount) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(amount || 0);
   
   const formatDate = (dateString) => {
     if (!dateString) return "---";

@@ -5,6 +5,7 @@ import api from '../api/axios';
 
 export default function KPIDashboard() {
   const [stats, setStats] = useState(null);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     async function fetchStats() {
@@ -13,12 +14,13 @@ export default function KPIDashboard() {
         setStats(res.data);
       } catch (e) {
         console.error("Error KPIs", e);
+        setError("Error al cargar indicadores");
       }
     }
     fetchStats();
   }, []);
 
-  // Mientras carga o si hay error, no mostramos nada (o podrías poner un spinner)
+  if (error) return <div className="text-red-400 text-center py-6 bg-red-900/10 rounded-xl border border-red-500/20 mb-8">{error}</div>;
   if (!stats) {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { sessionService } from '../api/services';
+import { formatMoney } from '../utils/formatters';
 
 export default function CloseSessionForm({ sessionId, onSuccess }) {
   // Estados del formulario
@@ -13,15 +14,7 @@ export default function CloseSessionForm({ sessionId, onSuccess }) {
   const [isSuccess, setIsSuccess] = useState(false);        // Factura Verde
   const [closureReport, setClosureReport] = useState(null); // Datos finales
 
-  // Helper para formato de moneda colombiana
-  const formatMoney = (amount) => {
-    return new Intl.NumberFormat('es-CO', {
-      style: 'currency',
-      currency: 'COP',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(amount || 0);
-  };
+
 
   const handleSubmit = async (e, force = false) => {
     e.preventDefault();

@@ -8,6 +8,7 @@ export default function StatsPanel({ refreshTrigger }) {
   const [jackpot, setJackpot] = useState(0);
   const [quota, setQuota] = useState({ target: 0, paid: 0, remaining: 0 });
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     const loadStats = async () => {
@@ -24,8 +25,9 @@ export default function StatsPanel({ refreshTrigger }) {
           remaining: quotaData.remaining
         });
 
-      } catch (error) {
-        console.error("Error cargando estadísticas:", error);
+      } catch (err) {
+        console.error("Error cargando estadísticas:", err);
+        setError("Error al cargar estadísticas");
       } finally {
         setLoading(false);
       }
@@ -45,6 +47,7 @@ export default function StatsPanel({ refreshTrigger }) {
     : 0;
 
   if (loading) return <div className="h-24 bg-gray-800 animate-pulse rounded-2xl mb-6 border border-gray-700"></div>;
+  if (error) return <div className="text-red-400 text-center py-6 bg-red-900/10 rounded-xl border border-red-500/20 mb-6">{error}</div>;
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6 animate-fade-in mb-8">

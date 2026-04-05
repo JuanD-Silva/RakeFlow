@@ -5,16 +5,19 @@ import { TrophyIcon, StarIcon, FireIcon, ArrowPathIcon } from '@heroicons/react/
 export default function PlayerLeaderboard() {
   const [rankings, setRankings] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => { fetchRankings(); }, []);
 
   const fetchRankings = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await api.get('/stats/rankings');
       setRankings(res.data);
-    } catch (error) {
-      console.error("Error cargando rankings", error);
+    } catch (err) {
+      console.error("Error cargando rankings", err);
+      setError("Error al cargar los rankings");
     } finally {
       setLoading(false);
     }
@@ -28,6 +31,7 @@ export default function PlayerLeaderboard() {
   );
   const currentMonthName = new Date().toLocaleString('es-ES', { month: 'long' });
 
+  if (error) return <div className="text-red-400 text-center py-10 bg-red-900/10 rounded-xl border border-red-500/20">{error}</div>;
   if (!rankings) return null;
 
   const RankingCard = ({ title, icon, data, accentColor, valueLabel, formatValue }) => {

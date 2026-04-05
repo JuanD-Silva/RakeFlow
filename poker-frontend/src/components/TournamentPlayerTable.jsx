@@ -6,6 +6,7 @@ import {
     GiftIcon
 } from '@heroicons/react/24/solid';
 import { tournamentService, playerService } from '../api/services';
+import { formatMoney } from '../utils/formatters';
 
 export default function TournamentPlayerTable({ tournament, onUpdate }) {
     const [allPlayers, setAllPlayers] = useState([]);
@@ -34,10 +35,7 @@ export default function TournamentPlayerTable({ tournament, onUpdate }) {
     }, [isRegisterOpen, isPayoutOpen]); 
 
     // --- UTILIDADES ---
-    const formatCurrency = (amount) => {
-        if (isNaN(amount) || amount === null) return "$ 0";
-        return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(amount);
-    };
+    const formatCurrency = formatMoney;
 
     const getPlayerName = (id) => allPlayers.find(p => p.id === id)?.name || `Jugador #${id}`;
     
@@ -417,7 +415,7 @@ function RegisterModal({ onClose, onConfirm, activeTab, setActiveTab, availableP
 }
 
 function ActionModal({ player, playerName, onClose, onRebuy, onAddon, prices, loading }) {
-    const format = (n) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits:0 }).format(n);
+    const format = formatMoney;
     return (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 backdrop-blur-sm p-4">
             <div className="bg-gray-800 rounded-xl border border-gray-600 shadow-2xl w-full max-w-sm animate-fade-in-up overflow-hidden">

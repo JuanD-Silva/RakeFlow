@@ -1,22 +1,21 @@
-import { useState, useEffect, Fragment } from 'react'; // 👈 Agregamos Fragment
+import { useState, useEffect, Fragment } from 'react';
 import { ChevronDownIcon, ChevronUpIcon, ClockIcon } from '@heroicons/react/24/solid';
-import api from '../api/axios'; 
+import api from '../api/axios';
+import { formatMoney } from '../utils/formatters';
 
 export default function PlayerTable({ refreshTrigger, onPlayerSelect }) {
   const [players, setPlayers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [totals, setTotals] = useState({ buyin: 0, cashout: 0, balance: 0 });
   const [expandedPlayerId, setExpandedPlayerId] = useState(null);
 
   useEffect(() => {
     const fetchStats = async () => {
       try {
+        setError(null);
         const response = await api.get('/sessions/current/players-stats');
         const data = response.data;
-        
-        // 👇 CHIVATO: Esto imprimirá los datos crudos en tu consola (F12)
-        console.log("📊 DATOS RECIBIDOS DEL BACKEND:", data);
-        
         setPlayers(data);
 
         const newTotals = data.reduce((acc, p) => ({
@@ -24,10 +23,11 @@ export default function PlayerTable({ refreshTrigger, onPlayerSelect }) {
           cashout: acc.cashout + p.total_cashout,
           balance: acc.balance + p.current_balance
         }), { buyin: 0, cashout: 0, balance: 0 });
-        
+
         setTotals(newTotals);
-      } catch (error) {
-        console.error("Error cargando tabla:", error);
+      } catch (err) {
+        console.error("Error cargando tabla:", err);
+        setError("Error al cargar los jugadores");
       } finally {
         setLoading(false);
       }
@@ -36,11 +36,6 @@ export default function PlayerTable({ refreshTrigger, onPlayerSelect }) {
     fetchStats();
   }, [refreshTrigger]); 
 
-  const formatMoney = (amount) => {
-    return new Intl.NumberFormat('es-CO', {
-      style: 'currency', currency: 'COP', minimumFractionDigits: 0
-    }).format(amount);
-  };
 
   const formatTime = (dateString) => {
     if (!dateString) return '--:--';
@@ -52,6 +47,7 @@ export default function PlayerTable({ refreshTrigger, onPlayerSelect }) {
   };
 
   if (loading) return <div className="text-gray-500 text-center py-10 animate-pulse">Cargando mesa...</div>;
+  if (error) return <div className="text-red-400 text-center py-10 bg-red-900/10 rounded-xl border border-red-500/20">{error}</div>;
   if (players.length === 0) return <div className="text-gray-500 text-center py-10 italic bg-gray-800 rounded-xl border border-gray-700">Mesa vacía. Esperando jugadores...</div>;
 
   return (

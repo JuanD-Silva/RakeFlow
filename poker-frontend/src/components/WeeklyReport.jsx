@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import api from '../api/axios';
 import KPIDashboard from '../components/KPIDashboard';
+import { formatMoney } from '../utils/formatters';
 import { 
   ArrowLeftIcon, 
   ArrowRightIcon, 
@@ -63,9 +64,6 @@ export default function WeeklyReport() {
     setReferenceDate(newDate);
   };
 
-  const formatMoney = (amount) => {
-    return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(amount || 0);
-  };
 
   if (loading) return (
     <div className="flex flex-col items-center justify-center h-64 space-y-4">
