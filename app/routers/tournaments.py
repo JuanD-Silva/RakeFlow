@@ -44,7 +44,7 @@ async def create_tournament(
     active_tournament = result.scalars().first()
     
     if active_tournament:
-        raise HTTPException(status_code=400, detail="Ya existe un torneo activo.")
+        raise HTTPException(status_code=409, detail="Ya existe un torneo activo. Only one active tournament allowed.")
 
     # Crear el Torneo
     new_tournament = models.Tournament(

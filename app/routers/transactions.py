@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import func
+from sqlalchemy import func, delete
 from pydantic import BaseModel
 from sqlalchemy.orm import selectinload
 from .. import models, schemas
@@ -178,9 +178,9 @@ async def delete_transaction(
     if tx.session.status == models.SessionStatus.CLOSED:
         raise HTTPException(status_code=400, detail="No se pueden borrar transacciones de sesiones cerradas")
 
-    await db.delete(tx)
+    await db.execute(delete(models.Transaction).where(models.Transaction.id == tx.id))
     await db.commit()
-    
+
     return {"message": "Transacción eliminada con éxito"}
 # ---------------------------------------------------------
 # 2. SPEND (Gastos / Bebidas)

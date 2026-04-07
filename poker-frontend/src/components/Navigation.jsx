@@ -1,8 +1,9 @@
-import { 
-  PlayCircleIcon, 
-  ClockIcon, 
-  TrophyIcon, 
-  ChartBarIcon
+import {
+  PlayCircleIcon,
+  ClockIcon,
+  TrophyIcon,
+  ChartBarIcon,
+  Cog6ToothIcon
 } from '@heroicons/react/24/solid';
 
 export default function Navigation({ currentView, setView }) { // 👈 Ya no necesitamos onLogout aquí
@@ -12,6 +13,7 @@ export default function Navigation({ currentView, setView }) { // 👈 Ya no nec
     { id: 'history', label: 'Historial', icon: <ClockIcon className="w-5 h-5" /> },
     { id: 'finance', label: 'Caja Semanal', icon: <ChartBarIcon className="w-5 h-5" /> }, 
     { id: 'ranking', label: 'Ranking', icon: <TrophyIcon className="w-5 h-5" /> },
+    { id: 'config', label: 'Reglas', icon: <Cog6ToothIcon className="w-5 h-5" /> },
   ];
 
   return (

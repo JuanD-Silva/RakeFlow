@@ -13,7 +13,7 @@ import {
   CheckBadgeIcon
 } from '@heroicons/react/24/outline';
 
-export default function TransactionForm({ type, onSuccess, sessionId }) {
+export default function TransactionForm({ type, onSuccess, sessionId, createSessionFirst = false }) {
   // --- ESTADOS DE DATOS ---
   const [players, setPlayers] = useState([]);
   const [playerId, setPlayerId] = useState("");
@@ -135,6 +135,13 @@ export default function TransactionForm({ type, onSuccess, sessionId }) {
     try {
       let finalPlayerId = playerId;
       const amt = parseFloat(amount);
+      let activeSessionId = sessionId;
+
+      // Si es apertura de mesa, crear la sesión primero
+      if (createSessionFirst && !sessionId) {
+        const newSession = await sessionService.createSession();
+        activeSessionId = newSession.id;
+      }
 
       if (isCreatingNew && type === 'buyin') {
         const phoneToSend = newPlayerPhone.trim() === "" ? null : newPlayerPhone;
@@ -144,28 +151,27 @@ export default function TransactionForm({ type, onSuccess, sessionId }) {
 
       const pId = type === 'tip' ? null : parseInt(finalPlayerId);
 
-      // 👇 TU LÓGICA DE SWITCH ORIGINAL
       switch (type) {
-        case 'buyin': 
-            await transactionService.buyin(pId, amt, paymentMethod, sessionId); 
+        case 'buyin':
+            await transactionService.buyin(pId, amt, paymentMethod, activeSessionId);
             break;
-        case 'cashout': 
-            await transactionService.cashout(pId, amt, sessionId); 
+        case 'cashout':
+            await transactionService.cashout(pId, amt, activeSessionId);
             break;
-        case 'spend': 
-            await transactionService.spend(pId, amt, sessionId); 
+        case 'spend':
+            await transactionService.spend(pId, amt, activeSessionId);
             break;
-        case 'bonus': 
-            await transactionService.bonus(pId, amt, sessionId); 
+        case 'bonus':
+            await transactionService.bonus(pId, amt, activeSessionId);
             break;
-        case 'jackpot-payout': 
-            await transactionService.jackpotPayout(pId, amt, sessionId); 
+        case 'jackpot-payout':
+            await transactionService.jackpotPayout(pId, amt, activeSessionId);
             break;
         case 'tip':
             if (transactionService.tip) {
-                await transactionService.tip(pId, amt, sessionId);
+                await transactionService.tip(pId, amt, activeSessionId);
             } else {
-                await transactionService.spend(pId, amt, sessionId); 
+                await transactionService.spend(pId, amt, activeSessionId);
             }
             break;
         default: throw new Error("Tipo desconocido");

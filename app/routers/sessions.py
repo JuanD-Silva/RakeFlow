@@ -168,6 +168,49 @@ async def get_current_session_stats(
 # ---------------------------------------------------------
 # 4. AUDITORÍA FINANCIERA (Para el botón de auditar)
 # ---------------------------------------------------------
+@router.get("/{session_id}/audit")
+async def audit_session_by_id(
+    session_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club)
+):
+    """Auditoría de una sesión específica por ID."""
+    stmt = select(models.Session).where(
+        models.Session.id == session_id,
+        models.Session.club_id == current_club.id
+    )
+    session = (await db.execute(stmt)).scalars().first()
+
+    if not session:
+        raise HTTPException(status_code=404, detail="Sesión no encontrada")
+
+    sql = text("""
+        SELECT
+            COALESCE(SUM(CASE WHEN CAST(type AS TEXT) IN ('BUYIN', 'REBUY') THEN amount ELSE 0 END), 0) as total_buyins,
+            COALESCE(SUM(CASE WHEN CAST(type AS TEXT) = 'CASHOUT' THEN amount ELSE 0 END), 0) as total_cashouts,
+            COALESCE(SUM(CASE WHEN CAST(type AS TEXT) = 'SPEND' THEN amount ELSE 0 END), 0) as total_expenses,
+            COALESCE(SUM(CASE WHEN CAST(type AS TEXT) = 'JACKPOT_PAYOUT' THEN amount ELSE 0 END), 0) as total_jackpot_payouts,
+            COALESCE(SUM(CASE WHEN CAST(type AS TEXT) = 'TIP' THEN amount ELSE 0 END), 0) as total_tips,
+            COALESCE(SUM(CASE WHEN CAST(type AS TEXT) LIKE '%BONUS%' THEN amount ELSE 0 END), 0) as total_bonuses
+        FROM transactions
+        WHERE session_id = :sid
+    """)
+
+    result = await db.execute(sql, {"sid": session.id})
+    data = result.fetchone()
+    expected_cash = data.total_buyins - data.total_cashouts - data.total_expenses - data.total_jackpot_payouts - data.total_tips
+
+    return {
+        "total_buyins": data.total_buyins,
+        "total_cashouts": data.total_cashouts,
+        "total_expenses": data.total_expenses,
+        "total_jackpot_payouts": data.total_jackpot_payouts,
+        "total_tips": data.total_tips,
+        "total_bonuses": data.total_bonuses,
+        "expected_cash_in_box": expected_cash,
+        "transactions_count": 0
+    }
+
 @router.get("/audit/current-session")
 async def audit_current_session(
     db: AsyncSession = Depends(get_db), 

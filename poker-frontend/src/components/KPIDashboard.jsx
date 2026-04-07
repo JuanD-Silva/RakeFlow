@@ -1,17 +1,22 @@
 // src/components/KPIDashboard.jsx
 import { useEffect, useState } from 'react';
-// 👇 CORRECCIÓN IMPORTANTE: Apuntamos al archivo axios.js que creamos
-import api from '../api/axios'; 
+import api from '../api/axios';
+import { formatMoney } from '../utils/formatters';
 
 export default function KPIDashboard() {
   const [stats, setStats] = useState(null);
+  const [quota, setQuota] = useState(null);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     async function fetchStats() {
       try {
-        const res = await api.get('/stats/dashboard');
-        setStats(res.data);
+        const [dashRes, quotaRes] = await Promise.all([
+          api.get('/stats/dashboard'),
+          api.get('/stats/monthly-debt-quota')
+        ]);
+        setStats(dashRes.data);
+        setQuota(quotaRes.data);
       } catch (e) {
         console.error("Error KPIs", e);
         setError("Error al cargar indicadores");
@@ -77,13 +82,40 @@ export default function KPIDashboard() {
       />
 
       {/* KPI 4: Control de Caja */}
-      <Card 
-        title="Descuadre Neto" 
-        value={`$${stats.efficiency?.toLocaleString() ?? 0}`} 
-        sub={stats.efficiency >= 0 ? "✅ A favor (Sobra)" : "⚠️ En contra (Falta)"}
+      <Card
+        title="Descuadre Neto"
+        value={`$${stats.efficiency?.toLocaleString() ?? 0}`}
+        sub={stats.efficiency >= 0 ? "A favor (Sobra)" : "En contra (Falta)"}
         icon="⚖️"
         color={stats.efficiency >= 0 ? "border-green-500" : "border-red-500"}
       />
+
+      {/* META MENSUAL (ocupa todo el ancho) */}
+      {quota && (
+        <div className="sm:col-span-2 lg:col-span-4 bg-gray-800/80 border border-gray-700 rounded-xl p-4 shadow-lg">
+          <div className="flex justify-between items-center mb-2">
+            <p className="text-blue-400 text-xs font-bold uppercase tracking-wider">Meta Mensual</p>
+            <div className="flex items-center gap-3">
+              <span className="text-gray-500 text-xs font-mono">
+                {formatMoney(quota.paid_so_far)} / {formatMoney(quota.target)}
+              </span>
+              <span className={`text-sm font-black font-mono ${quota.remaining <= 0 ? 'text-green-400' : 'text-white'}`}>
+                {quota.target > 0 ? Math.min(100, (quota.paid_so_far / quota.target) * 100).toFixed(0) : 0}%
+              </span>
+            </div>
+          </div>
+          <div className="w-full bg-gray-700/50 rounded-full h-3 overflow-hidden border border-gray-700">
+            <div
+              className={`h-full rounded-full transition-all duration-1000 ease-out ${
+                quota.remaining <= 0
+                  ? 'bg-gradient-to-r from-green-500 to-emerald-400'
+                  : 'bg-gradient-to-r from-blue-600 to-cyan-500'
+              }`}
+              style={{ width: `${quota.target > 0 ? Math.min(100, (quota.paid_so_far / quota.target) * 100) : 0}%` }}
+            ></div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

@@ -67,8 +67,11 @@ async def initial_setup(
         ))
 
     db.add_all(rules_to_create)
+
+    # Marcar setup como completado
+    current_club.setup_completed = True
     await db.commit()
-    
+
     return {"message": "Configuración de socios guardada exitosamente"}
 @router.get("/distribution", response_model=List[schemas.DistributionRuleResponse])
 async def get_distribution_rules(

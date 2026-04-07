@@ -1,12 +1,10 @@
 # app/routers/players.py
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from typing import List
 
-# Importamos modelos y esquemas
 from .. import models, schemas
-# Importamos las dependencias (Base de datos y ID del Club fijo)
 from ..dependencies import get_db, get_current_club
 
 router = APIRouter(
@@ -19,8 +17,11 @@ async def create_player(player: schemas.PlayerCreate, db: AsyncSession = Depends
     """
     Registra un nuevo jugador en la base de datos (Asignado al Club Actual).
     """
+    # 0. Validar nombre no vacío
+    if not player.name or not player.name.strip():
+        raise HTTPException(status_code=400, detail="Player name cannot be empty")
+
     # 1. Validación SaaS: Verificar si ya existe en ESTE club para no duplicar
-    # (Esto mejora tu código original evitando errores 500 si intentan crear el mismo nombre)
     result = await db.execute(
         select(models.Player).where(
             models.Player.name == player.name, 

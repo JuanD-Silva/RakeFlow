@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import func, text, desc, or_
@@ -378,13 +378,25 @@ async def get_rankings(
         # En caso de error devolvemos listas vacías para que el front no explote
         return {"winners": [], "spenders": [], "active": []}
 
-@router.get("/jackpot-global") 
+@router.get("/jackpot-global")
 async def get_global_jackpot(db: AsyncSession = Depends(get_db), current_club: models.Club = Depends(get_current_club)):
     stmt_income = select(func.sum(models.Session.declared_jackpot_cash)).where(models.Session.status == "CLOSED", models.Session.club_id == current_club.id)
     total_income = (await db.execute(stmt_income)).scalar() or 0.0
     stmt_payouts = select(func.sum(models.Transaction.amount)).join(models.Session).where(models.Transaction.type == models.TransactionType.JACKPOT_PAYOUT, models.Session.club_id == current_club.id)
     total_payouts = (await db.execute(stmt_payouts)).scalar() or 0.0
-    return {"total_jackpot": total_income - total_payouts}
+    adjustment = current_club.jackpot_adjustment or 0.0
+    return {"total_jackpot": total_income - total_payouts + adjustment}
+
+@router.post("/jackpot-adjust")
+async def adjust_jackpot(data: dict, db: AsyncSession = Depends(get_db), current_club: models.Club = Depends(get_current_club)):
+    """Ajusta el jackpot manualmente (positivo = agrega, negativo = retira)."""
+    amount = data.get("amount", 0)
+    reason = data.get("reason", "")
+    if amount == 0:
+        raise HTTPException(status_code=400, detail="El monto no puede ser 0")
+    current_club.jackpot_adjustment = (current_club.jackpot_adjustment or 0.0) + float(amount)
+    await db.commit()
+    return {"message": "Jackpot ajustado", "adjustment_applied": amount, "reason": reason}
 
 
 @router.get("/history-mixed")

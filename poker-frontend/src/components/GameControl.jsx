@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import TransactionManager from './TransactionManager';
 import { sessionService, tournamentService } from '../api/services';
 import CreateTournamentForm from './CreateTournamentForm';
@@ -39,7 +39,8 @@ export default function GameControl() {
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0); 
   const [selectedPlayerForHistory, setSelectedPlayerForHistory] = useState(null);
-  const [viewMode, setViewMode] = useState("cash"); // "cash" o "tournament"
+  const [viewMode, setViewMode] = useState("menu"); // "menu", "cash" o "tournament"
+  const isFirstLoad = useRef(true);
   const [newTournamentName, setNewTournamentName] = useState("");
   const [tournamentCost, setTournamentCost] = useState({ 
       buyin: 0, 
@@ -79,16 +80,18 @@ useEffect(() => {
         setActiveSession(session);
         setActiveTournament(tournament);
 
-        // 👇 LÓGICA CORREGIDA DE REDIRECCIÓN 👇
-        if (tournament) {
-            // Si hay torneo, vamos directo al torneo (prioridad)
-            setViewMode("tournament");
-        } else if (session) {
-            // Si no hay torneo pero hay sesión, vamos al cash
-            setViewMode("cash");
-        } else {
-            // Si no hay nada, al menú
-            setViewMode("cash"); // O el estado inicial que prefieras
+        // Determinar vista automáticamente al montar
+        if (isFirstLoad.current) {
+            isFirstLoad.current = false;
+            if (session && tournament) {
+                setViewMode("menu");
+            } else if (tournament) {
+                setViewMode("tournament");
+            } else if (session) {
+                setViewMode("cash");
+            } else {
+                setViewMode("menu");
+            }
         }
 
       } catch (error) {
@@ -102,23 +105,14 @@ useEffect(() => {
 
   const refresh = () => setRefreshKey(prev => prev + 1);
 
-  // 2. INICIAR MESA DE CASH
-  const handleStartSession = async () => {
-    setLoading(true); 
-    try {
-      const newSession = await sessionService.createSession();
-      setActiveSession(newSession);
-      setViewMode("cash"); // Aseguramos la vista
-      
-      setModalType("buyin");
-      setModalTitle("🚀 Primer Jugador (Apertura de Mesa)");
-      setIsModalOpen(true);
-    } catch (error) {
-      alert("Error al abrir la mesa. Revisa la consola.");
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
+  // 2. INICIAR MESA DE CASH (no crea sesión hasta confirmar primer jugador)
+  const [pendingSessionOpen, setPendingSessionOpen] = useState(false);
+
+  const handleStartSession = () => {
+    setPendingSessionOpen(true);
+    setModalType("buyin");
+    setModalTitle("Primer Jugador (Apertura de Mesa)");
+    setIsModalOpen(true);
   };
 
   // 3. INICIAR TORNEO
@@ -147,8 +141,12 @@ const handleCreateTournament = async (formData) => {
   };
 
   const handleTransactionSuccess = () => {
+    if (pendingSessionOpen) {
+      setViewMode("cash");
+    }
     setIsModalOpen(false);
-    refresh(); 
+    setPendingSessionOpen(false);
+    refresh();
   };
 
   const handleAudit = async () => {
@@ -292,10 +290,10 @@ const handleCreateTournament = async (formData) => {
                 {/* LADO IZQUIERDO: VOLVER + TÍTULO */}
                 <div className="flex items-center gap-4 w-full xl:w-auto">
                     {/* Botón Volver (Flecha) */}
-                    <button 
-                        onClick={() => setViewMode("cash")} 
+                    <button
+                        onClick={() => setViewMode("menu")}
                         className="p-3 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white transition-all border border-gray-700 hover:border-gray-500 shadow-sm group"
-                        title="Volver al Menú Principal"
+                        title="Volver al Menu Principal"
                     >
                         <ArrowLeftIcon className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
                     </button>
@@ -335,8 +333,8 @@ const handleCreateTournament = async (formData) => {
             />
         </div>
 
-  ) : activeSession ? (
-        /* ESCENARIO 2: CASH GAME ACTIVO (Tu Dashboard Original) */
+  ) : viewMode === "cash" && activeSession ? (
+        /* ESCENARIO 2: CASH GAME ACTIVO */
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4 animate-fade-in-up">
            <ActionButton color="green" label="💰 Buy-in / Rebuy" onClick={() => handleOpenModal("buyin", "Registrar Entrada")} />
            <ActionButton color="red" label="💸 Cashout" onClick={() => handleOpenModal("cashout", "Registrar Salida")} />
@@ -368,7 +366,13 @@ const handleCreateTournament = async (formData) => {
                 🔒 Cerrar Sesión Definitivamente
               </button>
               
-              <div className="pt-4 flex justify-center">
+              <div className="pt-4 flex justify-center gap-6">
+                 {activeTournament && (
+                   <button onClick={() => setViewMode("menu")} className="text-gray-600 hover:text-violet-400 text-xs font-bold uppercase tracking-widest flex items-center gap-2 transition-colors">
+                      <ArrowLeftIcon className="w-4 h-4" />
+                      Volver al Menu
+                   </button>
+                 )}
                  <button onClick={logout} className="text-gray-600 hover:text-red-400 text-xs font-bold uppercase tracking-widest flex items-center gap-2 transition-colors">
                     <ArrowRightOnRectangleIcon className="w-4 h-4" />
                     Salir del Sistema
@@ -393,13 +397,23 @@ const handleCreateTournament = async (formData) => {
 
            <div className="flex flex-col gap-5 w-full max-w-md px-4">
                {/* Opción CASH */}
-               <button 
-                 onClick={handleStartSession} 
-                 className="group relative overflow-hidden w-full bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-lg py-4 px-8 rounded-xl shadow-[0_0_20px_rgba(16,185,129,0.3)] border-b-4 border-emerald-900 active:border-b-0 active:translate-y-1 transition-all duration-150 flex items-center justify-center gap-4 uppercase tracking-wider"
-               >
-                 <div className="bg-emerald-900/30 p-2 rounded-lg"><PlayIcon className="w-6 h-6 text-emerald-200" /></div>
-                 <div className="text-left"><span className="block text-xs text-emerald-300 font-medium">Partida Regular</span><span className="block leading-none">Iniciar Cash Game</span></div>
-               </button>
+               {activeSession ? (
+                 <button
+                   onClick={() => setViewMode("cash")}
+                   className="group relative overflow-hidden w-full bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold text-lg py-4 px-8 rounded-xl shadow-[0_0_20px_rgba(16,185,129,0.4)] border-b-4 border-emerald-900 active:border-b-0 active:translate-y-1 transition-all duration-150 flex items-center justify-center gap-4 uppercase tracking-wider"
+                 >
+                   <div className="bg-white/20 p-2 rounded-lg"><PlayIcon className="w-6 h-6 text-white" /></div>
+                   <div className="text-left"><span className="block text-xs text-emerald-100 font-medium">Mesa en Curso</span><span className="block leading-none">Continuar Cash Game</span></div>
+                 </button>
+               ) : (
+                 <button
+                   onClick={handleStartSession}
+                   className="group relative overflow-hidden w-full bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-lg py-4 px-8 rounded-xl shadow-[0_0_20px_rgba(16,185,129,0.3)] border-b-4 border-emerald-900 active:border-b-0 active:translate-y-1 transition-all duration-150 flex items-center justify-center gap-4 uppercase tracking-wider"
+                 >
+                   <div className="bg-emerald-900/30 p-2 rounded-lg"><PlayIcon className="w-6 h-6 text-emerald-200" /></div>
+                   <div className="text-left"><span className="block text-xs text-emerald-300 font-medium">Partida Regular</span><span className="block leading-none">Iniciar Cash Game</span></div>
+                 </button>
+               )}
 
                {/* Opción TORNEO */}
 {activeTournament ? (
@@ -436,13 +450,18 @@ const handleCreateTournament = async (formData) => {
       )}
 
       {/* MODALES */}
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={modalTitle}>
+      <Modal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setPendingSessionOpen(false); }} title={modalTitle}>
         {modalType === "close" ? (
           <CloseSessionForm sessionId={activeSession?.id} onSuccess={handleTransactionSuccess} />
         ) : modalType === "create-tournament" ? (
           <CreateTournamentForm onSuccess={handleCreateTournament} onCancel={() => setIsModalOpen(false)} />
         ) : (
-          <TransactionForm type={modalType} onSuccess={handleTransactionSuccess} sessionId={activeSession?.id} />
+          <TransactionForm
+            type={modalType}
+            onSuccess={handleTransactionSuccess}
+            sessionId={activeSession?.id}
+            createSessionFirst={pendingSessionOpen}
+          />
         )}
       </Modal>
 

@@ -20,7 +20,18 @@ class BaseSchema(BaseModel):
 class ClubCreate(BaseModel):
     name: str = Field(..., min_length=2, max_length=100)
     email: str = Field(..., min_length=5, max_length=150)
-    password: str = Field(..., min_length=6, max_length=128)
+    password: str = Field(..., min_length=8, max_length=128)
+
+    @field_validator('password')
+    @classmethod
+    def password_strength(cls, v):
+        if not any(c.isupper() for c in v):
+            raise ValueError('La contrasena debe tener al menos una mayuscula')
+        if not any(c.islower() for c in v):
+            raise ValueError('La contrasena debe tener al menos una minuscula')
+        if not any(c.isdigit() for c in v):
+            raise ValueError('La contrasena debe tener al menos un numero')
+        return v
 
 class Token(BaseModel):
     access_token: str

@@ -8,7 +8,7 @@ import {
   UserGroupIcon, 
   CalendarDaysIcon,
   WalletIcon,
-  ScaleIcon // Ícono para la Meta
+  ScaleIcon
 } from '@heroicons/react/24/outline'; 
 
 export default function WeeklyReport() {
@@ -28,10 +28,12 @@ export default function WeeklyReport() {
       const curr = new Date(referenceDate);
 
       if (viewMode === 'week') {
-        const day = curr.getDay(); 
-        const diff = curr.getDate() - day + (day === 0 ? -6 : 1); 
-        start = new Date(curr.setDate(diff));
-        end = new Date(curr.setDate(diff + 6));
+        const day = curr.getDay();
+        const diff = curr.getDate() - day + (day === 0 ? -6 : 1);
+        start = new Date(curr);
+        start.setDate(diff);
+        end = new Date(start);
+        end.setDate(start.getDate() + 6);
       } else {
         start = new Date(curr.getFullYear(), curr.getMonth(), 1);
         end = new Date(curr.getFullYear(), curr.getMonth() + 1, 0);
@@ -85,28 +87,21 @@ export default function WeeklyReport() {
   if (!data) return <div className="text-center text-gray-500 mt-10">No hay datos disponibles.</div>;
 
   // --- LÓGICA DE CLASIFICACIÓN ---
-  const isMetaFunc = (name) => {
-      const n = name.toLowerCase();
-      return n.includes('meta') || n.includes('deuda') || n.includes('quota');
+  const isGasto = (item) => item.percent === 0;
+  const isSocio = (item) => item.percent > 0;
+
+  const isMetaItem = (item) => {
+    const n = item.name.toLowerCase();
+    return isGasto(item) && (n.includes('meta') || n.includes('deuda') || n.includes('quota') || n.includes('fijo') || (!n.includes('caja') && !n.includes('fondo') && !n.includes('reserva') && !n.includes('operativo')));
+  };
+  const isFondoItem = (item) => {
+    const n = item.name.toLowerCase();
+    return isGasto(item) && (n.includes('caja') || n.includes('fondo') || n.includes('reserva') || n.includes('operativo'));
   };
 
-  const isFondoFunc = (name) => {
-      const n = name.toLowerCase();
-      return n.includes('caja') || n.includes('fondo') || n.includes('reserva') || n.includes('operativo');
-  };
-
-  // Calculamos totales para las tarjetas (Filtrando correctamente)
-  const totalSocios = data.distribution
-    .filter(d => !isFondoFunc(d.name) && !isMetaFunc(d.name))
-    .reduce((acc, curr) => acc + curr.total, 0);
-    
-  const totalFondos = data.distribution
-    .filter(d => isFondoFunc(d.name))
-    .reduce((acc, curr) => acc + curr.total, 0);
-
-  const totalMeta = data.distribution
-    .filter(d => isMetaFunc(d.name))
-    .reduce((acc, curr) => acc + curr.total, 0);
+  const totalSocios = data.distribution.filter(isSocio).reduce((acc, curr) => acc + curr.total, 0);
+  const totalMeta = data.distribution.filter(isMetaItem).reduce((acc, curr) => acc + curr.total, 0);
+  const totalFondos = data.distribution.filter(isFondoItem).reduce((acc, curr) => acc + curr.total, 0);
 
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-8 animate-fade-in">
@@ -159,14 +154,13 @@ export default function WeeklyReport() {
           </p>
         </div>
         
-        {/* Meta / Deuda (Si hay) */}
+        {/* Meta / Fondos */}
         {totalMeta > 0 ? (
              <div className="bg-gradient-to-br from-emerald-900/20 to-transparent border border-emerald-500/20 p-5 rounded-2xl">
                 <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mb-1">Abono a Meta</p>
                 <p className="text-3xl font-black text-white font-mono">{formatMoney(totalMeta)}</p>
              </div>
         ) : (
-            /* Si no hay meta, mostramos Fondos */
             <div className="bg-gradient-to-br from-purple-900/20 to-transparent border border-purple-500/20 p-5 rounded-2xl">
                 <p className="text-[10px] font-bold text-purple-500 uppercase tracking-widest mb-1">Fondos Operativos</p>
                 <p className="text-3xl font-black text-white font-mono">{formatMoney(totalFondos)}</p>
@@ -184,21 +178,12 @@ export default function WeeklyReport() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {data.distribution.length > 0 ? (
           data.distribution.map((item, idx) => {
-            const isMeta = isMetaFunc(item.name);
-            const isFondo = isFondoFunc(item.name);
+            const n = item.name.toLowerCase();
+            const isMeta = n.includes('meta') || n.includes('deuda') || n.includes('quota') || n.includes('fijo');
+            const isFondo = n.includes('caja') || n.includes('fondo') || n.includes('reserva') || n.includes('operativo');
 
-            // DEFINIR ESTILOS
-            let theme = {
-                icon: UserGroupIcon,
-                label: "Utilidad de Socio",
-                mainColor: "text-blue-400",
-                bgColor: "bg-blue-600/20",
-                borderColor: "border-blue-500/30",
-                hoverBorder: "hover:border-blue-500/50",
-                bottomBar: "bg-blue-500/0 group-hover:bg-blue-500/50"
-            };
-
-            if (isMeta) {
+            let theme;
+            if (isMeta || (isGasto(item) && !isFondo)) {
                 theme = {
                     icon: ScaleIcon,
                     label: "Pago Prioritario (Meta)",
@@ -217,6 +202,16 @@ export default function WeeklyReport() {
                     borderColor: "border-purple-500/30",
                     hoverBorder: "hover:border-purple-500/50",
                     bottomBar: "bg-purple-500/0 group-hover:bg-purple-500/50"
+                };
+            } else {
+                theme = {
+                    icon: UserGroupIcon,
+                    label: `Utilidad de Socio (${item.percent}%)`,
+                    mainColor: "text-blue-400",
+                    bgColor: "bg-blue-600/20",
+                    borderColor: "border-blue-500/30",
+                    hoverBorder: "hover:border-blue-500/50",
+                    bottomBar: "bg-blue-500/0 group-hover:bg-blue-500/50"
                 };
             }
 

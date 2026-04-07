@@ -2,7 +2,7 @@
 import axios from 'axios';
 
 
-const BASE_URL = "http://localhost:8000";
+const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 // URL de tu Backend
 const api = axios.create({
@@ -24,12 +24,17 @@ api.interceptors.request.use((config) => {
 
 // 👇 INTERCEPTOR DE ERRORES
 // Si el token expiró (Error 401), borra todo y manda al login
+// Excepto en rutas de auth (login, register, forgot-password, reset-password)
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response && error.response.status === 401) {
-      localStorage.removeItem('token');
-      window.location.href = '/login';
+      const url = error.config?.url || '';
+      const isAuthRoute = url.includes('/auth/login') || url.includes('/auth/register') || url.includes('/auth/forgot') || url.includes('/auth/reset');
+      if (!isAuthRoute) {
+        localStorage.removeItem('token');
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }

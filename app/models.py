@@ -42,14 +42,22 @@ class Club(Base):
     __tablename__ = "clubs"
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, unique=True, index=True) 
+    name = Column(String, index=True)
     code = Column(String, unique=True, index=True) 
     
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     
-    is_active = Column(Boolean, default=True) 
+    is_active = Column(Boolean, default=True)
     plan_type = Column(String, default="BASIC")
+    jackpot_adjustment = Column(Float, default=0.0)
+    email_verified = Column(Boolean, default=False)
+    setup_completed = Column(Boolean, default=False)
+    subscription_active = Column(Boolean, default=False)
+    subscription_trial_end = Column(DateTime, nullable=True)
+    email_verification_token = Column(String, nullable=True)
+    password_reset_token = Column(String, nullable=True)
+    password_reset_expires = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relaciones

@@ -26,8 +26,13 @@ export default function PlayerTable({ refreshTrigger, onPlayerSelect }) {
 
         setTotals(newTotals);
       } catch (err) {
-        console.error("Error cargando tabla:", err);
-        setError("Error al cargar los jugadores");
+        if (err.response?.status === 404) {
+          setPlayers([]);
+          setTotals({ buyin: 0, cashout: 0, balance: 0 });
+        } else {
+          console.error("Error cargando tabla:", err);
+          setError("Error al cargar los jugadores");
+        }
       } finally {
         setLoading(false);
       }

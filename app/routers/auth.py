@@ -1,13 +1,24 @@
 # app/routers/auth.py
-from fastapi import APIRouter, Depends, HTTPException, status
+import secrets
+import logging
+import threading
+from datetime import datetime, timedelta
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import delete
+from pydantic import BaseModel
 from .. import models, schemas, auth_utils
 from ..dependencies import get_db, get_current_club
+from ..email_service import send_password_reset_email, send_verification_email
 
+logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Authentication"])
+
+class LoginJSON(BaseModel):
+    username: str
+    password: str
 
 # ---------------------------------------------------------
 # 1. REGISTRO DE NUEVO CLUB (ONBOARDING)
@@ -20,75 +31,141 @@ async def register_club(club_data: schemas.ClubCreate, db: AsyncSession = Depend
     # A. Validar que el email no exista
     result = await db.execute(select(models.Club).where(models.Club.email == club_data.email))
     if result.scalars().first():
-        raise HTTPException(status_code=400, detail="Este email ya está registrado.")
+        raise HTTPException(status_code=400, detail="This email is already registered. Este email ya está registrado.")
 
-    # B. Crear el Club
-    hashed_pwd = auth_utils.get_password_hash(club_data.password)
-    
+    # B. Hash de password en thread (no bloquea el event loop)
+    import asyncio
+    loop = asyncio.get_event_loop()
+    hashed_pwd = await loop.run_in_executor(None, auth_utils.get_password_hash, club_data.password)
+
+    # C. Crear club + reglas + token en un solo commit
+    verification_token = secrets.token_urlsafe(32)
+
     new_club = models.Club(
         name=club_data.name,
         email=club_data.email,
         hashed_password=hashed_pwd,
         plan_type="BASIC",
-        is_active=True
+        is_active=True,
+        email_verification_token=verification_token
     )
     db.add(new_club)
-    await db.commit()
-    await db.refresh(new_club)
+    await db.flush()  # Obtiene el ID sin hacer commit
 
-    # C. ONBOARDING AUTOMÁTICO: Crear Reglas por Defecto 🚀
-    # Esto es clave para que el usuario tenga el sistema listo al entrar.
-    default_rules = [
-        models.DistributionRule(
-            club_id=new_club.id, 
-            name="Caja (Gastos Fijos)", 
-            rule_type=models.RuleType.MONTHLY_QUOTA, 
-            value=400000,  # Meta mensual por defecto
-            priority=1, 
-            active=True
-        ),
-        models.DistributionRule(
-            club_id=new_club.id, 
-            name="Utilidad Socios", 
-            rule_type=models.RuleType.PERCENTAGE, 
-            value=1.00,    # 100% de lo que sobre va para socios
-            priority=2, 
-            active=True
-        ),
-    ]
-    db.add_all(default_rules)
+    db.add_all([
+        models.DistributionRule(club_id=new_club.id, name="Caja (Gastos Fijos)", rule_type=models.RuleType.MONTHLY_QUOTA, value=400000, priority=1, active=True),
+        models.DistributionRule(club_id=new_club.id, name="Utilidad Socios", rule_type=models.RuleType.PERCENTAGE, value=1.00, priority=2, active=True),
+    ])
+
     await db.commit()
+
+    # D. Email en background
+    threading.Thread(target=send_verification_email, args=(new_club.email, verification_token, new_club.name), daemon=True).start()
 
     return {"message": "Club creado exitosamente", "club_id": new_club.id, "email": new_club.email}
 
 
 # ---------------------------------------------------------
-# 2. LOGIN (OBTENER TOKEN)
+# 2. LOGIN (OBTENER TOKEN) — Acepta form-urlencoded y JSON
 # ---------------------------------------------------------
 @router.post("/auth/login", response_model=schemas.Token)
-async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
+async def login(request: Request, db: AsyncSession = Depends(get_db)):
     """
     Intercambia credenciales (Email/Pass) por un Token JWT de sesión.
-    Nota: OAuth2 usa el campo 'username' para el email.
+    Acepta application/x-www-form-urlencoded (OAuth2) o application/json.
     """
-    # 1. Buscar usuario/club por email
-    result = await db.execute(select(models.Club).where(models.Club.email == form_data.username))
+    content_type = request.headers.get("content-type", "")
+
+    if "application/json" in content_type:
+        body = await request.json()
+        username = body.get("username", "")
+        password = body.get("password", "")
+    else:
+        form = await request.form()
+        username = form.get("username", "")
+        password = form.get("password", "")
+
+    result = await db.execute(select(models.Club).where(models.Club.email == username))
     club = result.scalars().first()
 
-    # 2. Validar contraseña
-    if not club or not auth_utils.verify_password(form_data.password, club.hashed_password):
+    if not club:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciales incorrectas (Email o Contraseña)", headers={"WWW-Authenticate": "Bearer"})
+
+    import asyncio
+    loop = asyncio.get_event_loop()
+    valid = await loop.run_in_executor(None, auth_utils.verify_password, password, club.hashed_password)
+
+    if not valid:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Credenciales incorrectas (Email o Contraseña)",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # 3. Generar Token (La "Llave Maestra" de la sesión)
     access_token = auth_utils.create_access_token(
         data={"sub": club.email, "club_id": club.id}
     )
-    
-    return {"access_token": access_token, "token_type": "bearer"}
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "setup_completed": club.setup_completed or False,
+        "email_verified": club.email_verified or False,
+        "subscription_active": club.subscription_active or False
+    }
+
+@router.get("/auth/me")
+async def get_current_club_info(
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club)
+):
+    return {
+        "id": current_club.id,
+        "name": current_club.name,
+        "email": current_club.email,
+        "setup_completed": current_club.setup_completed or False,
+        "email_verified": current_club.email_verified or False,
+        "subscription_active": current_club.subscription_active or False,
+        "plan_type": current_club.plan_type
+    }
+
+@router.post("/auth/verify-email")
+async def verify_email(data: dict, db: AsyncSession = Depends(get_db)):
+    token = data.get("token", "")
+    if not token:
+        raise HTTPException(status_code=400, detail="Token requerido")
+
+    result = await db.execute(
+        select(models.Club).where(models.Club.email_verification_token == token)
+    )
+    club = result.scalars().first()
+
+    if not club:
+        raise HTTPException(status_code=400, detail="Token invalido")
+
+    club.email_verified = True
+    club.email_verification_token = None
+    await db.commit()
+
+    return {"message": "Email verificado correctamente"}
+
+
+@router.post("/auth/resend-verification")
+async def resend_verification(
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club)
+):
+    if current_club.email_verified:
+        return {"message": "El email ya esta verificado"}
+
+    token = secrets.token_urlsafe(32)
+    current_club.email_verification_token = token
+    await db.commit()
+
+    threading.Thread(target=send_verification_email, args=(current_club.email, token, current_club.name), daemon=True).start()
+
+    return {"message": "Email de verificacion reenviado"}
+
 
 @router.delete("/me/delete-account")
 async def delete_my_account(
@@ -129,3 +206,60 @@ async def delete_my_account(
     await db.commit()
     
     return {"message": "Cuenta eliminada. Ahora puedes registrarte de nuevo desde cero."}
+
+
+# ---------------------------------------------------------
+# FORGOT PASSWORD
+# ---------------------------------------------------------
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+@router.post("/auth/forgot-password")
+async def forgot_password(data: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(models.Club).where(models.Club.email == data.email))
+    club = result.scalars().first()
+
+    if not club:
+        # No revelar si el email existe o no
+        return {"message": "Si el correo esta registrado, recibiras instrucciones para restablecer tu contrasena."}
+
+    # Generar token seguro
+    token = secrets.token_urlsafe(32)
+    club.password_reset_token = token
+    club.password_reset_expires = datetime.utcnow() + timedelta(hours=1)
+    await db.commit()
+
+    # Enviar email (en background)
+    threading.Thread(target=send_password_reset_email, args=(club.email, token, club.name), daemon=True).start()
+
+    return {"message": "Si el correo esta registrado, recibiras instrucciones para restablecer tu contrasena."}
+
+
+@router.post("/auth/reset-password")
+async def reset_password(data: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
+    if len(data.new_password) < 6:
+        raise HTTPException(status_code=400, detail="La contrasena debe tener al menos 6 caracteres.")
+
+    result = await db.execute(
+        select(models.Club).where(models.Club.password_reset_token == data.token)
+    )
+    club = result.scalars().first()
+
+    if not club:
+        raise HTTPException(status_code=400, detail="Token invalido o expirado.")
+
+    if not club.password_reset_expires or club.password_reset_expires < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="Token expirado. Solicita uno nuevo.")
+
+    import asyncio
+    loop = asyncio.get_event_loop()
+    club.hashed_password = await loop.run_in_executor(None, auth_utils.get_password_hash, data.new_password)
+    club.password_reset_token = None
+    club.password_reset_expires = None
+    await db.commit()
+
+    return {"message": "Contrasena actualizada correctamente."}

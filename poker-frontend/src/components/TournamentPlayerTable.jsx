@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
-import { 
-    UserPlusIcon, BanknotesIcon, CheckBadgeIcon, XCircleIcon, 
-    BoltIcon, ArrowPathIcon, PlusCircleIcon, ChartBarIcon, 
+import { useState, useEffect, useRef } from 'react';
+import {
+    UserPlusIcon, BanknotesIcon, CheckBadgeIcon, XCircleIcon,
+    BoltIcon, ArrowPathIcon, PlusCircleIcon, ChartBarIcon,
     TrophyIcon, UserIcon, HeartIcon, ExclamationTriangleIcon, CheckCircleIcon,
-    GiftIcon
+    GiftIcon, MagnifyingGlassIcon, PhoneIcon
 } from '@heroicons/react/24/solid';
 import { tournamentService, playerService } from '../api/services';
 import { formatMoney } from '../utils/formatters';
@@ -248,7 +248,10 @@ export default function TournamentPlayerTable({ tournament, onUpdate }) {
                                     <td className="px-4 py-3 text-right font-mono font-bold text-green-400">{formatCurrency(p.moneyInvested)}</td>
                                     <td className="px-4 py-3 text-center">
                                         {p.status === 'ACTIVE' && (
-                                            <button onClick={() => setActionPlayer(p)} className="bg-gray-700 hover:bg-violet-600 text-gray-300 hover:text-white px-2 py-1 rounded text-xs font-bold border border-gray-600">Gest.</button>
+                                            <button onClick={() => setActionPlayer(p)} className="bg-violet-600 hover:bg-violet-500 text-white px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 mx-auto transition-colors active:scale-95">
+                                                <PlusCircleIcon className="w-4 h-4" />
+                                                Rebuy / Addon
+                                            </button>
                                         )}
                                     </td>
                                     <td className="px-4 py-3 text-right">
@@ -322,15 +325,35 @@ function GlobalLoader() {
 // --- COPIA AQUÍ PayoutModal, StatCard, RegisterModal, ActionModal ---
 function PayoutModal({ tournament, netPot, players, onClose, onRequestFinalize, showToast, formatCurrency, getPlayerName }) {
     const [selectedWinners, setSelectedWinners] = useState({});
+    const [openDropdown, setOpenDropdown] = useState(null);
+    const [searchTerms, setSearchTerms] = useState({});
+
     const eligiblePlayers = [...players].sort((a, b) => {
         const nameA = getPlayerName(a.player_id).toUpperCase();
         const nameB = getPlayerName(b.player_id).toUpperCase();
         return nameA < nameB ? -1 : nameA > nameB ? 1 : 0;
     });
+
+    const rankMedals = ['🥇', '🥈', '🥉'];
+    const rankColors = [
+        { bg: 'bg-yellow-500/10', border: 'border-yellow-500/30', text: 'text-yellow-400', prize: 'text-yellow-300', highlight: 'bg-yellow-900/20' },
+        { bg: 'bg-gray-400/10', border: 'border-gray-400/30', text: 'text-gray-300', prize: 'text-gray-200', highlight: 'bg-gray-700/30' },
+        { bg: 'bg-amber-600/10', border: 'border-amber-600/30', text: 'text-amber-500', prize: 'text-amber-300', highlight: 'bg-amber-900/20' },
+    ];
+
+    // Limitar puestos al número de jugadores
+    const maxRanks = Math.min(tournament.payout_structure.length, eligiblePlayers.length);
+    const effectiveStructure = tournament.payout_structure.slice(0, maxRanks);
+
+    const getAlreadySelected = (currentRank) => {
+        return Object.entries(selectedWinners)
+            .filter(([r]) => Number(r) !== currentRank)
+            .map(([, pid]) => Number(pid));
+    };
+
     const handleSubmit = () => {
-        const requiredRanks = tournament.payout_structure.length;
         const winnersList = [];
-        for (let i = 0; i < requiredRanks; i++) {
+        for (let i = 0; i < maxRanks; i++) {
             const rank = i + 1;
             const pid = selectedWinners[rank];
             if (!pid) { showToast(`Falta ganador puesto #${rank}`, "error"); return; }
@@ -340,29 +363,113 @@ function PayoutModal({ tournament, netPot, players, onClose, onRequestFinalize, 
         if (uniqueIds.size !== winnersList.length) { showToast("Un jugador no puede ganar dos premios", "error"); return; }
         onRequestFinalize(winnersList);
     };
+
     return (
-        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[80] backdrop-blur-sm p-4 animate-fade-in">
-            <div className="bg-gray-800 rounded-2xl border border-yellow-600/50 shadow-2xl w-full max-w-lg p-6 flex flex-col max-h-[90vh]">
-                <div className="flex items-center gap-3 mb-6 border-b border-gray-700 pb-4">
-                    <div className="bg-yellow-500/10 p-3 rounded-full"><TrophyIcon className="w-8 h-8 text-yellow-500" /></div>
-                    <div><h3 className="text-xl font-bold text-white uppercase">Premiación</h3><p className="text-xs text-yellow-500/80 font-bold uppercase">Selecciona los ganadores</p></div>
+        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[80] backdrop-blur-sm p-4 animate-fade-in" onClick={() => setOpenDropdown(null)}>
+            <div className="bg-gray-800 rounded-2xl border border-yellow-600/30 shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+
+                {/* HEADER */}
+                <div className="bg-gray-900 p-5 border-b border-gray-700 flex justify-between items-center">
+                    <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 bg-yellow-500/10 rounded-xl flex items-center justify-center border border-yellow-500/20">
+                            <TrophyIcon className="w-7 h-7 text-yellow-500" />
+                        </div>
+                        <div>
+                            <h3 className="text-white font-black text-lg uppercase tracking-tight">Premiacion</h3>
+                            <p className="text-yellow-500/70 text-[10px] font-bold uppercase tracking-widest">Asignar ganadores</p>
+                        </div>
+                    </div>
+                    <div className="text-right">
+                        <p className="text-[10px] text-gray-500 font-bold uppercase">Pozo Neto</p>
+                        <p className="text-yellow-400 font-mono font-black text-xl">{formatCurrency(netPot)}</p>
+                    </div>
                 </div>
-                <div className="overflow-y-auto pr-2 space-y-4 flex-1">
-                    {tournament.payout_structure.map((percent, index) => {
+
+                {/* LISTA DE POSICIONES */}
+                <div className="overflow-y-auto flex-1 p-5 space-y-3">
+                    {maxRanks < tournament.payout_structure.length && (
+                        <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-amber-400 text-xs font-bold flex items-center gap-2">
+                            <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0" />
+                            Solo hay {eligiblePlayers.length} jugador{eligiblePlayers.length !== 1 ? 'es' : ''}, se premian {maxRanks} de {tournament.payout_structure.length} puestos.
+                        </div>
+                    )}
+                    {effectiveStructure.map((percent, index) => {
                         const rank = index + 1;
                         const prize = netPot * (percent / 100);
+                        const colors = rankColors[index] || { bg: 'bg-violet-500/10', border: 'border-violet-500/30', text: 'text-violet-400', prize: 'text-violet-300', highlight: 'bg-violet-900/20' };
+                        const medal = rankMedals[index] || `#${rank}`;
+                        const selectedPid = selectedWinners[rank];
+                        const selectedName = selectedPid ? getPlayerName(Number(selectedPid)) : null;
+                        const alreadySelected = getAlreadySelected(rank);
+                        const search = searchTerms[rank] || '';
+                        const availableForRank = eligiblePlayers.filter(p => !alreadySelected.includes(p.player_id) && getPlayerName(p.player_id).toLowerCase().includes(search.toLowerCase()));
+
                         return (
-                            <div key={rank} className="bg-gray-900/50 p-4 rounded-xl border border-gray-700">
-                                <div className="flex justify-between items-center mb-2"><span className={`text-sm font-bold uppercase ${rank===1 ? 'text-yellow-400' : 'text-gray-300'}`}>#{rank} ({percent}%)</span><span className="text-white font-mono bg-gray-800 px-2 rounded">{formatCurrency(prize)}</span></div>
-                                <select className="w-full bg-gray-800 border border-gray-600 text-white p-3 rounded-lg" value={selectedWinners[rank] || ""} onChange={(e) => setSelectedWinners({...selectedWinners, [rank]: e.target.value})}>
-                                    <option value="">-- Seleccionar --</option>
-                                    {eligiblePlayers.map(p => <option key={p.id} value={p.player_id}>{getPlayerName(p.player_id)}</option>)}
-                                </select>
+                            <div key={rank} className={`rounded-2xl border relative ${colors.border} ${selectedName ? colors.highlight : 'bg-gray-900/50'}`} style={{ zIndex: openDropdown === rank ? 50 : (tournament.payout_structure.length - index) }}>
+                                {/* Rank header + Selector en una sola fila compacta */}
+                                <div className="flex items-center justify-between px-4 py-2">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xl">{medal}</span>
+                                        <span className={`text-sm font-black uppercase ${colors.text}`}>#{rank}</span>
+                                        <span className="text-gray-500 text-xs">({percent}%)</span>
+                                    </div>
+                                    <span className={`font-mono font-black text-lg ${colors.prize}`}>{formatCurrency(prize)}</span>
+                                </div>
+
+                                <div className="px-4 pb-3 relative">
+                                    {selectedName ? (
+                                        <div className={`flex items-center justify-between ${colors.bg} border ${colors.border} rounded-xl p-3.5`}>
+                                            <div className="flex items-center gap-3">
+                                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${colors.bg} border ${colors.border}`}>
+                                                    <UserIcon className="w-4 h-4 text-white" />
+                                                </div>
+                                                <span className="text-white font-bold text-base">{selectedName}</span>
+                                            </div>
+                                            <button onClick={() => setSelectedWinners({...selectedWinners, [rank]: ''})} className="p-2 rounded-lg hover:bg-red-400/10 text-gray-500 hover:text-red-400 transition-colors">
+                                                <XCircleIcon className="w-5 h-5" />
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="relative">
+                                            <MagnifyingGlassIcon className="absolute left-3 top-3.5 w-5 h-5 text-gray-500" />
+                                            <input
+                                                type="text"
+                                                value={search}
+                                                onClick={() => setOpenDropdown(openDropdown === rank ? null : rank)}
+                                                onChange={(e) => { setSearchTerms({...searchTerms, [rank]: e.target.value}); setOpenDropdown(rank); }}
+                                                onBlur={() => setTimeout(() => setOpenDropdown(null), 200)}
+                                                placeholder="Buscar jugador..."
+                                                className="w-full bg-gray-900 border border-gray-600 rounded-xl py-3 pl-10 pr-4 text-white text-base font-medium placeholder-gray-600 outline-none focus:border-yellow-500/50 transition-colors"
+                                            />
+                                            {openDropdown === rank && (
+                                                <div className="absolute z-50 w-full mt-2 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl max-h-40 overflow-y-auto">
+                                                    {availableForRank.length > 0 ? availableForRank.map((p) => (
+                                                        <div key={p.id} onClick={() => { setSelectedWinners({...selectedWinners, [rank]: p.player_id}); setOpenDropdown(null); setSearchTerms({...searchTerms, [rank]: ''}); }} className="p-3.5 hover:bg-yellow-600/20 hover:border-l-4 hover:border-yellow-500 cursor-pointer border-b border-gray-800 transition-all">
+                                                            <p className="font-bold text-gray-200">{getPlayerName(p.player_id)}</p>
+                                                        </div>
+                                                    )) : (
+                                                        <div className="p-4 text-gray-500 text-center text-sm">No disponible</div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         );
                     })}
                 </div>
-                <div className="mt-6 flex gap-3"><button onClick={onClose} className="flex-1 py-3 bg-gray-700 text-white rounded-xl font-bold">Cancelar</button><button onClick={handleSubmit} className="flex-1 py-3 bg-yellow-600 hover:bg-yellow-500 text-black rounded-xl font-bold">Confirmar</button></div>
+
+                {/* BOTONES */}
+                <div className="p-5 border-t border-gray-700 bg-gray-900/50 flex gap-3">
+                    <button onClick={onClose} className="flex-1 py-4 bg-gray-700 hover:bg-gray-600 text-white rounded-xl font-bold uppercase tracking-wider transition-colors active:scale-[0.98]">
+                        Cancelar
+                    </button>
+                    <button onClick={handleSubmit} className="flex-[2] py-4 bg-gradient-to-r from-yellow-600 to-yellow-500 hover:from-yellow-500 hover:to-yellow-400 text-black rounded-xl font-bold uppercase tracking-wider transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg shadow-yellow-900/30">
+                        <TrophyIcon className="w-5 h-5" />
+                        Confirmar Premios
+                    </button>
+                </div>
             </div>
         </div>
     );
@@ -382,32 +489,132 @@ function StatCard({ icon, label, value, sub, color, highlight }) {
 }
 
 function RegisterModal({ onClose, onConfirm, activeTab, setActiveTab, availablePlayers, selectedPlayerId, setSelectedPlayerId, newPlayerName, setNewPlayerName, newPlayerPhone, setNewPlayerPhone, regOptions, setRegOptions, prices, loading }) {
+    const [searchTerm, setSearchTerm] = useState("");
+    const [showDropdown, setShowDropdown] = useState(false);
+    const wrapperRef = useRef(null);
+
+    const filtered = availablePlayers.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
+    const selectedName = availablePlayers.find(p => String(p.id) === String(selectedPlayerId))?.name || "";
+
+    useEffect(() => {
+        const handleClick = (e) => { if (wrapperRef.current && !wrapperRef.current.contains(e.target)) setShowDropdown(false); };
+        document.addEventListener("mousedown", handleClick);
+        document.addEventListener("touchstart", handleClick);
+        return () => { document.removeEventListener("mousedown", handleClick); document.removeEventListener("touchstart", handleClick); };
+    }, []);
+
+    const handleSelect = (p) => { setSelectedPlayerId(p.id); setSearchTerm(p.name); setShowDropdown(false); };
+
     return (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 backdrop-blur-sm p-4">
-             <div className="bg-gray-800 rounded-xl border border-gray-600 shadow-2xl w-full max-w-md p-6 animate-fade-in-up">
-                 <h3 className="text-white font-bold mb-4">Inscribir Jugador</h3>
-                 <div className="flex gap-2 mb-4 bg-gray-900 p-1 rounded">
-                    <button onClick={() => setActiveTab("search")} className={`flex-1 py-1 text-sm rounded ${activeTab==="search"?"bg-gray-700":""}`}>Buscar</button>
-                    <button onClick={() => setActiveTab("create")} className={`flex-1 py-1 text-sm rounded ${activeTab==="create"?"bg-violet-600":""}`}>Nuevo</button>
-                 </div>
-                 {activeTab === "search" ? (
-                     <select className="w-full bg-gray-900 p-2 rounded text-white mb-4" value={selectedPlayerId} onChange={e=>setSelectedPlayerId(e.target.value)}>
-                         <option value="">Buscar...</option>
-                         {availablePlayers.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
-                     </select>
-                 ) : (
-                     <div className="mb-4 space-y-2">
-                         <input className="w-full bg-gray-900 p-2 rounded text-white" placeholder="Nombre" value={newPlayerName} onChange={e=>setNewPlayerName(e.target.value)} />
-                         <input className="w-full bg-gray-900 p-2 rounded text-white" placeholder="Teléfono" value={newPlayerPhone} onChange={e=>setNewPlayerPhone(e.target.value)} />
+             <div className="bg-gray-800 rounded-2xl border border-gray-700 shadow-2xl w-full max-w-md animate-fade-in-up overflow-hidden">
+                 {/* Header */}
+                 <div className="bg-gray-900 p-5 border-b border-gray-700 flex justify-between items-center">
+                     <div className="flex items-center gap-3">
+                         <div className="w-10 h-10 bg-violet-500/10 rounded-xl flex items-center justify-center border border-violet-500/20">
+                             <UserPlusIcon className="w-5 h-5 text-violet-400" />
+                         </div>
+                         <div>
+                             <h3 className="text-white font-black text-lg uppercase tracking-tight">Inscribir Jugador</h3>
+                             <p className="text-gray-500 text-[10px] font-bold uppercase tracking-widest">Torneo</p>
+                         </div>
                      </div>
-                 )}
-                 <div className="bg-gray-900/50 p-3 rounded mb-4 text-sm text-gray-300 space-y-2">
-                     <label className="flex gap-2"><input type="checkbox" checked={regOptions.payBuyin} onChange={e=>setRegOptions({...regOptions, payBuyin:e.target.checked})} /> Buyin ({prices.buyin})</label>
-                     <label className="flex gap-2"><input type="checkbox" checked={regOptions.payTip} onChange={e=>setRegOptions({...regOptions, payTip:e.target.checked})} /> Tip ({prices.tip})</label>
+                     <button onClick={onClose} className="p-2 rounded-xl hover:bg-gray-700 transition-colors">
+                         <XCircleIcon className="w-6 h-6 text-gray-500 hover:text-white" />
+                     </button>
                  </div>
-                 <div className="flex gap-2">
-                     <button onClick={onClose} className="flex-1 bg-gray-700 py-2 rounded text-white">Cancelar</button>
-                     <button onClick={onConfirm} disabled={loading} className="flex-1 bg-violet-600 py-2 rounded text-white">Confirmar</button>
+
+                 <div className="p-5 space-y-5">
+                     {/* Tabs */}
+                     <div className="flex gap-2 bg-gray-900 p-1.5 rounded-xl">
+                        <button onClick={() => { setActiveTab("search"); setSearchTerm(""); setSelectedPlayerId(""); }} className={`flex-1 py-2.5 text-sm font-bold uppercase tracking-wider rounded-lg flex items-center justify-center gap-2 transition-all ${activeTab==="search" ? "bg-gray-700 text-white shadow-lg" : "text-gray-400 hover:text-white"}`}>
+                            <MagnifyingGlassIcon className="w-4 h-4" /> Buscar
+                        </button>
+                        <button onClick={() => setActiveTab("create")} className={`flex-1 py-2.5 text-sm font-bold uppercase tracking-wider rounded-lg flex items-center justify-center gap-2 transition-all ${activeTab==="create" ? "bg-violet-600 text-white shadow-lg" : "text-gray-400 hover:text-white"}`}>
+                            <UserPlusIcon className="w-4 h-4" /> Nuevo
+                        </button>
+                     </div>
+
+                     {/* Contenido tabs */}
+                     {activeTab === "search" ? (
+                         <div className="relative" ref={wrapperRef}>
+                             <div className="relative">
+                                 <MagnifyingGlassIcon className="absolute left-4 top-4 w-5 h-5 text-gray-500" />
+                                 <input
+                                     type="text"
+                                     value={searchTerm}
+                                     onClick={() => setShowDropdown(true)}
+                                     onChange={(e) => { setSearchTerm(e.target.value); setSelectedPlayerId(""); setShowDropdown(true); }}
+                                     className={`w-full bg-gray-900 text-white border ${selectedPlayerId ? 'border-emerald-500/50 bg-emerald-900/10' : 'border-gray-600'} rounded-2xl py-3.5 pl-12 pr-4 focus:outline-none focus:border-violet-500 transition-all text-lg font-medium placeholder-gray-600 shadow-lg`}
+                                     placeholder="Buscar por nombre..."
+                                 />
+                                 {selectedPlayerId && <CheckBadgeIcon className="absolute right-4 top-4 w-6 h-6 text-emerald-500" />}
+                             </div>
+                             {showDropdown && (
+                                 <div className="absolute z-50 w-full mt-2 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl max-h-48 overflow-y-auto">
+                                     {filtered.length > 0 ? filtered.map((p) => (
+                                         <div key={p.id} onClick={() => handleSelect(p)} className="p-3.5 hover:bg-violet-600/20 hover:border-l-4 hover:border-violet-500 cursor-pointer border-b border-gray-800 transition-all flex items-center justify-between group">
+                                             <div>
+                                                 <p className="font-bold text-gray-200 group-hover:text-white">{p.name}</p>
+                                                 {p.phone && <p className="text-xs text-gray-500">{p.phone}</p>}
+                                             </div>
+                                         </div>
+                                     )) : (
+                                         <div className="p-6 text-gray-500 text-center text-sm flex flex-col items-center gap-2">
+                                             <UserIcon className="w-8 h-8 opacity-50" />
+                                             No encontrado
+                                         </div>
+                                     )}
+                                 </div>
+                             )}
+                         </div>
+                     ) : (
+                         <div className="bg-gray-800/50 p-4 rounded-2xl border border-gray-700 space-y-3 shadow-inner">
+                             <div className="relative">
+                                 <UserIcon className="absolute left-3 top-3.5 w-5 h-5 text-gray-500" />
+                                 <input type="text" value={newPlayerName} onChange={(e) => setNewPlayerName(e.target.value)} className="w-full bg-gray-900/50 text-white border border-gray-600 rounded-xl py-3 pl-10 pr-4 focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none transition-all placeholder-gray-600" placeholder="Nombre completo" autoFocus />
+                             </div>
+                             <div className="relative">
+                                 <PhoneIcon className="absolute left-3 top-3.5 w-5 h-5 text-gray-500" />
+                                 <input type="text" value={newPlayerPhone} onChange={(e) => setNewPlayerPhone(e.target.value)} className="w-full bg-gray-900/50 text-white border border-gray-600 rounded-xl py-3 pl-10 pr-4 focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none transition-all placeholder-gray-600" placeholder="Telefono (Opcional)" />
+                             </div>
+                         </div>
+                     )}
+
+                     {/* Opciones de pago */}
+                     <div className="space-y-3">
+                         <label className="text-gray-400 text-xs font-bold uppercase tracking-wider px-1">Cobros al inscribir</label>
+                         <label className="flex items-center gap-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 cursor-not-allowed">
+                             <input type="checkbox" checked={true} disabled className="w-5 h-5 accent-emerald-500" />
+                             <div className="flex-1">
+                                 <span className="text-white font-bold">Entrada (Buyin)</span>
+                             </div>
+                             <span className="text-emerald-400 font-mono font-bold text-lg">{prices.buyin > 0 ? `$${prices.buyin.toLocaleString()}` : 'Gratis'}</span>
+                         </label>
+                         {prices.tip > 0 && (
+                             <label className="flex items-center gap-3 bg-gray-800/50 border border-gray-600 rounded-xl p-4 cursor-pointer hover:border-pink-500/30 transition-colors active:bg-gray-700">
+                                 <input type="checkbox" checked={regOptions.payTip} onChange={e=>setRegOptions({...regOptions, payTip:e.target.checked})} className="w-5 h-5 accent-pink-500" />
+                                 <div className="flex-1">
+                                     <span className="text-white font-bold">Staff Bonus (Tip)</span>
+                                 </div>
+                                 <span className="text-pink-400 font-mono font-bold text-lg">${prices.tip.toLocaleString()}</span>
+                             </label>
+                         )}
+                     </div>
+
+                     {/* Botones */}
+                     <div className="flex gap-3 pt-2">
+                         <button onClick={onClose} className="flex-1 bg-gray-700 hover:bg-gray-600 py-4 rounded-xl text-white font-bold uppercase tracking-wider transition-colors active:scale-[0.98]">
+                             Cancelar
+                         </button>
+                         <button onClick={onConfirm} disabled={loading || (activeTab === "search" && !selectedPlayerId)} className="flex-[2] bg-violet-600 hover:bg-violet-500 disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed py-4 rounded-xl text-white font-bold uppercase tracking-wider transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg shadow-violet-900/20">
+                             {loading ? (
+                                 <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> Inscribiendo...</>
+                             ) : (
+                                 <><CheckBadgeIcon className="w-5 h-5" /> Inscribir</>
+                             )}
+                         </button>
+                     </div>
                  </div>
              </div>
         </div>
@@ -415,29 +622,64 @@ function RegisterModal({ onClose, onConfirm, activeTab, setActiveTab, availableP
 }
 
 function ActionModal({ player, playerName, onClose, onRebuy, onAddon, prices, loading }) {
-    const format = formatMoney;
     return (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 backdrop-blur-sm p-4">
-            <div className="bg-gray-800 rounded-xl border border-gray-600 shadow-2xl w-full max-w-sm animate-fade-in-up overflow-hidden">
-                <div className="bg-gray-900 p-4 border-b border-gray-700 flex justify-between">
-                    <h3 className="text-white font-bold">{playerName}</h3>
-                    <button onClick={onClose}><XCircleIcon className="w-6 h-6 text-gray-500" /></button>
+            <div className="bg-gray-800 rounded-2xl border border-gray-700 shadow-2xl w-full max-w-md animate-fade-in-up overflow-hidden">
+                {/* Header */}
+                <div className="bg-gray-900 p-5 border-b border-gray-700 flex justify-between items-center">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-blue-500/10 rounded-xl flex items-center justify-center border border-blue-500/20">
+                            <BoltIcon className="w-5 h-5 text-blue-400" />
+                        </div>
+                        <div>
+                            <h3 className="text-white font-black text-lg uppercase tracking-tight">{playerName}</h3>
+                            <p className="text-gray-500 text-[10px] font-bold uppercase tracking-widest">Recompras y Add-ons</p>
+                        </div>
+                    </div>
+                    <button onClick={onClose} className="p-2 rounded-xl hover:bg-gray-700 transition-colors">
+                        <XCircleIcon className="w-6 h-6 text-gray-500 hover:text-white" />
+                    </button>
                 </div>
-                <div className="p-6 space-y-6">
+
+                <div className="p-5 space-y-5">
+                    {/* Recompras */}
                     <div>
-                        <h4 className="text-blue-400 text-xs font-bold uppercase mb-2">Recompras</h4>
-                        <div className="grid grid-cols-2 gap-2">
-                            <button onClick={()=>onRebuy("SINGLE")} disabled={loading} className="bg-blue-900/30 border border-blue-800/50 hover:border-blue-500 text-blue-100 p-2 rounded text-center"><div className="text-xs font-bold">SENCILLO</div><div className="text-xs">{format(prices.rebuyS)}</div></button>
-                            <button onClick={()=>onRebuy("DOUBLE")} disabled={loading} className="bg-blue-900/30 border border-blue-800/50 hover:border-blue-500 text-blue-100 p-2 rounded text-center"><div className="text-xs font-bold">DOBLE</div><div className="text-xs">{format(prices.rebuyD)}</div></button>
+                        <label className="text-blue-400 text-xs font-bold uppercase tracking-widest mb-3 block px-1 flex items-center gap-2">
+                            <ArrowPathIcon className="w-4 h-4" /> Recompras (Rebuy)
+                        </label>
+                        <div className="grid grid-cols-2 gap-3">
+                            <button onClick={()=>onRebuy("SINGLE")} disabled={loading || prices.rebuyS <= 0} className="bg-blue-900/20 border border-blue-500/30 hover:border-blue-400 hover:bg-blue-900/40 text-white p-4 rounded-xl text-center transition-all active:scale-[0.97] disabled:opacity-30 disabled:cursor-not-allowed">
+                                <div className="text-xs font-bold uppercase tracking-wider text-blue-300 mb-1">Sencillo</div>
+                                <div className="text-xl font-black font-mono">{formatMoney(prices.rebuyS)}</div>
+                            </button>
+                            <button onClick={()=>onRebuy("DOUBLE")} disabled={loading || prices.rebuyD <= 0} className="bg-blue-900/20 border border-blue-500/30 hover:border-blue-400 hover:bg-blue-900/40 text-white p-4 rounded-xl text-center transition-all active:scale-[0.97] disabled:opacity-30 disabled:cursor-not-allowed">
+                                <div className="text-xs font-bold uppercase tracking-wider text-blue-300 mb-1">Doble</div>
+                                <div className="text-xl font-black font-mono">{formatMoney(prices.rebuyD)}</div>
+                            </button>
                         </div>
                     </div>
+
+                    {/* Add-ons */}
                     <div>
-                        <h4 className="text-orange-400 text-xs font-bold uppercase mb-2">Add-ons</h4>
-                        <div className="grid grid-cols-2 gap-2">
-                            <button onClick={()=>onAddon("SINGLE")} disabled={loading} className="bg-orange-900/30 border border-orange-800/50 hover:border-orange-500 text-orange-100 p-2 rounded text-center"><div className="text-xs font-bold">SENCILLO</div><div className="text-xs">{format(prices.addonS)}</div></button>
-                            <button onClick={()=>onAddon("DOUBLE")} disabled={loading} className="bg-orange-900/30 border border-orange-800/50 hover:border-orange-500 text-orange-100 p-2 rounded text-center"><div className="text-xs font-bold">DOBLE</div><div className="text-xs">{format(prices.addonD)}</div></button>
+                        <label className="text-orange-400 text-xs font-bold uppercase tracking-widest mb-3 block px-1 flex items-center gap-2">
+                            <PlusCircleIcon className="w-4 h-4" /> Add-ons
+                        </label>
+                        <div className="grid grid-cols-2 gap-3">
+                            <button onClick={()=>onAddon("SINGLE")} disabled={loading || prices.addonS <= 0} className="bg-orange-900/20 border border-orange-500/30 hover:border-orange-400 hover:bg-orange-900/40 text-white p-4 rounded-xl text-center transition-all active:scale-[0.97] disabled:opacity-30 disabled:cursor-not-allowed">
+                                <div className="text-xs font-bold uppercase tracking-wider text-orange-300 mb-1">Sencillo</div>
+                                <div className="text-xl font-black font-mono">{formatMoney(prices.addonS)}</div>
+                            </button>
+                            <button onClick={()=>onAddon("DOUBLE")} disabled={loading || prices.addonD <= 0} className="bg-orange-900/20 border border-orange-500/30 hover:border-orange-400 hover:bg-orange-900/40 text-white p-4 rounded-xl text-center transition-all active:scale-[0.97] disabled:opacity-30 disabled:cursor-not-allowed">
+                                <div className="text-xs font-bold uppercase tracking-wider text-orange-300 mb-1">Doble</div>
+                                <div className="text-xl font-black font-mono">{formatMoney(prices.addonD)}</div>
+                            </button>
                         </div>
                     </div>
+
+                    {/* Cerrar */}
+                    <button onClick={onClose} className="w-full bg-gray-700 hover:bg-gray-600 py-4 rounded-xl text-white font-bold uppercase tracking-wider transition-colors active:scale-[0.98]">
+                        Cerrar
+                    </button>
                 </div>
             </div>
         </div>
