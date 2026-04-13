@@ -248,6 +248,14 @@ endTournament: async (tournamentId) => {
     const response = await api.get(`/tournaments/${id}/details`);
     return response.data;
   },
+  eliminatePlayer: async (tournamentId, playerId) => {
+    const response = await api.post(`/tournaments/${tournamentId}/players/${playerId}/eliminate`);
+    return response.data;
+  },
+  undoAction: async (tournamentId, playerId, action, type) => {
+    const response = await api.post(`/tournaments/${tournamentId}/undo`, { player_id: playerId, action, type });
+    return response.data;
+  },
 };
 
 export const historyService = {

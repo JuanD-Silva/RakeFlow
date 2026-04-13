@@ -74,8 +74,9 @@ export default function TournamentPlayerTable({ tournament, onUpdate }) {
     const totalPotRaw = playersWithStats.reduce((acc, p) => acc + p.moneyInvested, 0);
     const houseRake = totalPotRaw * (prices.rake / 100);
     const netPot = totalPotRaw - houseRake;
-    const paidTipsCount = playersWithStats.filter(p => p.is_tip_paid).length;
-    const totalTipsCollected = paidTipsCount * prices.tip;
+    const totalTipsCount = playersWithStats.reduce((acc, p) => acc + (p.tips_count || 0), 0);
+    const playersWithTip = playersWithStats.filter(p => (p.tips_count || 0) > 0).length;
+    const totalTipsCollected = totalTipsCount * prices.tip;
 
     // --- HANDLERS ---
     const handleRegister = async () => { 
@@ -137,13 +138,13 @@ export default function TournamentPlayerTable({ tournament, onUpdate }) {
     const handleEliminate = (pid, name) => {
         setConfirmModal({ isOpen: true, title: "Eliminar", message: `¿Eliminar a ${name}?`, type: "danger", onConfirm: async () => {
             setLoading(true); // Activar loader
-            try { await tournamentService.eliminatePlayer(tournament.id, pid); onUpdate(); showToast("Eliminado"); } catch(e){ showToast("Error","error"); } finally { setLoading(false); setConfirmModal(prev=>({...prev,isOpen:false})); }
+            try { await tournamentService.eliminatePlayer(tournament.id, pid); onUpdate(); showToast("Eliminado"); } catch(e){ console.error("Error eliminando jugador:", e.response?.data || e.message || e); showToast(e.response?.data?.detail || "Error al eliminar","error"); } finally { setLoading(false); setConfirmModal(prev=>({...prev,isOpen:false})); }
         }});
     };
     
     const handlePayTip = (pid) => { setConfirmModal({ isOpen: true, title: "Cobrar Tip", message: "¿Cobrar tip?", subMessage: formatCurrency(prices.tip), type: "success", onConfirm: async () => {
-        setLoading(true); // Activar loader
-        try { await tournamentService.payLateTip(tournament.id, pid); onUpdate(); } catch(e){ showToast("Error","error"); } finally { setLoading(false); setConfirmModal(prev=>({...prev,isOpen:false})); }
+        setLoading(true);
+        try { await tournamentService.payLateTip(tournament.id, pid); setActionPlayer(null); onUpdate(); showToast("Tip cobrado"); } catch(e){ showToast(e.response?.data?.detail || "Error","error"); } finally { setLoading(false); setConfirmModal(prev=>({...prev,isOpen:false})); }
     }})};
 
     return (
@@ -165,7 +166,7 @@ export default function TournamentPlayerTable({ tournament, onUpdate }) {
                 <StatCard icon={<UserIcon className="w-10 h-10 text-blue-500" />} label="Jugadores" value={`${activePlayersCount} / ${playersWithStats.length}`} sub="Activos / Total" color="blue" />
                 <StatCard icon={<BanknotesIcon className="w-10 h-10 text-green-500" />} label="Pozo Bruto" value={formatCurrency(totalPotRaw)} sub="Total Recaudado" color="green" />
                 <StatCard icon={<ChartBarIcon className="w-10 h-10 text-violet-500" />} label="Rake Club" value={formatCurrency(houseRake)} sub={`${prices.rake}%`} color="violet" />
-                <StatCard icon={<HeartIcon className="w-10 h-10 text-pink-500" />} label="Staff Bonus" value={formatCurrency(totalTipsCollected)} sub={`${paidTipsCount} Pagados`} color="pink" />
+                <StatCard icon={<HeartIcon className="w-10 h-10 text-pink-500" />} label="Staff Bonus" value={formatCurrency(totalTipsCollected)} sub={`${totalTipsCount} tips (${playersWithTip}/${playersWithStats.length} jugadores)`} color="pink" />
                 <StatCard icon={<TrophyIcon className="w-10 h-10 text-yellow-500" />} label="A Repartir" value={formatCurrency(netPot)} sub="Pozo Neto" color="yellow" highlight />
             </div>
 
@@ -217,7 +218,8 @@ export default function TournamentPlayerTable({ tournament, onUpdate }) {
                                 <th className="px-4 py-3">Jugador</th>
                                 <th className="px-4 py-3 text-center">Rebuys</th>
                                 <th className="px-4 py-3 text-center">Addons</th>
-                                <th className="px-4 py-3 text-right text-green-400">Inversión</th>
+                                <th className="px-4 py-3 text-center text-pink-400">Tip</th>
+                                <th className="px-4 py-3 text-right text-green-400">Inversion</th>
                                 <th className="px-4 py-3 text-center">Acciones</th>
                                 <th className="px-4 py-3"></th>
                             </tr>
@@ -228,34 +230,46 @@ export default function TournamentPlayerTable({ tournament, onUpdate }) {
                                     <td className="px-4 py-3">
                                         <div className="font-bold text-white text-base flex items-center gap-2">
                                             {getPlayerName(p.player_id)}
-                                            {p.status === 'WINNER' && <span className="bg-yellow-500 text-black text-[10px] font-black px-1.5 rounded">#{p.rank} 🏆</span>}
+                                            {p.status === 'WINNER' && <span className="bg-yellow-500 text-black text-[10px] font-black px-1.5 rounded">#{p.rank}</span>}
+                                            {p.status === 'ELIMINATED' && <span className="text-red-500 text-[10px] font-black">OUT</span>}
                                         </div>
                                     </td>
                                     <td className="px-4 py-3 text-center">
                                          <div className="flex flex-col items-center justify-center gap-1.5">
                                             {p.singleRebuys > 0 && <span className="inline-flex items-center justify-center w-16 py-0.5 rounded bg-blue-900/20 border border-blue-500/30 text-[10px] font-bold text-blue-300 uppercase tracking-wide">Sgl: {p.singleRebuys}</span>}
-                                            {p.doubleRebuys > 0 && <span className="inline-flex items-center justify-center w-16 py-0.5 rounded bg-blue-600/20 border border-blue-400 text-[10px] font-black text-blue-200 uppercase tracking-wide shadow-[0_0_8px_rgba(59,130,246,0.3)]">Dbl: {p.doubleRebuys}</span>}
+                                            {p.doubleRebuys > 0 && <span className="inline-flex items-center justify-center w-16 py-0.5 rounded bg-blue-600/20 border border-blue-400 text-[10px] font-black text-blue-200 uppercase tracking-wide">Dbl: {p.doubleRebuys}</span>}
                                             {p.rebuys_count === 0 && <span className="text-gray-700 text-xs">-</span>}
                                         </div>
                                     </td>
                                     <td className="px-4 py-3 text-center">
                                         <div className="flex flex-col items-center justify-center gap-1.5">
                                             {p.singleAddons > 0 && <span className="inline-flex items-center justify-center w-16 py-0.5 rounded bg-orange-900/20 border border-orange-500/30 text-[10px] font-bold text-orange-300 uppercase tracking-wide">Sgl: {p.singleAddons}</span>}
-                                            {p.doubleAddons > 0 && <span className="inline-flex items-center justify-center w-16 py-0.5 rounded bg-orange-600/20 border border-orange-400 text-[10px] font-black text-orange-200 uppercase tracking-wide shadow-[0_0_8px_rgba(249,115,22,0.3)]">Dbl: {p.doubleAddons}</span>}
+                                            {p.doubleAddons > 0 && <span className="inline-flex items-center justify-center w-16 py-0.5 rounded bg-orange-600/20 border border-orange-400 text-[10px] font-black text-orange-200 uppercase tracking-wide">Dbl: {p.doubleAddons}</span>}
                                             {p.addons_count === 0 && <span className="text-gray-700 text-xs">-</span>}
                                         </div>
                                     </td>
+                                    <td className="px-4 py-3 text-center">
+                                        {(p.tips_count || 0) > 0 ? (
+                                            <span className="inline-flex items-center gap-1 bg-pink-500/10 border border-pink-500/30 text-pink-400 text-[10px] font-black px-2 py-1 rounded-lg uppercase">
+                                                <CheckBadgeIcon className="w-3.5 h-3.5" /> {p.tips_count}x
+                                            </span>
+                                        ) : prices.tip > 0 ? (
+                                            <span className="text-gray-600 text-[10px] font-bold uppercase">No</span>
+                                        ) : (
+                                            <span className="text-gray-700 text-xs">-</span>
+                                        )}
+                                    </td>
                                     <td className="px-4 py-3 text-right font-mono font-bold text-green-400">{formatCurrency(p.moneyInvested)}</td>
                                     <td className="px-4 py-3 text-center">
-                                        {p.status === 'ACTIVE' && (
+                                        {p.status === 'ACTIVE' && tournament.status !== 'COMPLETED' && (
                                             <button onClick={() => setActionPlayer(p)} className="bg-violet-600 hover:bg-violet-500 text-white px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 mx-auto transition-colors active:scale-95">
                                                 <PlusCircleIcon className="w-4 h-4" />
-                                                Rebuy / Addon
+                                                Gestionar
                                             </button>
                                         )}
                                     </td>
                                     <td className="px-4 py-3 text-right">
-                                         {p.status === 'ACTIVE' && <button onClick={() => handleEliminate(p.player_id, getPlayerName(p.player_id))}><XCircleIcon className="w-5 h-5 text-gray-600 hover:text-red-500"/></button>}
+                                         {p.status === 'ACTIVE' && tournament.status !== 'COMPLETED' && <button onClick={() => handleEliminate(p.player_id, getPlayerName(p.player_id))}><XCircleIcon className="w-5 h-5 text-gray-600 hover:text-red-500"/></button>}
                                     </td>
                                 </tr>
                             ))}
@@ -298,7 +312,7 @@ export default function TournamentPlayerTable({ tournament, onUpdate }) {
             )}
             
             {isRegisterOpen && <RegisterModal onClose={() => setIsRegisterOpen(false)} onConfirm={handleRegister} activeTab={activeTab} setActiveTab={setActiveTab} availablePlayers={allPlayers.filter(ap => !tournament.players?.find(tp => tp.player_id === ap.id))} selectedPlayerId={selectedPlayerId} setSelectedPlayerId={setSelectedPlayerId} newPlayerName={newPlayerName} setNewPlayerName={setNewPlayerName} newPlayerPhone={newPlayerPhone} setNewPlayerPhone={setNewPlayerPhone} regOptions={regOptions} setRegOptions={setRegOptions} prices={prices} loading={loading} />}
-            {actionPlayer && <ActionModal player={actionPlayer} playerName={getPlayerName(actionPlayer.player_id)} onClose={() => setActionPlayer(null)} onRebuy={(t) => handleTransaction("Rebuy", t)} onAddon={(t) => handleTransaction("Addon", t)} prices={prices} loading={loading} />}
+            {actionPlayer && <ActionModal player={actionPlayer} playerName={getPlayerName(actionPlayer.player_id)} onClose={() => setActionPlayer(null)} onRebuy={(t) => handleTransaction("Rebuy", t)} onAddon={(t) => handleTransaction("Addon", t)} onUndo={(action, type) => { setConfirmModal({ isOpen: true, title: "Deshacer", message: `¿Deshacer ${action} ${type}?`, type: "danger", onConfirm: async () => { setLoading(true); try { await tournamentService.undoAction(tournament.id, actionPlayer.player_id, action, type); setActionPlayer(null); onUpdate(); showToast("Deshecho"); } catch(e) { showToast(e.response?.data?.detail || "Error", "error"); } finally { setLoading(false); setConfirmModal(prev => ({...prev, isOpen: false})); } } }); }} onPayTip={() => { handlePayTip(actionPlayer.player_id); }} prices={prices} loading={loading} />}
         </div>
     );
 }
@@ -621,19 +635,22 @@ function RegisterModal({ onClose, onConfirm, activeTab, setActiveTab, availableP
     );
 }
 
-function ActionModal({ player, playerName, onClose, onRebuy, onAddon, prices, loading }) {
+function ActionModal({ player, playerName, onClose, onRebuy, onAddon, onUndo, onPayTip, prices, loading }) {
+    const singleRebuys = (player.rebuys_count || 0) - (player.double_rebuys_count || 0);
+    const singleAddons = (player.addons_count || 0) - (player.double_addons_count || 0);
+
     return (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 backdrop-blur-sm p-4">
-            <div className="bg-gray-800 rounded-2xl border border-gray-700 shadow-2xl w-full max-w-md animate-fade-in-up overflow-hidden">
+            <div className="bg-gray-800 rounded-2xl border border-gray-700 shadow-2xl w-full max-w-md animate-fade-in-up overflow-hidden max-h-[90vh] overflow-y-auto">
                 {/* Header */}
-                <div className="bg-gray-900 p-5 border-b border-gray-700 flex justify-between items-center">
+                <div className="bg-gray-900 p-5 border-b border-gray-700 flex justify-between items-center sticky top-0 z-10">
                     <div className="flex items-center gap-3">
                         <div className="w-10 h-10 bg-blue-500/10 rounded-xl flex items-center justify-center border border-blue-500/20">
                             <BoltIcon className="w-5 h-5 text-blue-400" />
                         </div>
                         <div>
                             <h3 className="text-white font-black text-lg uppercase tracking-tight">{playerName}</h3>
-                            <p className="text-gray-500 text-[10px] font-bold uppercase tracking-widest">Recompras y Add-ons</p>
+                            <p className="text-gray-500 text-[10px] font-bold uppercase tracking-widest">Gestionar Jugador</p>
                         </div>
                     </div>
                     <button onClick={onClose} className="p-2 rounded-xl hover:bg-gray-700 transition-colors">
@@ -642,20 +659,58 @@ function ActionModal({ player, playerName, onClose, onRebuy, onAddon, prices, lo
                 </div>
 
                 <div className="p-5 space-y-5">
+
+                    {/* DEALER TIP */}
+                    {prices.tip > 0 && (
+                        <div>
+                            <label className="text-pink-400 text-xs font-bold uppercase tracking-widest mb-3 block px-1 flex items-center gap-2">
+                                <HeartIcon className="w-4 h-4" /> Staff Bonus (Tip)
+                                {(player.tips_count || 0) > 0 && <span className="bg-pink-500/20 text-pink-300 px-2 py-0.5 rounded text-[10px]">{player.tips_count} pagado{player.tips_count !== 1 ? 's' : ''}</span>}
+                            </label>
+                            {(player.tips_count || 0) > 0 && (
+                                <div className="bg-pink-500/10 border border-pink-500/20 rounded-xl p-3 flex items-center justify-between mb-3">
+                                    <div className="flex items-center gap-2">
+                                        <CheckBadgeIcon className="w-4 h-4 text-pink-400" />
+                                        <span className="text-pink-300 text-sm font-bold">{player.tips_count} tip{player.tips_count !== 1 ? 's' : ''} = {formatMoney(prices.tip * player.tips_count)}</span>
+                                    </div>
+                                </div>
+                            )}
+                            <button onClick={onPayTip} disabled={loading} className="w-full bg-pink-900/20 border border-pink-500/30 hover:border-pink-400 hover:bg-pink-900/40 text-white p-4 rounded-xl text-center transition-all active:scale-[0.97] disabled:opacity-30">
+                                <div className="text-xs font-bold uppercase tracking-wider text-pink-300 mb-1">+ Cobrar Tip</div>
+                                <div className="text-xl font-black font-mono">{formatMoney(prices.tip)}</div>
+                            </button>
+                        </div>
+                    )}
+
                     {/* Recompras */}
                     <div>
                         <label className="text-blue-400 text-xs font-bold uppercase tracking-widest mb-3 block px-1 flex items-center gap-2">
                             <ArrowPathIcon className="w-4 h-4" /> Recompras (Rebuy)
+                            {player.rebuys_count > 0 && <span className="bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded text-[10px]">{player.rebuys_count} total</span>}
                         </label>
                         <div className="grid grid-cols-2 gap-3">
-                            <button onClick={()=>onRebuy("SINGLE")} disabled={loading || prices.rebuyS <= 0} className="bg-blue-900/20 border border-blue-500/30 hover:border-blue-400 hover:bg-blue-900/40 text-white p-4 rounded-xl text-center transition-all active:scale-[0.97] disabled:opacity-30 disabled:cursor-not-allowed">
-                                <div className="text-xs font-bold uppercase tracking-wider text-blue-300 mb-1">Sencillo</div>
-                                <div className="text-xl font-black font-mono">{formatMoney(prices.rebuyS)}</div>
-                            </button>
-                            <button onClick={()=>onRebuy("DOUBLE")} disabled={loading || prices.rebuyD <= 0} className="bg-blue-900/20 border border-blue-500/30 hover:border-blue-400 hover:bg-blue-900/40 text-white p-4 rounded-xl text-center transition-all active:scale-[0.97] disabled:opacity-30 disabled:cursor-not-allowed">
-                                <div className="text-xs font-bold uppercase tracking-wider text-blue-300 mb-1">Doble</div>
-                                <div className="text-xl font-black font-mono">{formatMoney(prices.rebuyD)}</div>
-                            </button>
+                            <div className="space-y-2">
+                                <button onClick={()=>onRebuy("SINGLE")} disabled={loading || prices.rebuyS <= 0} className="w-full bg-blue-900/20 border border-blue-500/30 hover:border-blue-400 hover:bg-blue-900/40 text-white p-4 rounded-xl text-center transition-all active:scale-[0.97] disabled:opacity-30 disabled:cursor-not-allowed">
+                                    <div className="text-xs font-bold uppercase tracking-wider text-blue-300 mb-1">+ Sencillo</div>
+                                    <div className="text-xl font-black font-mono">{formatMoney(prices.rebuyS)}</div>
+                                </button>
+                                {singleRebuys > 0 && (
+                                    <button onClick={()=>onUndo("rebuy","SINGLE")} disabled={loading} className="w-full text-red-400 hover:text-red-300 hover:bg-red-900/20 border border-gray-700 hover:border-red-500/30 py-2 rounded-lg text-[10px] font-bold uppercase transition-colors">
+                                        Deshacer ({singleRebuys})
+                                    </button>
+                                )}
+                            </div>
+                            <div className="space-y-2">
+                                <button onClick={()=>onRebuy("DOUBLE")} disabled={loading || prices.rebuyD <= 0} className="w-full bg-blue-900/20 border border-blue-500/30 hover:border-blue-400 hover:bg-blue-900/40 text-white p-4 rounded-xl text-center transition-all active:scale-[0.97] disabled:opacity-30 disabled:cursor-not-allowed">
+                                    <div className="text-xs font-bold uppercase tracking-wider text-blue-300 mb-1">+ Doble</div>
+                                    <div className="text-xl font-black font-mono">{formatMoney(prices.rebuyD)}</div>
+                                </button>
+                                {(player.double_rebuys_count || 0) > 0 && (
+                                    <button onClick={()=>onUndo("rebuy","DOUBLE")} disabled={loading} className="w-full text-red-400 hover:text-red-300 hover:bg-red-900/20 border border-gray-700 hover:border-red-500/30 py-2 rounded-lg text-[10px] font-bold uppercase transition-colors">
+                                        Deshacer ({player.double_rebuys_count})
+                                    </button>
+                                )}
+                            </div>
                         </div>
                     </div>
 
@@ -663,16 +718,31 @@ function ActionModal({ player, playerName, onClose, onRebuy, onAddon, prices, lo
                     <div>
                         <label className="text-orange-400 text-xs font-bold uppercase tracking-widest mb-3 block px-1 flex items-center gap-2">
                             <PlusCircleIcon className="w-4 h-4" /> Add-ons
+                            {player.addons_count > 0 && <span className="bg-orange-500/20 text-orange-300 px-2 py-0.5 rounded text-[10px]">{player.addons_count} total</span>}
                         </label>
                         <div className="grid grid-cols-2 gap-3">
-                            <button onClick={()=>onAddon("SINGLE")} disabled={loading || prices.addonS <= 0} className="bg-orange-900/20 border border-orange-500/30 hover:border-orange-400 hover:bg-orange-900/40 text-white p-4 rounded-xl text-center transition-all active:scale-[0.97] disabled:opacity-30 disabled:cursor-not-allowed">
-                                <div className="text-xs font-bold uppercase tracking-wider text-orange-300 mb-1">Sencillo</div>
-                                <div className="text-xl font-black font-mono">{formatMoney(prices.addonS)}</div>
-                            </button>
-                            <button onClick={()=>onAddon("DOUBLE")} disabled={loading || prices.addonD <= 0} className="bg-orange-900/20 border border-orange-500/30 hover:border-orange-400 hover:bg-orange-900/40 text-white p-4 rounded-xl text-center transition-all active:scale-[0.97] disabled:opacity-30 disabled:cursor-not-allowed">
-                                <div className="text-xs font-bold uppercase tracking-wider text-orange-300 mb-1">Doble</div>
-                                <div className="text-xl font-black font-mono">{formatMoney(prices.addonD)}</div>
-                            </button>
+                            <div className="space-y-2">
+                                <button onClick={()=>onAddon("SINGLE")} disabled={loading || prices.addonS <= 0} className="w-full bg-orange-900/20 border border-orange-500/30 hover:border-orange-400 hover:bg-orange-900/40 text-white p-4 rounded-xl text-center transition-all active:scale-[0.97] disabled:opacity-30 disabled:cursor-not-allowed">
+                                    <div className="text-xs font-bold uppercase tracking-wider text-orange-300 mb-1">+ Sencillo</div>
+                                    <div className="text-xl font-black font-mono">{formatMoney(prices.addonS)}</div>
+                                </button>
+                                {singleAddons > 0 && (
+                                    <button onClick={()=>onUndo("addon","SINGLE")} disabled={loading} className="w-full text-red-400 hover:text-red-300 hover:bg-red-900/20 border border-gray-700 hover:border-red-500/30 py-2 rounded-lg text-[10px] font-bold uppercase transition-colors">
+                                        Deshacer ({singleAddons})
+                                    </button>
+                                )}
+                            </div>
+                            <div className="space-y-2">
+                                <button onClick={()=>onAddon("DOUBLE")} disabled={loading || prices.addonD <= 0} className="w-full bg-orange-900/20 border border-orange-500/30 hover:border-orange-400 hover:bg-orange-900/40 text-white p-4 rounded-xl text-center transition-all active:scale-[0.97] disabled:opacity-30 disabled:cursor-not-allowed">
+                                    <div className="text-xs font-bold uppercase tracking-wider text-orange-300 mb-1">+ Doble</div>
+                                    <div className="text-xl font-black font-mono">{formatMoney(prices.addonD)}</div>
+                                </button>
+                                {(player.double_addons_count || 0) > 0 && (
+                                    <button onClick={()=>onUndo("addon","DOUBLE")} disabled={loading} className="w-full text-red-400 hover:text-red-300 hover:bg-red-900/20 border border-gray-700 hover:border-red-500/30 py-2 rounded-lg text-[10px] font-bold uppercase transition-colors">
+                                        Deshacer ({player.double_addons_count})
+                                    </button>
+                                )}
+                            </div>
                         </div>
                     </div>
 

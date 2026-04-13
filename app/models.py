@@ -238,6 +238,7 @@ class TournamentPlayer(Base):
     status = Column(String, default="ACTIVE") # ACTIVE, ELIMINATED
 
     is_tip_paid = Column(Boolean, default=False)
+    tips_count = Column(Integer, default=0)
     
     # Contadores de Dinero
     rebuys_count = Column(Integer, default=0) # Cantidad de recompras hechas

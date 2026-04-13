@@ -202,9 +202,6 @@ async def pay_late_dealer_tip(
     if not t_player:
         raise HTTPException(status_code=404, detail="Jugador no encontrado en este torneo")
 
-    if t_player.is_tip_paid:
-        raise HTTPException(status_code=400, detail="Este jugador YA pagó el Dealer Tip")
-
     # B. Obtener monto del torneo (validando que pertenezca al club)
     tournament_result = await db.execute(
         select(models.Tournament)
@@ -221,18 +218,17 @@ async def pay_late_dealer_tip(
         tournament_id=tournament_id,
         session_id=None,
         player_id=player_id,
-        
-        # ✅ USO CORRECTO DEL ENUM Y TIMESTAMP
         type=models.TransactionType.TOURNAMENT_TIP,
         amount=tournament.dealer_tip_amount,
-        description=f"Late Staff Bonus - Torneo #{tournament.id}",
+        description=f"Staff Bonus #{(t_player.tips_count or 0) + 1} - Torneo #{tournament.id}",
         timestamp=datetime.utcnow()
     )
     db.add(new_transaction)
 
     # D. Actualizar estado
     t_player.is_tip_paid = True
-    
+    t_player.tips_count = (t_player.tips_count or 0) + 1
+
     await db.commit()
     await db.refresh(t_player)
 
@@ -356,6 +352,117 @@ async def register_addon(
 
     t_player.addons_count += 1
     
+    await db.commit()
+    await db.refresh(t_player)
+    return t_player
+
+class UndoRequest(BaseModel):
+    player_id: int
+    action: str  # "rebuy" o "addon"
+    type: str    # "SINGLE" o "DOUBLE"
+
+@router.post("/{tournament_id}/undo", response_model=schemas.TournamentPlayerSchema)
+async def undo_action(
+    tournament_id: int,
+    request: UndoRequest,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club)
+):
+    t_result = await db.execute(
+        select(models.Tournament)
+        .where(models.Tournament.id == tournament_id)
+        .where(models.Tournament.club_id == current_club.id)
+    )
+    tournament = t_result.scalars().first()
+
+    p_result = await db.execute(
+        select(models.TournamentPlayer)
+        .where(models.TournamentPlayer.tournament_id == tournament_id)
+        .where(models.TournamentPlayer.player_id == request.player_id)
+    )
+    t_player = p_result.scalars().first()
+
+    if not tournament or not t_player:
+        raise HTTPException(status_code=404, detail="Torneo o Jugador no encontrado")
+
+    if request.action == "rebuy":
+        if request.type == "SINGLE":
+            single_count = t_player.rebuys_count - t_player.double_rebuys_count
+            if single_count <= 0:
+                raise HTTPException(status_code=400, detail="No hay rebuys sencillos para deshacer")
+            t_player.rebuys_count -= 1
+        elif request.type == "DOUBLE":
+            if t_player.double_rebuys_count <= 0:
+                raise HTTPException(status_code=400, detail="No hay rebuys dobles para deshacer")
+            t_player.double_rebuys_count -= 1
+            t_player.rebuys_count -= 1
+        else:
+            raise HTTPException(status_code=400, detail="Tipo invalido")
+    elif request.action == "addon":
+        if request.type == "SINGLE":
+            single_count = t_player.addons_count - t_player.double_addons_count
+            if single_count <= 0:
+                raise HTTPException(status_code=400, detail="No hay add-ons sencillos para deshacer")
+            t_player.addons_count -= 1
+        elif request.type == "DOUBLE":
+            if t_player.double_addons_count <= 0:
+                raise HTTPException(status_code=400, detail="No hay add-ons dobles para deshacer")
+            t_player.double_addons_count -= 1
+            t_player.addons_count -= 1
+        else:
+            raise HTTPException(status_code=400, detail="Tipo invalido")
+    else:
+        raise HTTPException(status_code=400, detail="Accion invalida")
+
+    # Eliminar ultima transaccion correspondiente
+    tx_type = models.TransactionType.TOURNAMENT_REBUY if request.action == "rebuy" else models.TransactionType.TOURNAMENT_ADDON
+    last_tx = await db.execute(
+        select(models.Transaction)
+        .where(models.Transaction.tournament_id == tournament_id)
+        .where(models.Transaction.player_id == request.player_id)
+        .where(models.Transaction.type == tx_type)
+        .order_by(models.Transaction.timestamp.desc())
+        .limit(1)
+    )
+    tx = last_tx.scalars().first()
+    if tx:
+        await db.execute(delete(models.Transaction).where(models.Transaction.id == tx.id))
+
+    await db.commit()
+    await db.refresh(t_player)
+    return t_player
+
+@router.post("/{tournament_id}/players/{player_id}/eliminate", response_model=schemas.TournamentPlayerSchema)
+async def eliminate_player(
+    tournament_id: int,
+    player_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club)
+):
+    # Verificar torneo pertenece al club
+    t_result = await db.execute(
+        select(models.Tournament)
+        .where(models.Tournament.id == tournament_id)
+        .where(models.Tournament.club_id == current_club.id)
+    )
+    tournament = t_result.scalars().first()
+    if not tournament:
+        raise HTTPException(status_code=404, detail="Torneo no encontrado")
+
+    # Buscar jugador
+    p_result = await db.execute(
+        select(models.TournamentPlayer)
+        .where(models.TournamentPlayer.tournament_id == tournament_id)
+        .where(models.TournamentPlayer.player_id == player_id)
+    )
+    t_player = p_result.scalars().first()
+    if not t_player:
+        raise HTTPException(status_code=404, detail="Jugador no encontrado en el torneo")
+
+    if t_player.status == "ELIMINATED":
+        raise HTTPException(status_code=400, detail="El jugador ya fue eliminado")
+
+    t_player.status = "ELIMINATED"
     await db.commit()
     await db.refresh(t_player)
     return t_player
