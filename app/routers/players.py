@@ -46,18 +46,17 @@ async def create_player(player: schemas.PlayerCreate, db: AsyncSession = Depends
     return new_player
 
 @router.get("/", response_model=List[schemas.PlayerResponse])
-async def read_players(skip: int = 0, limit: int = 100, db: AsyncSession = Depends(get_db), current_club = Depends(get_current_club)):
+async def read_players(skip: int = 0, limit: int = 10000, db: AsyncSession = Depends(get_db), current_club = Depends(get_current_club)):
     """
     Obtiene la lista de todos los jugadores del club, ordenados alfabéticamente.
     """
-    # 1. Query con filtro de Club + Tu ordenamiento original
     query = (
         select(models.Player)
-        .where(models.Player.club_id == current_club.id) # 👈 FILTRO SAAS
-        .order_by(models.Player.name.asc())            # 👈 MANTENEMOS TU LÓGICA ORIGINAL
+        .where(models.Player.club_id == current_club.id)
+        .order_by(models.Player.name.asc())
         .offset(skip)
         .limit(limit)
     )
-    
+
     result = await db.execute(query)
     return result.scalars().all()
