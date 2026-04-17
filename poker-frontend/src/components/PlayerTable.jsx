@@ -44,15 +44,54 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
 
   const togglePaid = async (player) => {
     if (!sessionId) return;
-    // Optimista: actualizar UI inmediatamente
-    setPlayers(prev => prev.map(p => p.player_id === player.player_id ? { ...p, has_pending_payment: !p.has_pending_payment } : p));
+    // Si estaba pendiente (hay al menos una deuda), marcamos todas como pagadas.
+    // Si todas estaban pagas, marcamos todas como pendientes.
+    const newIsPaid = player.has_pending_payment;
+    const prevSnapshot = players;
+    setPlayers(prev => prev.map(p => {
+      if (p.player_id !== player.player_id) return p;
+      const updatedTxs = (p.transactions || []).map(t =>
+        (t.type === 'BUYIN' || t.type === 'REBUY') ? { ...t, is_paid: newIsPaid } : t
+      );
+      return {
+        ...p,
+        has_pending_payment: !newIsPaid,
+        paid_buyins_count: newIsPaid ? (p.buyins_count || 0) : 0,
+        transactions: updatedTxs,
+      };
+    }));
     try {
-      await transactionService.togglePaid(player.player_id, sessionId, player.has_pending_payment); // si estaba pendiente (true), marcamos como pagado (true)
+      await transactionService.togglePaid(player.player_id, sessionId, newIsPaid);
       if (onRefresh) onRefresh();
     } catch (err) {
       console.error(err);
-      // Revertir si falla
-      setPlayers(prev => prev.map(p => p.player_id === player.player_id ? { ...p, has_pending_payment: player.has_pending_payment } : p));
+      setPlayers(prevSnapshot);
+    }
+  };
+
+  const toggleTxPaid = async (player, tx) => {
+    const prevSnapshot = players;
+    const newIsPaid = !tx.is_paid;
+    setPlayers(prev => prev.map(p => {
+      if (p.player_id !== player.player_id) return p;
+      const updatedTxs = (p.transactions || []).map(t =>
+        t.id === tx.id ? { ...t, is_paid: newIsPaid } : t
+      );
+      const paidCount = updatedTxs.filter(t => (t.type === 'BUYIN' || t.type === 'REBUY') && t.is_paid).length;
+      const totalCount = p.buyins_count || 0;
+      return {
+        ...p,
+        paid_buyins_count: paidCount,
+        has_pending_payment: paidCount < totalCount,
+        transactions: updatedTxs,
+      };
+    }));
+    try {
+      await transactionService.togglePaidById(tx.id, newIsPaid);
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      console.error(err);
+      setPlayers(prevSnapshot);
     }
   };
 
@@ -131,17 +170,34 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
   </div>
 </td>
                     <td className="p-4 text-center">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); togglePaid(p); }}
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider border transition-all active:scale-95 ${
-                          p.has_pending_payment
-                            ? 'bg-red-500/10 border-red-500/40 text-red-400 hover:bg-red-500/20'
-                            : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
-                        }`}
-                        title={p.has_pending_payment ? "Click para marcar como pagado" : "Click para marcar como pendiente"}
-                      >
-                        {p.has_pending_payment ? '⏳ Debe' : '✓ Pagó'}
-                      </button>
+                      {(() => {
+                        const total = p.buyins_count || 0;
+                        const paid = p.paid_buyins_count || 0;
+                        const allPaid = total > 0 && paid === total;
+                        const mixed = paid > 0 && paid < total;
+                        const style = allPaid
+                          ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
+                          : mixed
+                          ? 'bg-amber-500/10 border-amber-500/40 text-amber-400 hover:bg-amber-500/20'
+                          : 'bg-red-500/10 border-red-500/40 text-red-400 hover:bg-red-500/20';
+                        const label = allPaid
+                          ? '✓ Pagó'
+                          : mixed
+                          ? `${paid}/${total} pagas`
+                          : '⏳ Debe';
+                        const tip = total > 1
+                          ? (allPaid ? 'Click: marcar todas como pendientes' : 'Click: marcar todas como pagadas')
+                          : (allPaid ? 'Click: marcar como pendiente' : 'Click: marcar como pagado');
+                        return (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); togglePaid(p); }}
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider border transition-all active:scale-95 ${style}`}
+                            title={tip}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })()}
                     </td>
                     <td className="p-4 text-right font-mono text-gray-200 text-lg">
                       <div className="flex items-center justify-end gap-2">
@@ -181,13 +237,24 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
                              {/* 👇 OJO: Si sale esto, buyins.length es 0 */}
                              {buyins.length > 0 ? (
                                <ul className="space-y-2">
-                                 {buyins.map((tx, idx) => (
-                                   <li key={idx} className="flex justify-between items-center text-sm p-2 rounded hover:bg-white/5 border border-transparent hover:border-white/10 transition-colors">
+                                 {buyins.map((tx) => (
+                                   <li key={tx.id} className="flex justify-between items-center text-sm p-2 rounded hover:bg-white/5 border border-transparent hover:border-white/10 transition-colors">
                                      <div className="flex flex-col">
                                         <span className="text-white font-bold">{formatMoney(tx.amount)}</span>
                                         <span className="text-[10px] text-gray-500 uppercase">{tx.type}</span>
                                      </div>
                                      <div className="flex items-center gap-3">
+                                        <button
+                                          onClick={(e) => { e.stopPropagation(); toggleTxPaid(p, tx); }}
+                                          className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded border transition-all active:scale-95 ${
+                                            tx.is_paid
+                                              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
+                                              : 'bg-red-500/10 border-red-500/40 text-red-400 hover:bg-red-500/20'
+                                          }`}
+                                          title={tx.is_paid ? 'Click: marcar como pendiente' : 'Click: marcar como pagado'}
+                                        >
+                                          {tx.is_paid ? '✓ Pagó' : '⏳ Debe'}
+                                        </button>
                                         <span className="text-[10px] bg-gray-800 px-2 py-1 rounded text-gray-400 border border-gray-700">
                                             {tx.method || 'CASH'}
                                         </span>

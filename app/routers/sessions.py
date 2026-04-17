@@ -95,7 +95,9 @@ async def get_current_session_stats(
             -- 👇 Lógica de Bonos
             COALESCE(SUM(CASE WHEN t.type = 'BONUS' THEN t.amount ELSE 0 END), 0) as total_bonus,
             MAX(CASE WHEN (t.type = 'BUYIN' OR t.type = 'REBUY') AND t.method = 'DIGITAL' THEN 1 ELSE 0 END) as has_digital,
-            MAX(CASE WHEN t.type IN ('BUYIN', 'REBUY') AND COALESCE(t.is_paid, TRUE) = FALSE THEN 1 ELSE 0 END) as has_pending_payment
+            MAX(CASE WHEN t.type IN ('BUYIN', 'REBUY') AND COALESCE(t.is_paid, TRUE) = FALSE THEN 1 ELSE 0 END) as has_pending_payment,
+            SUM(CASE WHEN t.type IN ('BUYIN', 'REBUY') THEN 1 ELSE 0 END) as buyins_count,
+            SUM(CASE WHEN t.type IN ('BUYIN', 'REBUY') AND COALESCE(t.is_paid, FALSE) = TRUE THEN 1 ELSE 0 END) as paid_buyins_count
         FROM players p
         JOIN transactions t ON p.id = t.player_id
         WHERE t.session_id = :sid
@@ -124,6 +126,8 @@ async def get_current_session_stats(
             "current_balance": balance,
             "has_digital_payments": bool(r.has_digital),
             "has_pending_payment": bool(r.has_pending_payment),
+            "buyins_count": int(r.buyins_count or 0),
+            "paid_buyins_count": int(r.paid_buyins_count or 0),
             "transactions": []
         }
 
@@ -131,11 +135,12 @@ async def get_current_session_stats(
     #    Fusiona: Corrección 'timestamp' + Corrección 'Hora Colombia' + Conversión Texto
     sql_details = text("""
         SELECT
-            id,            
-            player_id, 
-            CAST(type AS TEXT) as type_str, 
-            amount, 
-            CAST(method AS TEXT) as method_str, 
+            id,
+            player_id,
+            CAST(type AS TEXT) as type_str,
+            amount,
+            CAST(method AS TEXT) as method_str,
+            COALESCE(is_paid, FALSE) as is_paid,
             -- 👇 AQUÍ ESTÁ LA FUSIÓN CLAVE: 'timestamp' + 'Time Zone'
             (timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'America/Bogota') as created_at
         FROM transactions
@@ -156,10 +161,11 @@ async def get_current_session_stats(
 
                 players_map[tx.player_id]["transactions"].append({
                     "id": tx.id,
-                    "type": clean_type,      
-                    "amount": tx.amount,     
-                    "created_at": tx.created_at, 
-                    "method": tx.method_str or "CASH"
+                    "type": clean_type,
+                    "amount": tx.amount,
+                    "created_at": tx.created_at,
+                    "method": tx.method_str or "CASH",
+                    "is_paid": bool(tx.is_paid),
                 })
         except Exception as e:
             logger.warning("Error procesando transacción: %s", e)

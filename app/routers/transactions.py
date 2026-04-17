@@ -366,3 +366,39 @@ async def toggle_paid(
     )
     await db.commit()
     return {"message": "Estado actualizado", "is_paid": data.is_paid}
+
+
+# ---------------------------------------------------------
+# TOGGLE GRANULAR (marca una sola transacción BUYIN/REBUY)
+# ---------------------------------------------------------
+class ToggleTxPaidRequest(BaseModel):
+    is_paid: bool
+
+
+@router.post("/{transaction_id}/toggle-paid")
+async def toggle_transaction_paid(
+    transaction_id: int,
+    data: ToggleTxPaidRequest,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+):
+    """Marca una transacción BUYIN/REBUY específica como pagada o pendiente."""
+    stmt = (
+        select(models.Transaction)
+        .options(selectinload(models.Transaction.session))
+        .where(models.Transaction.id == transaction_id)
+    )
+    tx = (await db.execute(stmt)).scalars().first()
+
+    if not tx or not tx.session or tx.session.club_id != current_club.id:
+        raise HTTPException(status_code=404, detail="Transacción no encontrada")
+
+    if tx.type not in (models.TransactionType.BUYIN, models.TransactionType.REBUY):
+        raise HTTPException(status_code=400, detail="Solo BUYIN/REBUY tienen estado de pago")
+
+    if tx.session.status == models.SessionStatus.CLOSED:
+        raise HTTPException(status_code=400, detail="Sesión cerrada, no se puede modificar")
+
+    tx.is_paid = data.is_paid
+    await db.commit()
+    return {"id": tx.id, "is_paid": tx.is_paid}

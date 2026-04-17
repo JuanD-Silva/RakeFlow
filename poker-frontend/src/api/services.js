@@ -141,6 +141,12 @@ export const transactionService = {
             session_id: sessionId,
             is_paid: isPaid
         });
+    },
+
+    togglePaidById: async (transactionId, isPaid) => {
+        return await api.post(`/transactions/${transactionId}/toggle-paid`, {
+            is_paid: isPaid
+        });
     }
 };
 
