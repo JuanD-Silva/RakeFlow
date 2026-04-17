@@ -128,10 +128,18 @@ export const transactionService = {
     },
 
     bonus: async (playerId, amount, sessionId) => {
-        return await api.post('/transactions/bonus', { 
-            player_id: playerId, 
-            amount, 
+        return await api.post('/transactions/bonus', {
+            player_id: playerId,
+            amount,
             session_id: sessionId
+        });
+    },
+
+    togglePaid: async (playerId, sessionId, isPaid) => {
+        return await api.post('/transactions/toggle-paid', {
+            player_id: playerId,
+            session_id: sessionId,
+            is_paid: isPaid
         });
     }
 };
@@ -254,6 +262,10 @@ endTournament: async (tournamentId) => {
   },
   undoAction: async (tournamentId, playerId, action, type) => {
     const response = await api.post(`/tournaments/${tournamentId}/undo`, { player_id: playerId, action, type });
+    return response.data;
+  },
+  toggleBuyinPaid: async (tournamentId, playerId) => {
+    const response = await api.post(`/tournaments/${tournamentId}/players/${playerId}/toggle-paid`);
     return response.data;
   },
 };

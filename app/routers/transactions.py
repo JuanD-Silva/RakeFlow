@@ -329,3 +329,40 @@ async def create_bonus(
     await db.refresh(new_tx)
     
     return new_tx
+
+# ---------------------------------------------------------
+# TOGGLE ESTADO DE PAGO (marca todas las transacciones de un jugador en una sesión)
+# ---------------------------------------------------------
+class TogglePaidRequest(BaseModel):
+    player_id: int
+    session_id: int
+    is_paid: bool
+
+@router.post("/toggle-paid")
+async def toggle_paid(
+    data: TogglePaidRequest,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club)
+):
+    """Marca todas las transacciones BUYIN/REBUY de un jugador en una sesión como pagadas o pendientes."""
+    # Verificar que la sesión pertenezca al club
+    session_result = await db.execute(
+        select(models.Session).where(
+            models.Session.id == data.session_id,
+            models.Session.club_id == current_club.id
+        )
+    )
+    if not session_result.scalars().first():
+        raise HTTPException(status_code=404, detail="Sesión no encontrada")
+
+    # Actualizar todas las transacciones BUYIN/REBUY del jugador en esa sesión
+    from sqlalchemy import update
+    await db.execute(
+        update(models.Transaction)
+        .where(models.Transaction.session_id == data.session_id)
+        .where(models.Transaction.player_id == data.player_id)
+        .where(models.Transaction.type.in_([models.TransactionType.BUYIN, models.TransactionType.REBUY]))
+        .values(is_paid=data.is_paid)
+    )
+    await db.commit()
+    return {"message": "Estado actualizado", "is_paid": data.is_paid}

@@ -135,6 +135,16 @@ export default function TournamentPlayerTable({ tournament, onUpdate }) {
         });
     };
 
+    const handleTogglePaid = async (pid) => {
+        try {
+            await tournamentService.toggleBuyinPaid(tournament.id, pid);
+            onUpdate();
+        } catch (e) {
+            console.error(e);
+            showToast(e.response?.data?.detail || "Error al cambiar estado", "error");
+        }
+    };
+
     const handleEliminate = (pid, name) => {
         setConfirmModal({ isOpen: true, title: "Eliminar", message: `¿Eliminar a ${name}?`, type: "danger", onConfirm: async () => {
             setLoading(true); // Activar loader
@@ -216,6 +226,7 @@ export default function TournamentPlayerTable({ tournament, onUpdate }) {
                         <thead className="bg-gray-700/50 text-xs uppercase font-bold text-gray-300">
                             <tr>
                                 <th className="px-4 py-3">Jugador</th>
+                                <th className="px-4 py-3 text-center text-amber-400">Pago</th>
                                 <th className="px-4 py-3 text-center">Rebuys</th>
                                 <th className="px-4 py-3 text-center">Addons</th>
                                 <th className="px-4 py-3 text-center text-pink-400">Tip</th>
@@ -233,6 +244,19 @@ export default function TournamentPlayerTable({ tournament, onUpdate }) {
                                             {p.status === 'WINNER' && <span className="bg-yellow-500 text-black text-[10px] font-black px-1.5 rounded">#{p.rank}</span>}
                                             {p.status === 'ELIMINATED' && <span className="text-red-500 text-[10px] font-black">OUT</span>}
                                         </div>
+                                    </td>
+                                    <td className="px-4 py-3 text-center">
+                                        <button
+                                            onClick={() => handleTogglePaid(p.player_id)}
+                                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border transition-all active:scale-95 ${
+                                                p.is_buyin_paid === false
+                                                    ? 'bg-red-500/10 border-red-500/40 text-red-400 hover:bg-red-500/20'
+                                                    : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
+                                            }`}
+                                            title={p.is_buyin_paid === false ? "Click para marcar como pagado" : "Click para marcar como pendiente"}
+                                        >
+                                            {p.is_buyin_paid === false ? '⏳ Debe' : '✓ Pagó'}
+                                        </button>
                                     </td>
                                     <td className="px-4 py-3 text-center">
                                          <div className="flex flex-col items-center justify-center gap-1.5">

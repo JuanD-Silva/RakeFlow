@@ -648,3 +648,33 @@ async def delete_tournament(
         await db.rollback()
         logger.error("Error borrando torneo %d: %s", tournament_id, e)
         raise HTTPException(status_code=500, detail=f"Error interno BD: {str(e)}")
+
+@router.post("/{tournament_id}/players/{player_id}/toggle-paid", response_model=schemas.TournamentPlayerSchema)
+async def toggle_tournament_buyin_paid(
+    tournament_id: int,
+    player_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club)
+):
+    """Toggle del estado de pago de la entrada del jugador en el torneo."""
+    t_result = await db.execute(
+        select(models.Tournament)
+        .where(models.Tournament.id == tournament_id)
+        .where(models.Tournament.club_id == current_club.id)
+    )
+    if not t_result.scalars().first():
+        raise HTTPException(status_code=404, detail="Torneo no encontrado")
+
+    p_result = await db.execute(
+        select(models.TournamentPlayer)
+        .where(models.TournamentPlayer.tournament_id == tournament_id)
+        .where(models.TournamentPlayer.player_id == player_id)
+    )
+    t_player = p_result.scalars().first()
+    if not t_player:
+        raise HTTPException(status_code=404, detail="Jugador no encontrado")
+
+    t_player.is_buyin_paid = not (t_player.is_buyin_paid or False)
+    await db.commit()
+    await db.refresh(t_player)
+    return t_player

@@ -157,6 +157,7 @@ class TournamentPlayerSchema(BaseModel):
     status: str
     is_tip_paid: bool
     tips_count: int = 0
+    is_buyin_paid: bool = True
     rebuys_count: int
     addons_count: int
     double_rebuys_count: int = 0

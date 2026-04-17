@@ -345,9 +345,11 @@ const handleCreateTournament = async (formData) => {
 
            <div className="col-span-2 md:col-span-3 mt-4">
               <StatsPanel refreshTrigger={refreshKey} />
-              <PlayerTable 
-                refreshTrigger={refreshKey} 
-                onPlayerSelect={setSelectedPlayerForHistory} 
+              <PlayerTable
+                refreshTrigger={refreshKey}
+                sessionId={activeSession?.id}
+                onPlayerSelect={setSelectedPlayerForHistory}
+                onRefresh={refresh}
               />
            </div>
 

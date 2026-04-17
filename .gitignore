@@ -28,3 +28,6 @@ Thumbs.db
 
 # Build output
 poker-frontend/dist/
+
+# DB Backups (contain sensitive data)
+backups/

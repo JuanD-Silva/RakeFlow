@@ -94,7 +94,8 @@ async def get_current_session_stats(
             COALESCE(SUM(CASE WHEN t.type = 'JACKPOT_PAYOUT' THEN t.amount ELSE 0 END), 0) as total_jackpot,
             -- 👇 Lógica de Bonos
             COALESCE(SUM(CASE WHEN t.type = 'BONUS' THEN t.amount ELSE 0 END), 0) as total_bonus,
-            MAX(CASE WHEN (t.type = 'BUYIN' OR t.type = 'REBUY') AND t.method = 'DIGITAL' THEN 1 ELSE 0 END) as has_digital
+            MAX(CASE WHEN (t.type = 'BUYIN' OR t.type = 'REBUY') AND t.method = 'DIGITAL' THEN 1 ELSE 0 END) as has_digital,
+            MAX(CASE WHEN t.type IN ('BUYIN', 'REBUY') AND COALESCE(t.is_paid, TRUE) = FALSE THEN 1 ELSE 0 END) as has_pending_payment
         FROM players p
         JOIN transactions t ON p.id = t.player_id
         WHERE t.session_id = :sid
@@ -122,7 +123,8 @@ async def get_current_session_stats(
             "total_bonus": r.total_bonus,  # Guardamos el bono
             "current_balance": balance,
             "has_digital_payments": bool(r.has_digital),
-            "transactions": [] 
+            "has_pending_payment": bool(r.has_pending_payment),
+            "transactions": []
         }
 
     # 4. SQL BLINDADO PARA DETALLES 🛡️

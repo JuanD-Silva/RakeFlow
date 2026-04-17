@@ -2,8 +2,9 @@ import { useState, useEffect, Fragment } from 'react';
 import { ChevronDownIcon, ChevronUpIcon, ClockIcon } from '@heroicons/react/24/solid';
 import api from '../api/axios';
 import { formatMoney } from '../utils/formatters';
+import { transactionService } from '../api/services';
 
-export default function PlayerTable({ refreshTrigger, onPlayerSelect }) {
+export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect, onRefresh }) {
   const [players, setPlayers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -39,8 +40,21 @@ export default function PlayerTable({ refreshTrigger, onPlayerSelect }) {
     };
 
     fetchStats();
-  }, [refreshTrigger]); 
+  }, [refreshTrigger]);
 
+  const togglePaid = async (player) => {
+    if (!sessionId) return;
+    // Optimista: actualizar UI inmediatamente
+    setPlayers(prev => prev.map(p => p.player_id === player.player_id ? { ...p, has_pending_payment: !p.has_pending_payment } : p));
+    try {
+      await transactionService.togglePaid(player.player_id, sessionId, player.has_pending_payment); // si estaba pendiente (true), marcamos como pagado (true)
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      console.error(err);
+      // Revertir si falla
+      setPlayers(prev => prev.map(p => p.player_id === player.player_id ? { ...p, has_pending_payment: player.has_pending_payment } : p));
+    }
+  };
 
   const formatTime = (dateString) => {
     if (!dateString) return '--:--';
@@ -63,6 +77,7 @@ export default function PlayerTable({ refreshTrigger, onPlayerSelect }) {
             <tr className="bg-gray-900 text-gray-400 text-xs uppercase tracking-wider border-b border-gray-700">
               <th className="p-4 font-semibold w-10">#</th>
               <th className="p-4 font-semibold">Jugador</th>
+              <th className="p-4 font-semibold text-center text-amber-400 w-20">Pago</th>
               <th className="p-4 font-semibold text-right text-green-400">Total Buy-ins</th>
               <th className="p-4 font-semibold text-right text-red-400">Cashouts</th>
               <th className="p-4 font-semibold text-right text-yellow-400">Gastos / Premios</th>
@@ -115,6 +130,19 @@ export default function PlayerTable({ refreshTrigger, onPlayerSelect }) {
       {p.total_jackpot > 0 && <span className="text-purple-400 font-bold">🎁 Jackpot</span>}
   </div>
 </td>
+                    <td className="p-4 text-center">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); togglePaid(p); }}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider border transition-all active:scale-95 ${
+                          p.has_pending_payment
+                            ? 'bg-red-500/10 border-red-500/40 text-red-400 hover:bg-red-500/20'
+                            : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
+                        }`}
+                        title={p.has_pending_payment ? "Click para marcar como pagado" : "Click para marcar como pendiente"}
+                      >
+                        {p.has_pending_payment ? '⏳ Debe' : '✓ Pagó'}
+                      </button>
+                    </td>
                     <td className="p-4 text-right font-mono text-gray-200 text-lg">
                       <div className="flex items-center justify-end gap-2">
                         {formatMoney(p.total_buyin)}
@@ -144,7 +172,7 @@ export default function PlayerTable({ refreshTrigger, onPlayerSelect }) {
                   {/* FILA EXPANDIDA */}
                   {isExpanded && (
                     <tr className="bg-gray-900/50 animate-fade-in border-b border-gray-700">
-                      <td colSpan="6" className="p-0">
+                      <td colSpan="7" className="p-0">
                         <div className="p-4 pl-14 grid grid-cols-1 md:grid-cols-2 gap-6">
                           <div>
                              <h4 className="text-emerald-400 text-xs font-bold uppercase tracking-widest mb-3 flex items-center gap-2">
@@ -219,6 +247,13 @@ export default function PlayerTable({ refreshTrigger, onPlayerSelect }) {
              <tr className="font-bold">
                <td className="p-4 text-gray-500 text-center">-</td>
                <td className="p-4 text-gray-400 uppercase text-xs tracking-wider">Totales Mesa</td>
+               <td className="p-4 text-center">
+                 {players.filter(p => p.has_pending_payment).length > 0 && (
+                   <span className="bg-red-500/10 border border-red-500/30 text-red-400 text-[10px] font-bold uppercase px-2 py-1 rounded">
+                     {players.filter(p => p.has_pending_payment).length} deben
+                   </span>
+                 )}
+               </td>
                <td className="p-4 text-right text-emerald-500 font-mono text-lg">{formatMoney(totals.buyin)}</td>
                <td className="p-4 text-right text-red-500 font-mono text-lg">{formatMoney(totals.cashout)}</td>
                <td className="p-4 text-right text-gray-500">-</td>
