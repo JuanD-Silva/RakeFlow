@@ -18,8 +18,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.execute("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS is_paid BOOLEAN DEFAULT TRUE")
-    op.execute("ALTER TABLE tournament_players ADD COLUMN IF NOT EXISTS is_buyin_paid BOOLEAN DEFAULT TRUE")
+    op.execute("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS is_paid BOOLEAN DEFAULT FALSE")
+    op.execute("ALTER TABLE transactions ALTER COLUMN is_paid SET DEFAULT FALSE")
+    op.execute("ALTER TABLE tournament_players ADD COLUMN IF NOT EXISTS is_buyin_paid BOOLEAN DEFAULT FALSE")
+    op.execute("ALTER TABLE tournament_players ALTER COLUMN is_buyin_paid SET DEFAULT FALSE")
 
 
 def downgrade() -> None:

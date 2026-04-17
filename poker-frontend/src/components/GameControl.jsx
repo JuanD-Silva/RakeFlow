@@ -232,10 +232,17 @@ const handleCreateTournament = async (formData) => {
           ) : activeSession ? (
              /* CASO 2: CASH GAME ACTIVO */
             <div className="flex items-center gap-4">
+              <button
+                onClick={() => setViewMode("menu")}
+                className="p-3 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white transition-all border border-gray-700 hover:border-emerald-500/50 shadow-sm group"
+                title="Volver al Menu Principal"
+              >
+                <ArrowLeftIcon className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
+              </button>
               <div className="bg-emerald-900/30 p-3 rounded-xl border border-emerald-500/30 shadow-[0_0_15px_rgba(16,185,129,0.1)]">
                   <TableCellsIcon className="w-8 h-8 text-emerald-400" />
               </div>
-              
+
               <div>
                   <h1 className="text-white font-black text-xl tracking-tight uppercase leading-none">
                     Mesa Principal <span className="text-gray-500 font-medium text-lg">#{activeSession.id}</span>
@@ -369,12 +376,10 @@ const handleCreateTournament = async (formData) => {
               </button>
               
               <div className="pt-4 flex justify-center gap-6">
-                 {activeTournament && (
-                   <button onClick={() => setViewMode("menu")} className="text-gray-600 hover:text-violet-400 text-xs font-bold uppercase tracking-widest flex items-center gap-2 transition-colors">
-                      <ArrowLeftIcon className="w-4 h-4" />
-                      Volver al Menu
-                   </button>
-                 )}
+                 <button onClick={() => setViewMode("menu")} className="text-gray-600 hover:text-emerald-400 text-xs font-bold uppercase tracking-widest flex items-center gap-2 transition-colors">
+                    <ArrowLeftIcon className="w-4 h-4" />
+                    Volver al Menu
+                 </button>
                  <button onClick={logout} className="text-gray-600 hover:text-red-400 text-xs font-bold uppercase tracking-widest flex items-center gap-2 transition-colors">
                     <ArrowRightOnRectangleIcon className="w-4 h-4" />
                     Salir del Sistema

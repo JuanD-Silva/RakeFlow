@@ -151,7 +151,7 @@ class Transaction(Base):
     type = Column(SqEnum(TransactionType))
     amount = Column(Float, nullable=False)
     method = Column(String, default="CASH")
-    is_paid = Column(Boolean, default=True)  # Para buyins: false = jugador debe
+    is_paid = Column(Boolean, default=False)  # false = jugador debe (estado inicial)
 
     timestamp = Column(DateTime, default=datetime.utcnow)
     description = Column(String, nullable=True)
@@ -240,7 +240,7 @@ class TournamentPlayer(Base):
 
     is_tip_paid = Column(Boolean, default=False)
     tips_count = Column(Integer, default=0)
-    is_buyin_paid = Column(Boolean, default=True)  # false = jugador debe la entrada
+    is_buyin_paid = Column(Boolean, default=False)  # false = jugador debe la entrada
     
     # Contadores de Dinero
     rebuys_count = Column(Integer, default=0) # Cantidad de recompras hechas
