@@ -74,8 +74,8 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
-    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True)
-    
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
+
     username = Column(String, unique=True, index=True)
     hashed_password = Column(String)
     role = Column(SqEnum(UserRole), default=UserRole.MANAGER)
@@ -92,7 +92,7 @@ class Player(Base):
     __tablename__ = "players"
 
     id = Column(Integer, primary_key=True, index=True)
-    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False, index=True)
 
     name = Column(String, index=True)
     phone = Column(String, nullable=True)
@@ -110,7 +110,7 @@ class Session(Base):
     __tablename__ = "sessions"
 
     id = Column(Integer, primary_key=True, index=True)
-    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False, index=True)
 
     start_time = Column(DateTime, default=datetime.utcnow)
     end_time = Column(DateTime, nullable=True)
@@ -142,11 +142,11 @@ class Transaction(Base):
     __tablename__ = "transactions"
 
     id = Column(Integer, primary_key=True, index=True)
-    session_id = Column(Integer, ForeignKey("sessions.id"), nullable=True)
+    session_id = Column(Integer, ForeignKey("sessions.id"), nullable=True, index=True)
 
-    tournament_id = Column(Integer, ForeignKey("tournaments.id"), nullable=True)
+    tournament_id = Column(Integer, ForeignKey("tournaments.id"), nullable=True, index=True)
     # 👇 Se cambia a nullable=True para permitir propinas anónimas
-    player_id = Column(Integer, ForeignKey("players.id"), nullable=True) 
+    player_id = Column(Integer, ForeignKey("players.id"), nullable=True, index=True)
 
     type = Column(SqEnum(TransactionType))
     amount = Column(Float, nullable=False)
@@ -169,9 +169,9 @@ class DistributionRule(Base):
     __tablename__ = "distribution_rules"
 
     id = Column(Integer, primary_key=True, index=True)
-    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False)
-    
-    name = Column(String) 
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False, index=True)
+
+    name = Column(String)
     rule_type = Column(SqEnum(RuleType), default=RuleType.PERCENTAGE)
     value = Column(Float, nullable=False) 
     priority = Column(Integer, default=10) 
@@ -186,10 +186,10 @@ class FinancialDistribution(Base):
     __tablename__ = "financial_distributions"
 
     id = Column(Integer, primary_key=True, index=True)
-    session_id = Column(Integer, ForeignKey("sessions.id"))
-    
-    name = Column(String) 
-    amount = Column(Float) 
+    session_id = Column(Integer, ForeignKey("sessions.id"), index=True)
+
+    name = Column(String)
+    amount = Column(Float)
     percentage_applied = Column(Float, default=0.0) 
     
     session = relationship("Session", back_populates="distributions")
@@ -201,10 +201,10 @@ class Tournament(Base):
     __tablename__ = "tournaments"
 
     id = Column(Integer, primary_key=True, index=True)
-    club_id = Column(Integer, ForeignKey("clubs.id"))
-    
+    club_id = Column(Integer, ForeignKey("clubs.id"), index=True)
+
     name = Column(String, nullable=False)
-    start_time = Column(DateTime, default=datetime.utcnow)  
+    start_time = Column(DateTime, default=datetime.utcnow)
     end_time = Column(DateTime, nullable=True)
     
     # --- ESTRUCTURA DE COSTOS ---
@@ -232,8 +232,8 @@ class TournamentPlayer(Base):
     __tablename__ = "tournament_players"
 
     id = Column(Integer, primary_key=True, index=True)
-    tournament_id = Column(Integer, ForeignKey("tournaments.id"))
-    player_id = Column(Integer, ForeignKey("players.id"))
+    tournament_id = Column(Integer, ForeignKey("tournaments.id"), index=True)
+    player_id = Column(Integer, ForeignKey("players.id"), index=True)
     
     # Estado
     status = Column(String, default="ACTIVE") # ACTIVE, ELIMINATED

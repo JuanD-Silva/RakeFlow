@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from .. import models, schemas, auth_utils
 from ..dependencies import get_db, get_current_club
 from ..email_service import send_password_reset_email, send_verification_email
+from ..rate_limit import limiter
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Authentication"])
@@ -24,7 +25,8 @@ class LoginJSON(BaseModel):
 # 1. REGISTRO DE NUEVO CLUB (ONBOARDING)
 # ---------------------------------------------------------
 @router.post("/auth/register", status_code=status.HTTP_201_CREATED)
-async def register_club(club_data: schemas.ClubCreate, db: AsyncSession = Depends(get_db)):
+@limiter.limit("3/hour")
+async def register_club(request: Request, club_data: schemas.ClubCreate, db: AsyncSession = Depends(get_db)):
     """
     Crea un nuevo Club (Cliente SaaS) y le configura reglas iniciales.
     """
@@ -69,6 +71,7 @@ async def register_club(club_data: schemas.ClubCreate, db: AsyncSession = Depend
 # 2. LOGIN (OBTENER TOKEN) — Acepta form-urlencoded y JSON
 # ---------------------------------------------------------
 @router.post("/auth/login", response_model=schemas.Token)
+@limiter.limit("10/minute")
 async def login(request: Request, db: AsyncSession = Depends(get_db)):
     """
     Intercambia credenciales (Email/Pass) por un Token JWT de sesión.
@@ -219,7 +222,8 @@ class ResetPasswordRequest(BaseModel):
     new_password: str
 
 @router.post("/auth/forgot-password")
-async def forgot_password(data: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
+@limiter.limit("5/hour")
+async def forgot_password(request: Request, data: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(models.Club).where(models.Club.email == data.email))
     club = result.scalars().first()
 
@@ -240,7 +244,8 @@ async def forgot_password(data: ForgotPasswordRequest, db: AsyncSession = Depend
 
 
 @router.post("/auth/reset-password")
-async def reset_password(data: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
+@limiter.limit("5/hour")
+async def reset_password(request: Request, data: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
     if len(data.new_password) < 6:
         raise HTTPException(status_code=400, detail="La contrasena debe tener al menos 6 caracteres.")
 

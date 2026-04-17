@@ -40,3 +40,6 @@ websockets==15.0.1
 resend==2.27.0
 pyepayco==1.0.0
 httpx
+slowapi==0.1.9
+python-json-logger==3.2.1
+sentry-sdk[fastapi]==2.19.2
