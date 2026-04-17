@@ -229,7 +229,7 @@ const handleCreateTournament = async (formData) => {
                    </div>
                 </div>
              </div>
-          ) : activeSession ? (
+          ) : viewMode === "cash" && activeSession ? (
              /* CASO 2: CASH GAME ACTIVO */
             <div className="flex items-center gap-4">
               <button
