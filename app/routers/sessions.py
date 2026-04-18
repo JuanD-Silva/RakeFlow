@@ -97,7 +97,9 @@ async def get_current_session_stats(
             MAX(CASE WHEN (t.type = 'BUYIN' OR t.type = 'REBUY') AND t.method = 'DIGITAL' THEN 1 ELSE 0 END) as has_digital,
             MAX(CASE WHEN t.type IN ('BUYIN', 'REBUY') AND COALESCE(t.is_paid, TRUE) = FALSE THEN 1 ELSE 0 END) as has_pending_payment,
             SUM(CASE WHEN t.type IN ('BUYIN', 'REBUY') THEN 1 ELSE 0 END) as buyins_count,
-            SUM(CASE WHEN t.type IN ('BUYIN', 'REBUY') AND COALESCE(t.is_paid, FALSE) = TRUE THEN 1 ELSE 0 END) as paid_buyins_count
+            SUM(CASE WHEN t.type IN ('BUYIN', 'REBUY') AND COALESCE(t.is_paid, FALSE) = TRUE THEN 1 ELSE 0 END) as paid_buyins_count,
+            MAX(CASE WHEN t.type = 'BUST' THEN 1 ELSE 0 END) as is_busted,
+            MAX(CASE WHEN t.type = 'BUST' THEN t.timestamp END) as busted_at
         FROM players p
         JOIN transactions t ON p.id = t.player_id
         WHERE t.session_id = :sid
@@ -128,6 +130,8 @@ async def get_current_session_stats(
             "has_pending_payment": bool(r.has_pending_payment),
             "buyins_count": int(r.buyins_count or 0),
             "paid_buyins_count": int(r.paid_buyins_count or 0),
+            "is_busted": bool(r.is_busted),
+            "busted_at": r.busted_at.isoformat() if r.busted_at else None,
             "transactions": []
         }
 

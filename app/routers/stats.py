@@ -288,26 +288,36 @@ async def get_rankings(
             if r.profit > 0: winners_map[r.id] = winners_map.get(r.id, 0) + r.profit
             if r.spend > 0: spenders_map[r.id] = spenders_map.get(r.id, 0) + r.spend
 
-        # 2. TIEMPO EN MESA (Active) - Cálculo especial
-        # Nota: Seleccionamos sesiones ÚNICAS por jugador para no sumar el tiempo 
-        # multiple veces si hizo varias recompras en la misma sesión.
+        # 2. TIEMPO EN MESA (Active) - Por jugador, por sesión.
+        # Entrada = primer BUYIN/REBUY del jugador en la sesión.
+        # Salida  = último CASHOUT o BUST del jugador; si no hubo, el cierre de sesión.
+        # Un jugador que quebró (BUST sin cashout) o se fue no carga las horas restantes.
         sql_cash_time = text("""
-            SELECT DISTINCT t.player_id, 
-                   EXTRACT(EPOCH FROM (s.end_time - s.start_time))/3600 as hours
+            SELECT
+                t.player_id,
+                EXTRACT(EPOCH FROM (
+                    COALESCE(
+                        MAX(CASE WHEN CAST(t.type AS TEXT) IN ('CASHOUT', 'BUST') THEN t.timestamp END),
+                        s.end_time
+                    ) - MIN(CASE WHEN CAST(t.type AS TEXT) IN ('BUYIN', 'REBUY') THEN t.timestamp END)
+                )) / 3600 AS hours
             FROM transactions t
             JOIN sessions s ON t.session_id = s.id
-            WHERE s.club_id = :cid 
-              AND s.end_time >= :start_date 
+            WHERE s.club_id = :cid
+              AND s.end_time >= :start_date
               AND s.status = 'CLOSED'
               AND t.player_id IS NOT NULL
+            GROUP BY t.player_id, s.id, s.end_time
+            HAVING MIN(CASE WHEN CAST(t.type AS TEXT) IN ('BUYIN', 'REBUY') THEN t.timestamp END) IS NOT NULL
         """)
-        
+
         rows_time = (await db.execute(sql_cash_time, {"cid": current_club.id, "start_date": start_date})).all()
-        
+
         for r in rows_time:
-            # r[0] es player_id, r[1] es horas
             pid = r[0]
             hours = float(r[1]) if r[1] else 0.0
+            if hours < 0:
+                hours = 0.0
             active_map[pid] = active_map.get(pid, 0.0) + hours
 
         # ---------------------------------------------------------
@@ -333,6 +343,12 @@ async def get_rankings(
             for row in names_result.all():
                 names_map[row.id] = row.name
 
+        # Pesos de horas por posición en torneo.
+        # Base 0.5 para todos (no es viable registrar cada eliminación en torneos grandes);
+        # podio recibe multiplicador para reflejar que realmente duró más.
+        TOURNEY_RANK_WEIGHTS = {1: 1.5, 2: 1.3, 3: 1.2}
+        TOURNEY_BASE_WEIGHT = 0.5
+
         for t in tournaments:
             tourney_duration = 0.0
             if t.start_time and t.end_time:
@@ -345,13 +361,14 @@ async def get_rankings(
                 inv = t.buyin_amount + \
                       ((p.rebuys_count + p.double_rebuys_count) * t.rebuy_price) + \
                       ((p.addons_count + p.double_addons_count) * t.addon_price)
-                
+
                 net = (p.prize_collected or 0) - inv
-                if net > 0: 
+                if net > 0:
                     winners_map[pid] = winners_map.get(pid, 0) + net
 
-                # 2. Calcular Tiempo (Sumar duración del torneo)
-                active_map[pid] = active_map.get(pid, 0.0) + tourney_duration
+                # 2. Tiempo ponderado por rank
+                weight = TOURNEY_RANK_WEIGHTS.get(p.rank, TOURNEY_BASE_WEIGHT)
+                active_map[pid] = active_map.get(pid, 0.0) + tourney_duration * weight
 
                 # 3. Calcular Spends (Si hubiera tips registrados en transacciones vinculadas al torneo)
                 # (Opcional: Si tus torneos generan transacciones de TIP en la tabla transactions, 

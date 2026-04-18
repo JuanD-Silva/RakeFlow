@@ -331,6 +331,51 @@ async def create_bonus(
     return new_tx
 
 # ---------------------------------------------------------
+# BUST (Jugador quebro / se quedo sin fichas sin cashout)
+# ---------------------------------------------------------
+class BustRequest(BaseModel):
+    player_id: int
+
+
+@router.post("/bust")
+async def toggle_bust(
+    data: BustRequest,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+):
+    """Marca o desmarca a un jugador como quebrado en la sesion activa.
+
+    Idempotente: si ya existe un BUST del jugador en la sesion activa lo borra
+    (deshacer click erroneo); si no existe lo crea con amount=0.
+    """
+    session = await get_active_session(db, current_club.id)
+
+    existing_stmt = select(models.Transaction).where(
+        models.Transaction.session_id == session.id,
+        models.Transaction.player_id == data.player_id,
+        models.Transaction.type == models.TransactionType.BUST,
+    )
+    existing = (await db.execute(existing_stmt)).scalars().first()
+
+    if existing:
+        await db.execute(delete(models.Transaction).where(models.Transaction.id == existing.id))
+        await db.commit()
+        return {"action": "undone", "is_busted": False}
+
+    new_tx = models.Transaction(
+        session_id=session.id,
+        player_id=data.player_id,
+        type=models.TransactionType.BUST,
+        amount=0.0,
+        method="CASH",
+    )
+    db.add(new_tx)
+    await db.commit()
+    await db.refresh(new_tx)
+    return {"action": "busted", "is_busted": True, "transaction_id": new_tx.id}
+
+
+# ---------------------------------------------------------
 # TOGGLE ESTADO DE PAGO (marca todas las transacciones de un jugador en una sesión)
 # ---------------------------------------------------------
 class TogglePaidRequest(BaseModel):

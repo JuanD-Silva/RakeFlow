@@ -69,6 +69,23 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
     }
   };
 
+  const toggleBust = async (player) => {
+    if (!sessionId) return;
+    const prevSnapshot = players;
+    const newBusted = !player.is_busted;
+    setPlayers(prev => prev.map(p => p.player_id === player.player_id
+      ? { ...p, is_busted: newBusted, busted_at: newBusted ? new Date().toISOString() : null }
+      : p
+    ));
+    try {
+      await transactionService.toggleBust(player.player_id);
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      console.error(err);
+      setPlayers(prevSnapshot);
+    }
+  };
+
   const toggleTxPaid = async (player, tx) => {
     const prevSnapshot = players;
     const newIsPaid = !tx.is_paid;
@@ -164,9 +181,14 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
   </div>
   {/* 👆👆 FIN DEL CAMBIO 👆👆 */}
 
-  <div className="flex gap-2 text-[10px] mt-0.5">
+  <div className="flex gap-2 text-[10px] mt-0.5 items-center">
       {buyins.length > 1 && <span className="text-emerald-400 font-mono">{buyins.length} entradas</span>}
       {p.total_jackpot > 0 && <span className="text-purple-400 font-bold">🎁 Jackpot</span>}
+      {p.is_busted && (
+        <span className="bg-red-500/15 border border-red-500/40 text-red-400 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">
+          💀 Quebró {p.busted_at ? `· ${formatTime(p.busted_at)}` : ''}
+        </span>
+      )}
   </div>
 </td>
                     <td className="p-4 text-center">
@@ -231,9 +253,22 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
                       <td colSpan="7" className="p-0">
                         <div className="p-4 pl-14 grid grid-cols-1 md:grid-cols-2 gap-6">
                           <div>
-                             <h4 className="text-emerald-400 text-xs font-bold uppercase tracking-widest mb-3 flex items-center gap-2">
-                               <ClockIcon className="w-3 h-3" /> Historial de Entradas
-                             </h4>
+                             <div className="flex items-center justify-between mb-3 gap-2">
+                               <h4 className="text-emerald-400 text-xs font-bold uppercase tracking-widest flex items-center gap-2">
+                                 <ClockIcon className="w-3 h-3" /> Historial de Entradas
+                               </h4>
+                               <button
+                                 onClick={(e) => { e.stopPropagation(); toggleBust(p); }}
+                                 className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded border transition-all active:scale-95 ${
+                                   p.is_busted
+                                     ? 'bg-red-500/20 border-red-500/50 text-red-300 hover:bg-red-500/30'
+                                     : 'bg-gray-800 border-gray-600 text-gray-400 hover:bg-red-900/20 hover:border-red-500/40 hover:text-red-400'
+                                 }`}
+                                 title={p.is_busted ? 'Deshacer quiebra' : 'Marcar como quebrado (sin cashout)'}
+                               >
+                                 {p.is_busted ? '💀 Quebró (deshacer)' : '💀 Quebró'}
+                               </button>
+                             </div>
                              {/* 👇 OJO: Si sale esto, buyins.length es 0 */}
                              {buyins.length > 0 ? (
                                <ul className="space-y-2">

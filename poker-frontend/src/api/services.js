@@ -147,6 +147,11 @@ export const transactionService = {
         return await api.post(`/transactions/${transactionId}/toggle-paid`, {
             is_paid: isPaid
         });
+    },
+
+    toggleBust: async (playerId) => {
+        const response = await api.post('/transactions/bust', { player_id: playerId });
+        return response.data;
     }
 };
 
