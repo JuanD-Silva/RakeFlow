@@ -64,6 +64,9 @@ async def get_dashboard_stats(
     try:
         now = datetime.utcnow()
         start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        # Si el club tiene reset manual dentro del mes, respetarlo.
+        if current_club.rankings_reset_at and current_club.rankings_reset_at > start_of_month:
+            start_of_month = current_club.rankings_reset_at
 
         # A. TOTAL SESIONES Y HORAS (Cash + Torneos)
         # Cash
@@ -251,7 +254,9 @@ async def get_rankings(
 ):
     try:
         start_date = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        
+        if current_club.rankings_reset_at and current_club.rankings_reset_at > start_date:
+            start_date = current_club.rankings_reset_at
+
         # Mapas para acumular valores por ID de jugador
         winners_map = {}
         spenders_map = {}

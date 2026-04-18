@@ -59,6 +59,7 @@ class Club(Base):
     email_verification_token = Column(String, nullable=True)
     password_reset_token = Column(String, nullable=True)
     password_reset_expires = Column(DateTime, nullable=True)
+    rankings_reset_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relaciones
