@@ -21,6 +21,14 @@ class ClubCreate(BaseModel):
     name: str = Field(..., min_length=2, max_length=100)
     email: str = Field(..., min_length=5, max_length=150)
     password: str = Field(..., min_length=8, max_length=128)
+    accept_terms: bool = Field(False, description="Aceptacion de Terminos y Politica de Privacidad")
+
+    @field_validator('accept_terms')
+    @classmethod
+    def must_accept_terms(cls, v):
+        if not v:
+            raise ValueError('Debes aceptar los Terminos y la Politica de Privacidad para continuar')
+        return v
 
     @field_validator('password')
     @classmethod

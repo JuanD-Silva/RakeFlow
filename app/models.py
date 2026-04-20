@@ -60,6 +60,7 @@ class Club(Base):
     password_reset_token = Column(String, nullable=True)
     password_reset_expires = Column(DateTime, nullable=True)
     rankings_reset_at = Column(DateTime, nullable=True)
+    terms_accepted_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relaciones
@@ -229,6 +230,33 @@ class Tournament(Base):
     players = relationship("TournamentPlayer", back_populates="tournament", cascade="all, delete-orphan", lazy="selectin")
 
     payout_structure = Column(JSON, default=[]) 
+
+class AuditLog(Base):
+    """
+    Registro de acciones relevantes por club para trazabilidad legal y operativa.
+    Immutable: no se edita ni se borra (solo se puede purgar por retención).
+    """
+    __tablename__ = "audit_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False, index=True)
+
+    # Actor (quien hizo la accion). Hoy es siempre el club; en el futuro podria ser user_id.
+    actor_type = Column(String, default="CLUB", nullable=False)   # CLUB / USER / SYSTEM
+    actor_id = Column(Integer, nullable=True)                       # id del actor
+    actor_email = Column(String, nullable=True)                     # denormalizado
+
+    action = Column(String, nullable=False, index=True)             # TRANSACTION_CREATE, SESSION_CLOSE, etc.
+    entity_type = Column(String, nullable=True)                     # Transaction, Session, Tournament, ...
+    entity_id = Column(Integer, nullable=True)
+
+    meta = Column(JSON, nullable=True)                              # detalles especificos de la accion
+    ip = Column(String, nullable=True)
+    user_agent = Column(String, nullable=True)
+    request_id = Column(String, nullable=True, index=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
 
 class TournamentPlayer(Base):
     __tablename__ = "tournament_players"

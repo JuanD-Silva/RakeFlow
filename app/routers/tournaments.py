@@ -1,5 +1,5 @@
 # app/routers/tournaments.py
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, delete
 from sqlalchemy.orm import selectinload
@@ -8,6 +8,7 @@ from datetime import datetime
 from pydantic import BaseModel
 import logging
 from ..dependencies import get_db, get_current_club
+from ..audit import log_action, AuditAction
 
 logger = logging.getLogger(__name__)
 
@@ -32,8 +33,9 @@ class RebuyAddonRequest(BaseModel):
 @router.post("/", response_model=schemas.TournamentResponse)
 async def create_tournament(
     tournament_data: schemas.TournamentCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    current_club: models.Club = Depends(get_current_club) 
+    current_club: models.Club = Depends(get_current_club)
 ):
     # Verificar si ya hay un torneo corriendo
     result = await db.execute(
@@ -64,6 +66,17 @@ async def create_tournament(
     )
 
     db.add(new_tournament)
+    await db.flush()
+    await log_action(
+        db, request=request, club=current_club,
+        action=AuditAction.TOURNAMENT_CREATE,
+        entity_type="Tournament", entity_id=new_tournament.id,
+        meta={
+            "name": tournament_data.name,
+            "buyin_amount": tournament_data.buyin_amount,
+            "rake_percentage": tournament_data.rake_percentage,
+        },
+    )
     await db.commit()
     await db.refresh(new_tournament)
 
@@ -471,6 +484,7 @@ async def eliminate_player(
 async def finalize_tournament(
     tournament_id: int,
     data: schemas.TournamentFinalize,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_club: models.Club = Depends(get_current_club)
 ):
@@ -533,6 +547,17 @@ async def finalize_tournament(
     tournament.status = "COMPLETED"
     tournament.end_time = datetime.utcnow()
 
+    await log_action(
+        db, request=request, club=current_club,
+        action=AuditAction.TOURNAMENT_FINALIZE,
+        entity_type="Tournament", entity_id=tournament.id,
+        meta={
+            "name": tournament.name,
+            "gross_pot": gross_pot, "net_pot": net_pot, "rake_amount": rake_amount,
+            "winners": [{"player_id": w.player_id, "rank": w.rank} for w in data.winners],
+            "players_count": len(tournament.players),
+        },
+    )
     await db.commit()
     await db.refresh(tournament)
     return tournament
@@ -609,6 +634,7 @@ async def get_tournament_details(
 @router.delete("/{tournament_id}", status_code=204)
 async def delete_tournament(
     tournament_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_club: models.Club = Depends(get_current_club)
 ):
@@ -640,8 +666,14 @@ async def delete_tournament(
 
         # 3. Borrar el Torneo
         await db.execute(delete(models.Tournament).where(models.Tournament.id == tournament_id))
+        await log_action(
+            db, request=request, club=current_club,
+            action=AuditAction.TOURNAMENT_DELETE,
+            entity_type="Tournament", entity_id=tournament_id,
+            meta={"name": tournament.name, "status": tournament.status},
+        )
         await db.commit()
-        
+
         return None # 204 No Content
 
     except Exception as e:

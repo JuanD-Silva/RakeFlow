@@ -1,11 +1,12 @@
 # app/routers/transactions.py
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import func, delete
 from pydantic import BaseModel
 from sqlalchemy.orm import selectinload
 from .. import models, schemas
+from ..audit import log_action, AuditAction
 from datetime import datetime
 import logging
 
@@ -46,29 +47,35 @@ async def get_active_session(db: AsyncSession, club_id: int):
 # ---------------------------------------------------------
 @router.post("/buyin", response_model=schemas.TransactionResponse)
 async def create_buyin(
-    tx: schemas.TransactionCreate, 
+    tx: schemas.TransactionCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_club: models.Club = Depends(get_current_club) # 👈 Auth
 ):
     """
     Registra la compra de fichas (Entrada inicial o Recompra).
     """
-    # 1. Buscar sesión activa (Pasamos el ID del club autenticado)
     session = await get_active_session(db, current_club.id)
 
-    # 2. Crear Transacción
     new_tx = models.Transaction(
         session_id=session.id,
         player_id=tx.player_id,
         type=models.TransactionType.BUYIN,
         amount=tx.amount,
-        method=tx.method or "CASH" 
+        method=tx.method or "CASH"
     )
-    
+
     db.add(new_tx)
+    await db.flush()
+    await log_action(
+        db, request=request, club=current_club,
+        action=AuditAction.TRANSACTION_CREATE,
+        entity_type="Transaction", entity_id=new_tx.id,
+        meta={"type": "BUYIN", "amount": tx.amount, "player_id": tx.player_id, "session_id": session.id, "method": new_tx.method},
+    )
     await db.commit()
     await db.refresh(new_tx)
-    
+
     return new_tx
 
 
@@ -79,14 +86,13 @@ async def create_buyin(
 # ---------------------------------------------------------
 @router.post("/cashout", response_model=schemas.TransactionResponse)
 async def create_cashout(
-    tx: schemas.TransactionCreate, 
+    tx: schemas.TransactionCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_club: models.Club = Depends(get_current_club)
 ):
-    # 1. Buscar sesión activa
     session = await get_active_session(db, current_club.id)
 
-    # 2. Crear Transacción
     new_tx = models.Transaction(
         session_id=session.id,
         player_id=tx.player_id,
@@ -95,6 +101,13 @@ async def create_cashout(
         method="CASH"
     )
     db.add(new_tx)
+    await db.flush()
+    await log_action(
+        db, request=request, club=current_club,
+        action=AuditAction.TRANSACTION_CREATE,
+        entity_type="Transaction", entity_id=new_tx.id,
+        meta={"type": "CASHOUT", "amount": tx.amount, "player_id": tx.player_id, "session_id": session.id},
+    )
     await db.commit()
     await db.refresh(new_tx)
     return new_tx
@@ -105,8 +118,9 @@ async def create_cashout(
 # ---------------------------------------------------------
 @router.put("/{transaction_id}")
 async def update_transaction(
-    transaction_id: int, 
+    transaction_id: int,
     data: TransactionUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_club: models.Club = Depends(get_current_club)
 ):
@@ -142,13 +156,20 @@ async def update_transaction(
         raise HTTPException(status_code=400, detail="No se pueden editar transacciones de sesiones cerradas")
 
     # 4. Si todo está bien, actualizamos
-    
+    old_amount = tx.amount
+    old_method = tx.method
     tx.amount = data.amount
     tx.method = data.method
-    
+
+    await log_action(
+        db, request=request, club=current_club,
+        action=AuditAction.TRANSACTION_UPDATE,
+        entity_type="Transaction", entity_id=tx.id,
+        meta={"old_amount": old_amount, "new_amount": tx.amount, "old_method": old_method, "new_method": tx.method},
+    )
     await db.commit()
     await db.refresh(tx)
-    
+
     return {"message": "Transacción actualizada", "id": tx.id, "new_amount": tx.amount}
 # ---------------------------------------------------------
 # 2. ELIMINAR TRANSACCIÓN (Borrar error) 🗑️
@@ -156,6 +177,7 @@ async def update_transaction(
 @router.delete("/{transaction_id}")
 async def delete_transaction(
     transaction_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_club: models.Club = Depends(get_current_club)
 ):
@@ -178,7 +200,17 @@ async def delete_transaction(
     if tx.session.status == models.SessionStatus.CLOSED:
         raise HTTPException(status_code=400, detail="No se pueden borrar transacciones de sesiones cerradas")
 
+    snapshot = {
+        "id": tx.id, "type": str(tx.type.value if hasattr(tx.type, "value") else tx.type),
+        "amount": tx.amount, "player_id": tx.player_id, "session_id": tx.session_id,
+    }
     await db.execute(delete(models.Transaction).where(models.Transaction.id == tx.id))
+    await log_action(
+        db, request=request, club=current_club,
+        action=AuditAction.TRANSACTION_DELETE,
+        entity_type="Transaction", entity_id=snapshot["id"],
+        meta=snapshot,
+    )
     await db.commit()
 
     return {"message": "Transacción eliminada con éxito"}
@@ -239,7 +271,8 @@ async def create_tip(
 # ---------------------------------------------------------
 @router.post("/jackpot-payout", response_model=schemas.TransactionResponse)
 async def create_jackpot_payout(
-    tx: schemas.TransactionCreate, 
+    tx: schemas.TransactionCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_club: models.Club = Depends(get_current_club) # 👈 Auth
 ):
@@ -284,19 +317,27 @@ async def create_jackpot_payout(
         session_id=session.id,
         player_id=tx.player_id,
         amount=tx.amount,
-        type=models.TransactionType.JACKPOT_PAYOUT 
+        type=models.TransactionType.JACKPOT_PAYOUT
     )
-    
+
     db.add(new_tx)
+    await db.flush()
+    await log_action(
+        db, request=request, club=current_club,
+        action=AuditAction.TRANSACTION_CREATE,
+        entity_type="Transaction", entity_id=new_tx.id,
+        meta={"type": "JACKPOT_PAYOUT", "amount": tx.amount, "player_id": tx.player_id, "session_id": session.id, "jackpot_balance_before": current_balance},
+    )
     await db.commit()
     await db.refresh(new_tx)
-    
+
     return new_tx
 
 
 @router.post("/bonus", response_model=schemas.TransactionResponse)
 async def create_bonus(
-    tx_data: schemas.TransactionCreate, 
+    tx_data: schemas.TransactionCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_club: models.Club = Depends(get_current_club)
 ):
@@ -319,15 +360,22 @@ async def create_bonus(
         session_id=tx_data.session_id,
         player_id=tx_data.player_id,
         amount=tx_data.amount,
-        type=models.TransactionType.BONUS, # 👈 Usamos el tipo que agregaste a la DB
-        method="CASH", # Los bonos suelen ser crédito interno, se marca como CASH o INTERNAL
-        timestamp=datetime.utcnow() # O la hora actual
+        type=models.TransactionType.BONUS,
+        method="CASH",
+        timestamp=datetime.utcnow()
     )
 
     db.add(new_tx)
+    await db.flush()
+    await log_action(
+        db, request=request, club=current_club,
+        action=AuditAction.TRANSACTION_CREATE,
+        entity_type="Transaction", entity_id=new_tx.id,
+        meta={"type": "BONUS", "amount": tx_data.amount, "player_id": tx_data.player_id, "session_id": tx_data.session_id},
+    )
     await db.commit()
     await db.refresh(new_tx)
-    
+
     return new_tx
 
 # ---------------------------------------------------------
@@ -340,6 +388,7 @@ class BustRequest(BaseModel):
 @router.post("/bust")
 async def toggle_bust(
     data: BustRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_club: models.Club = Depends(get_current_club),
 ):
@@ -359,6 +408,12 @@ async def toggle_bust(
 
     if existing:
         await db.execute(delete(models.Transaction).where(models.Transaction.id == existing.id))
+        await log_action(
+            db, request=request, club=current_club,
+            action=AuditAction.TRANSACTION_BUST_TOGGLE,
+            entity_type="Transaction", entity_id=existing.id,
+            meta={"player_id": data.player_id, "session_id": session.id, "is_busted": False, "undo": True},
+        )
         await db.commit()
         return {"action": "undone", "is_busted": False}
 
@@ -370,6 +425,13 @@ async def toggle_bust(
         method="CASH",
     )
     db.add(new_tx)
+    await db.flush()
+    await log_action(
+        db, request=request, club=current_club,
+        action=AuditAction.TRANSACTION_BUST_TOGGLE,
+        entity_type="Transaction", entity_id=new_tx.id,
+        meta={"player_id": data.player_id, "session_id": session.id, "is_busted": True},
+    )
     await db.commit()
     await db.refresh(new_tx)
     return {"action": "busted", "is_busted": True, "transaction_id": new_tx.id}
@@ -386,6 +448,7 @@ class TogglePaidRequest(BaseModel):
 @router.post("/toggle-paid")
 async def toggle_paid(
     data: TogglePaidRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_club: models.Club = Depends(get_current_club)
 ):
@@ -409,6 +472,12 @@ async def toggle_paid(
         .where(models.Transaction.type.in_([models.TransactionType.BUYIN, models.TransactionType.REBUY]))
         .values(is_paid=data.is_paid)
     )
+    await log_action(
+        db, request=request, club=current_club,
+        action=AuditAction.TRANSACTION_TOGGLE_PAID,
+        entity_type="Session", entity_id=data.session_id,
+        meta={"player_id": data.player_id, "is_paid": data.is_paid, "scope": "bulk"},
+    )
     await db.commit()
     return {"message": "Estado actualizado", "is_paid": data.is_paid}
 
@@ -424,6 +493,7 @@ class ToggleTxPaidRequest(BaseModel):
 async def toggle_transaction_paid(
     transaction_id: int,
     data: ToggleTxPaidRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_club: models.Club = Depends(get_current_club),
 ):
@@ -445,5 +515,11 @@ async def toggle_transaction_paid(
         raise HTTPException(status_code=400, detail="Sesión cerrada, no se puede modificar")
 
     tx.is_paid = data.is_paid
+    await log_action(
+        db, request=request, club=current_club,
+        action=AuditAction.TRANSACTION_TOGGLE_PAID,
+        entity_type="Transaction", entity_id=tx.id,
+        meta={"is_paid": data.is_paid, "scope": "single", "player_id": tx.player_id, "session_id": tx.session_id},
+    )
     await db.commit()
     return {"id": tx.id, "is_paid": tx.is_paid}

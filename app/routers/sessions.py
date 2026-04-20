@@ -1,5 +1,5 @@
 # app/routers/sessions.py
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 from .. import models, schemas
 # Importamos las dependencias SaaS
 from ..dependencies import get_db, get_current_club
+from ..audit import log_action, AuditAction
 
 router = APIRouter(
     prefix="/sessions",
@@ -276,7 +277,7 @@ async def audit_current_session(
 # 5. CERRAR SESIÓN (Motor de Reglas SaaS + Fallback)
 # ---------------------------------------------------------
 @router.post("/{session_id}/close")
-async def close_session(session_id: int, input_data: schemas.SessionCloseRequest, db: AsyncSession = Depends(get_db), current_club: models.Club = Depends(get_current_club)):
+async def close_session(session_id: int, input_data: schemas.SessionCloseRequest, request: Request, db: AsyncSession = Depends(get_db), current_club: models.Club = Depends(get_current_club)):
     """
     Cierra caja, audita y DISTRIBUYE EL DINERO.
     MODO TOTAL: Suma todo (Físico + Digital) al esperado.
@@ -455,7 +456,18 @@ async def close_session(session_id: int, input_data: schemas.SessionCloseRequest
 
     session.debt_payment = float(final_debt_payment)
     session.partner_profit = float(final_partner_profit)
-    
+
+    await log_action(
+        db, request=request, club=current_club,
+        action=AuditAction.SESSION_CLOSE,
+        entity_type="Session", entity_id=session.id,
+        meta={
+            "declared_rake_cash": float(declared_rake),
+            "declared_jackpot_cash": float(declared_jackpot),
+            "debt_payment": float(final_debt_payment),
+            "partner_profit": float(final_partner_profit),
+        },
+    )
     await db.commit()
 
     dist_result = await db.execute(
@@ -547,6 +559,7 @@ async def get_session_details(session_id: int, db: AsyncSession = Depends(get_db
 @router.delete("/{session_id}")
 async def delete_session(
     session_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_club: models.Club = Depends(get_current_club)
 ):
@@ -562,14 +575,24 @@ async def delete_session(
         raise HTTPException(status_code=403, detail="No tienes permiso para eliminar esta sesión")
 
     try:
-        # C. Eliminar primero las transacciones asociadas (Limpieza profunda)
-        # Esto borra buy-ins, cashouts, etc. de esa mesa.
+        # Contar transacciones para snapshot de auditoria
+        tx_count = (await db.execute(
+            select(func.count(models.Transaction.id)).where(models.Transaction.session_id == session_id)
+        )).scalar() or 0
+
+        # C. Eliminar primero las transacciones asociadas
         await db.execute(delete(models.Transaction).where(models.Transaction.session_id == session_id))
 
         # D. Eliminar la sesión
         await db.execute(delete(models.Session).where(models.Session.id == session_id))
+        await log_action(
+            db, request=request, club=current_club,
+            action=AuditAction.SESSION_DELETE,
+            entity_type="Session", entity_id=session_id,
+            meta={"status": str(session.status), "transactions_deleted": tx_count},
+        )
         await db.commit()
-        
+
         return {"message": "Sesión eliminada correctamente"}
 
     except Exception as e:

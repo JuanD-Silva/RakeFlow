@@ -386,10 +386,12 @@ export default function Landing() {
               Rake<span className="text-emerald-500">Flow</span>
             </span>
           </div>
-          <div className="flex items-center gap-6 text-gray-600 text-xs">
+          <div className="flex items-center gap-6 text-gray-600 text-xs flex-wrap justify-center">
             <a href="#features" className="hover:text-gray-300 transition-colors">Funciones</a>
             <a href="#pricing" className="hover:text-gray-300 transition-colors">Planes</a>
             <Link to="/login" className="hover:text-gray-300 transition-colors">Acceder</Link>
+            <Link to="/terms" className="hover:text-gray-300 transition-colors">Términos</Link>
+            <Link to="/privacy" className="hover:text-gray-300 transition-colors">Privacidad</Link>
           </div>
           <p className="text-gray-700 text-xs">&copy; 2026 RakeFlow</p>
         </div>

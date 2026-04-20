@@ -13,6 +13,7 @@ from .. import models, schemas, auth_utils
 from ..dependencies import get_db, get_current_club
 from ..email_service import send_password_reset_email, send_verification_email
 from ..rate_limit import limiter
+from ..audit import log_action, log_standalone, AuditAction
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Authentication"])
@@ -49,7 +50,8 @@ async def register_club(request: Request, club_data: schemas.ClubCreate, db: Asy
         hashed_password=hashed_pwd,
         plan_type="BASIC",
         is_active=True,
-        email_verification_token=verification_token
+        email_verification_token=verification_token,
+        terms_accepted_at=datetime.utcnow()
     )
     db.add(new_club)
     await db.flush()  # Obtiene el ID sin hacer commit
@@ -92,6 +94,9 @@ async def login(request: Request, db: AsyncSession = Depends(get_db)):
     club = result.scalars().first()
 
     if not club:
+        # Login fallido: email no existe. Solo logueamos en aplicacion, no en DB
+        # para evitar polucion por intentos contra emails invalidos.
+        logger.info("login_failed_unknown_email email=%s", username)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciales incorrectas (Email o Contraseña)", headers={"WWW-Authenticate": "Bearer"})
 
     import asyncio
@@ -99,6 +104,12 @@ async def login(request: Request, db: AsyncSession = Depends(get_db)):
     valid = await loop.run_in_executor(None, auth_utils.verify_password, password, club.hashed_password)
 
     if not valid:
+        # Contrasena incorrecta contra un club real: si es importante auditarlo
+        await log_standalone(
+            db, club_id=club.id, actor_email=club.email,
+            action=AuditAction.LOGIN_FAILED, request=request,
+            meta={"reason": "invalid_password"},
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Credenciales incorrectas (Email o Contraseña)",
@@ -108,6 +119,12 @@ async def login(request: Request, db: AsyncSession = Depends(get_db)):
     access_token = auth_utils.create_access_token(
         data={"sub": club.email, "club_id": club.id}
     )
+
+    await log_action(
+        db, request=request, club=club,
+        action=AuditAction.LOGIN_SUCCESS,
+    )
+    await db.commit()
 
     return {
         "access_token": access_token,
@@ -172,6 +189,7 @@ async def resend_verification(
 
 @router.delete("/me/delete-account")
 async def delete_my_account(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_club: models.Club = Depends(get_current_club)
 ):
@@ -180,6 +198,12 @@ async def delete_my_account(
     Útil para reiniciar el ejercicio de desarrollo.
     """
     cid = current_club.id
+    # Log antes de borrar para preservar trazabilidad (el log sobrevive al delete)
+    await log_standalone(
+        db, club_id=cid, actor_email=current_club.email,
+        action=AuditAction.ACCOUNT_DELETE, request=request,
+        meta={"club_name": current_club.name},
+    )
 
     # 1. Borrar Distribuciones (Dinero repartido)
     # Buscamos las sesiones del club para borrar sus distribuciones
@@ -203,11 +227,14 @@ async def delete_my_account(
     # 5. Borrar Reglas de Distribución
     await db.execute(delete(models.DistributionRule).where(models.DistributionRule.club_id == cid))
 
-    # 6. FINALMENTE: Borrar el Club
+    # 6. Borrar audit logs del club (FK constraint hacia clubs.id)
+    await db.execute(delete(models.AuditLog).where(models.AuditLog.club_id == cid))
+
+    # 7. FINALMENTE: Borrar el Club
     await db.execute(delete(models.Club).where(models.Club.id == cid))
-    
+
     await db.commit()
-    
+
     return {"message": "Cuenta eliminada. Ahora puedes registrarte de nuevo desde cero."}
 
 
@@ -265,6 +292,10 @@ async def reset_password(request: Request, data: ResetPasswordRequest, db: Async
     club.hashed_password = await loop.run_in_executor(None, auth_utils.get_password_hash, data.new_password)
     club.password_reset_token = None
     club.password_reset_expires = None
+    await log_action(
+        db, request=request, club=club,
+        action=AuditAction.PASSWORD_RESET,
+    )
     await db.commit()
 
     return {"message": "Contrasena actualizada correctamente."}

@@ -24,6 +24,8 @@ import Subscribe from './pages/Subscribe';
 import PaymentSuccess from './pages/PaymentSuccess';
 import CheckoutFrame from './pages/CheckoutFrame';
 import PaymentCallback from './pages/PaymentCallback';
+import Terms from './pages/Terms';
+import Privacy from './pages/Privacy';
 
 // --- COMPONENTE PRINCIPAL (Dashboard Protegido) ---
 function PokerManagerApp() {
@@ -163,6 +165,10 @@ function AppRoutes() {
       <Route path="/checkout-frame" element={token ? <CheckoutFrame /> : <Navigate to="/login" />} />
       <Route path="/payment-callback" element={<PaymentCallback />} />
       <Route path="/payment-success" element={token ? <PaymentSuccess /> : <Navigate to="/login" />} />
+
+      {/* Paginas legales (publicas) */}
+      <Route path="/terms" element={<Terms />} />
+      <Route path="/privacy" element={<Privacy />} />
 
       {/* Configuracion Inicial */}
       <Route path="/setup" element={token ? <Setup /> : <Navigate to="/login" />} />

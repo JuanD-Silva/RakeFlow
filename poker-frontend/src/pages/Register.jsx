@@ -18,6 +18,7 @@ import {
 export default function Register() {
   const [formData, setFormData] = useState({ name: '', email: '', password: '' });
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [acceptTerms, setAcceptTerms] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [error, setError] = useState('');
@@ -53,8 +54,13 @@ export default function Register() {
       setLoading(false);
       return;
     }
+    if (!acceptTerms) {
+      setError('Debes aceptar los Terminos y la Politica de Privacidad para continuar.');
+      setLoading(false);
+      return;
+    }
     try {
-      await api.post('/auth/register', formData);
+      await api.post('/auth/register', { ...formData, accept_terms: true });
       setRegistered(true);
     } catch (err) {
       console.error(err);
@@ -337,9 +343,30 @@ export default function Register() {
               )}
             </div>
 
+            <label className="animate-fade-up delay-700 flex items-start gap-3 cursor-pointer select-none group mt-1">
+              <input
+                type="checkbox"
+                checked={acceptTerms}
+                onChange={(e) => setAcceptTerms(e.target.checked)}
+                className="mt-1 w-4 h-4 rounded border-gray-600 bg-gray-900 text-emerald-500 focus:ring-2 focus:ring-emerald-500/30 focus:ring-offset-0 cursor-pointer accent-emerald-500"
+                required
+              />
+              <span className="text-xs text-gray-400 leading-relaxed group-hover:text-gray-300 transition-colors">
+                He leído y acepto los{' '}
+                <Link to="/terms" target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:text-emerald-300 underline decoration-dotted underline-offset-2">
+                  Términos y Condiciones
+                </Link>{' '}
+                y la{' '}
+                <Link to="/privacy" target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:text-emerald-300 underline decoration-dotted underline-offset-2">
+                  Política de Privacidad
+                </Link>
+                .
+              </span>
+            </label>
+
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !acceptTerms}
               className="animate-fade-up delay-800 w-full mt-3 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold py-4 rounded-xl
                          shadow-[0_0_25px_rgba(16,185,129,0.25)] hover:shadow-[0_0_35px_rgba(16,185,129,0.4)]
                          transition-all duration-300 active:scale-[0.98]

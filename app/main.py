@@ -32,7 +32,7 @@ if _sentry_dsn:
     )
 
 # Importamos todos los módulos donde distribuimos la lógica
-from app.routers import auth, players, sessions, transactions, stats, config, tournaments, history, payments
+from app.routers import auth, players, sessions, transactions, stats, config, tournaments, history, payments, audit
 
 setup_logging(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("rakeflow")
@@ -47,6 +47,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 async def observability_middleware(request: Request, call_next):
     req_id = request.headers.get("X-Request-ID") or new_request_id()
     token_req_id = request_id_ctx.set(req_id)
+    request.state.request_id = req_id
 
     club_id_value = "-"
     auth_header = request.headers.get("authorization", "")
@@ -137,6 +138,7 @@ app.include_router(config.router)
 app.include_router(tournaments.router) 
 app.include_router(history.router)
 app.include_router(payments.router)
+app.include_router(audit.router)
 
 # ---------------------------------------------------------
 # ENDPOINT DE SALUD
