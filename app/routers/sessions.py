@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 # Importamos modelos y esquemas
 from .. import models, schemas
 # Importamos las dependencias SaaS
-from ..dependencies import get_db, get_current_club
+from ..dependencies import get_db, get_current_club, require_role
 from ..audit import log_action, AuditAction
 
 router = APIRouter(
@@ -561,7 +561,8 @@ async def delete_session(
     session_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_club: models.Club = Depends(get_current_club)
+    current_club: models.Club = Depends(get_current_club),
+    _: models.User = Depends(require_role([models.UserRole.OWNER])),
 ):
     # A. Buscar la sesión
     result = await db.execute(select(models.Session).where(models.Session.id == session_id))

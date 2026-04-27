@@ -6,8 +6,7 @@ from sqlalchemy import delete
 from typing import List
 
 from .. import models, schemas
-# 👇 Dependencias SaaS: Traemos el autenticador
-from ..dependencies import get_db, get_current_club
+from ..dependencies import get_db, get_current_club, require_role
 
 router = APIRouter(
     prefix="/config",
@@ -18,7 +17,8 @@ router = APIRouter(
 async def initial_setup(
     setup_data: schemas.InitialSetupRequest,
     db: AsyncSession = Depends(get_db),
-    current_club: models.Club = Depends(get_current_club)
+    current_club: models.Club = Depends(get_current_club),
+    _: models.User = Depends(require_role([models.UserRole.OWNER])),
 ):
     """
     Configura:
@@ -93,9 +93,10 @@ async def get_distribution_rules(
 
 @router.post("/distribution", response_model=List[schemas.DistributionRuleResponse])
 async def update_distribution_rules(
-    rules: List[schemas.DistributionRuleCreate], 
+    rules: List[schemas.DistributionRuleCreate],
     db: AsyncSession = Depends(get_db),
-    current_club: models.Club = Depends(get_current_club) # 👈 Inyección Auth
+    current_club: models.Club = Depends(get_current_club),
+    _: models.User = Depends(require_role([models.UserRole.OWNER])),
 ):
     """
     Sobrescribe TODAS las reglas del club autenticado.

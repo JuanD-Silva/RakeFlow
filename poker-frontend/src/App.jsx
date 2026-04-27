@@ -37,14 +37,17 @@ function PokerManagerApp() {
   const [resending, setResending] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
   const [trialInfo, setTrialInfo] = useState(null);
+  const [subscriptionInactive, setSubscriptionInactive] = useState(false);
   const navigate = useNavigate();
+  const { isOwner, role } = useAuth();
 
   useEffect(() => {
     async function checkSetup() {
       try {
         const res = await api.get('/auth/me');
         if (!res.data.setup_completed) {
-          navigate('/setup');
+          // Solo el OWNER hace setup. CASHIER/MANAGER se quedan esperando.
+          if (isOwner) navigate('/setup');
           return;
         }
         setEmailVerified(res.data.email_verified);
@@ -53,16 +56,20 @@ function PokerManagerApp() {
         try {
           const subRes = await api.get('/payments/status');
           if (!subRes.data.subscription_active) {
-            navigate('/subscribe');
-            return;
+            // Solo el OWNER puede pagar. Otros roles ven mensaje.
+            if (isOwner) {
+              navigate('/subscribe');
+              return;
+            }
+            setSubscriptionInactive(true);
           }
           if (subRes.data.in_trial) {
             setTrialInfo(subRes.data);
           }
         } catch {}
 
-        // Mostrar wizard si es primera vez
-        if (!localStorage.getItem('rakeflow_wizard_done')) {
+        // Wizard solo para OWNER (primera vez configurando)
+        if (isOwner && !localStorage.getItem('rakeflow_wizard_done')) {
           setShowWizard(true);
         }
       } catch {
@@ -71,7 +78,7 @@ function PokerManagerApp() {
       setCheckingSetup(false);
     }
     checkSetup();
-  }, []);
+  }, [isOwner]);
 
   const handleResendVerification = async () => {
     setResending(true);
@@ -114,6 +121,17 @@ function PokerManagerApp() {
             >
               {resending ? 'Enviando...' : 'Reenviar email'}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Banner de suscripcion inactiva (no-OWNER) */}
+      {subscriptionInactive && !isOwner && (
+        <div className="bg-red-500/10 border-b border-red-500/20 px-4 py-3">
+          <div className="max-w-7xl mx-auto flex flex-wrap items-center gap-2">
+            <p className="text-red-300 text-sm font-medium">
+              La suscripción del club no está activa. Pídele al dueño que la renueve para volver a operar.
+            </p>
           </div>
         </div>
       )}

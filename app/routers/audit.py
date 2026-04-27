@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from .. import models
-from ..dependencies import get_db, get_current_club
+from ..dependencies import get_db, get_current_club, require_role
 
 router = APIRouter(prefix="/audit", tags=["Audit"])
 
@@ -23,6 +23,7 @@ async def list_audit_logs(
     date_to: Optional[str] = Query(None, description="ISO date YYYY-MM-DD"),
     db: AsyncSession = Depends(get_db),
     current_club: models.Club = Depends(get_current_club),
+    _: models.User = Depends(require_role([models.UserRole.OWNER, models.UserRole.MANAGER])),
 ):
     """Lista los logs del club autenticado, filtrable y paginado."""
     stmt = select(models.AuditLog).where(models.AuditLog.club_id == current_club.id)

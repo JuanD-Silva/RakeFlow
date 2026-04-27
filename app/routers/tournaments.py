@@ -7,7 +7,7 @@ from app import models, schemas
 from datetime import datetime
 from pydantic import BaseModel
 import logging
-from ..dependencies import get_db, get_current_club
+from ..dependencies import get_db, get_current_club, require_role
 from ..audit import log_action, AuditAction
 
 logger = logging.getLogger(__name__)
@@ -636,7 +636,8 @@ async def delete_tournament(
     tournament_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_club: models.Club = Depends(get_current_club)
+    current_club: models.Club = Depends(get_current_club),
+    _: models.User = Depends(require_role([models.UserRole.OWNER])),
 ):
     # A. Buscar el torneo
     result = await db.execute(select(models.Tournament).where(models.Tournament.id == tournament_id))

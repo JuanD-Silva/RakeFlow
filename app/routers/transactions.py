@@ -11,7 +11,10 @@ from datetime import datetime
 import logging
 
 logger = logging.getLogger(__name__)
-from ..dependencies import get_db, get_current_club
+from ..dependencies import get_db, get_current_club, require_role
+
+# Editar/eliminar transacciones: solo OWNER + MANAGER (no CASHIER)
+_EDIT_TX_ROLES = [models.UserRole.OWNER, models.UserRole.MANAGER]
 
 router = APIRouter(
     prefix="/transactions",
@@ -122,7 +125,8 @@ async def update_transaction(
     data: TransactionUpdate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_club: models.Club = Depends(get_current_club)
+    current_club: models.Club = Depends(get_current_club),
+    _: models.User = Depends(require_role(_EDIT_TX_ROLES)),
 ):
     logger.debug("Buscando transacción ID %d para club %d", transaction_id, current_club.id)
 
@@ -179,7 +183,8 @@ async def delete_transaction(
     transaction_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_club: models.Club = Depends(get_current_club)
+    current_club: models.Club = Depends(get_current_club),
+    _: models.User = Depends(require_role(_EDIT_TX_ROLES)),
 ):
     # Buscar la transacción Y CARGAR LA SESIÓN
     stmt = (

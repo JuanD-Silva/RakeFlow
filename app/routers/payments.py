@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from pydantic import BaseModel
 from .. import models
-from ..dependencies import get_db, get_current_club
+from ..dependencies import get_db, get_current_club, require_role
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +71,8 @@ async def get_subscription_status(
 @router.post("/start-trial")
 async def start_trial(
     db: AsyncSession = Depends(get_db),
-    current_club: models.Club = Depends(get_current_club)
+    current_club: models.Club = Depends(get_current_club),
+    _: models.User = Depends(require_role([models.UserRole.OWNER])),
 ):
     """Inicia el periodo de prueba de 7 dias."""
     if current_club.subscription_active:
@@ -152,7 +153,8 @@ async def payment_confirmation(
 async def confirm_payment_by_ref(
     data: dict,
     db: AsyncSession = Depends(get_db),
-    current_club: models.Club = Depends(get_current_club)
+    current_club: models.Club = Depends(get_current_club),
+    _: models.User = Depends(require_role([models.UserRole.OWNER])),
 ):
     """
     Verifica un pago con la API de ePayco usando la referencia
@@ -208,7 +210,8 @@ async def confirm_payment_by_ref(
 @router.post("/activate-test")
 async def activate_test(
     db: AsyncSession = Depends(get_db),
-    current_club: models.Club = Depends(get_current_club)
+    current_club: models.Club = Depends(get_current_club),
+    _: models.User = Depends(require_role([models.UserRole.OWNER])),
 ):
     """
     Solo disponible en modo test. Activa la suscripcion sin pago real.

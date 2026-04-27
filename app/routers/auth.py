@@ -10,7 +10,7 @@ from sqlalchemy.future import select
 from sqlalchemy import delete
 from pydantic import BaseModel
 from .. import models, schemas, auth_utils
-from ..dependencies import get_db, get_current_club, get_current_user
+from ..dependencies import get_db, get_current_club, get_current_user, require_role
 from ..email_service import send_password_reset_email, send_verification_email
 from ..rate_limit import limiter
 from ..audit import log_action, log_standalone, AuditAction
@@ -231,7 +231,8 @@ async def resend_verification(
 async def delete_my_account(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_club: models.Club = Depends(get_current_club)
+    current_club: models.Club = Depends(get_current_club),
+    _: models.User = Depends(require_role([models.UserRole.OWNER])),
 ):
     """
     PELIGRO: Borra el club actual y TODOS sus datos (jugadores, sesiones, dinero).

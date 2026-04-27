@@ -8,7 +8,10 @@ from datetime import datetime, timedelta, time
 import logging
 
 from .. import models, schemas
-from ..dependencies import get_db, get_current_club
+from ..dependencies import get_db, get_current_club, require_role
+
+# Reportes financieros: solo dueno y encargado, no cashier
+_REPORT_ROLES = [models.UserRole.OWNER, models.UserRole.MANAGER]
 
 logger = logging.getLogger(__name__)
 
@@ -58,8 +61,9 @@ async def _get_net_profit_in_range(db: AsyncSession, club_id: int, start: dateti
 # ---------------------------------------------------------
 @router.get("/dashboard")
 async def get_dashboard_stats(
-    db: AsyncSession = Depends(get_db), 
-    current_club: models.Club = Depends(get_current_club)
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+    _: models.User = Depends(require_role(_REPORT_ROLES)),
 ):
     try:
         now = datetime.utcnow()
@@ -123,10 +127,11 @@ async def get_dashboard_stats(
 # ---------------------------------------------------------
 @router.get("/weekly-distribution")
 async def get_weekly_distribution(
-    start_date: str = None, 
-    end_date: str = None, 
+    start_date: str = None,
+    end_date: str = None,
     db: AsyncSession = Depends(get_db),
-    current_club: models.Club = Depends(get_current_club)
+    current_club: models.Club = Depends(get_current_club),
+    _: models.User = Depends(require_role(_REPORT_ROLES)),
 ):
     try:
         # 1. Definir rango de fechas
@@ -223,7 +228,8 @@ async def get_weekly_distribution(
 @router.get("/monthly-debt-quota")
 async def get_monthly_debt_quota(
     db: AsyncSession = Depends(get_db),
-    current_club: models.Club = Depends(get_current_club)
+    current_club: models.Club = Depends(get_current_club),
+    _: models.User = Depends(require_role(_REPORT_ROLES)),
 ):
     # Meta
     stmt_rules = select(func.sum(models.DistributionRule.value)).where(models.DistributionRule.club_id == current_club.id, models.DistributionRule.active == True, or_(models.DistributionRule.rule_type == models.RuleType.MONTHLY_QUOTA, models.DistributionRule.rule_type == models.RuleType.FIXED))
@@ -250,7 +256,8 @@ async def get_monthly_debt_quota(
 @router.get("/rankings")
 async def get_rankings(
     db: AsyncSession = Depends(get_db),
-    current_club: models.Club = Depends(get_current_club)
+    current_club: models.Club = Depends(get_current_club),
+    _: models.User = Depends(require_role(_REPORT_ROLES)),
 ):
     try:
         start_date = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
@@ -410,7 +417,12 @@ async def get_global_jackpot(db: AsyncSession = Depends(get_db), current_club: m
     return {"total_jackpot": total_income - total_payouts + adjustment}
 
 @router.post("/jackpot-adjust")
-async def adjust_jackpot(data: dict, db: AsyncSession = Depends(get_db), current_club: models.Club = Depends(get_current_club)):
+async def adjust_jackpot(
+    data: dict,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+    _: models.User = Depends(require_role([models.UserRole.OWNER])),
+):
     """Ajusta el jackpot manualmente (positivo = agrega, negativo = retira)."""
     amount = data.get("amount", 0)
     reason = data.get("reason", "")
@@ -423,10 +435,11 @@ async def adjust_jackpot(data: dict, db: AsyncSession = Depends(get_db), current
 
 @router.get("/history-mixed")
 async def get_mixed_history(
-    skip: int = 0, 
-    limit: int = 20, 
-    db: AsyncSession = Depends(get_db), 
-    current_club: models.Club = Depends(get_current_club)
+    skip: int = 0,
+    limit: int = 20,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+    _: models.User = Depends(require_role(_REPORT_ROLES)),
 ):
     """
     Retorna una lista combinada de Sesiones de Cash y Torneos,

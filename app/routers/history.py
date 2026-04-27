@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from datetime import datetime
 
 from .. import models
-from ..dependencies import get_db, get_current_club
+from ..dependencies import get_db, get_current_club, require_role
 
 router = APIRouter(prefix="/history", tags=["History"])
 
@@ -27,7 +27,8 @@ class HistoryItem(BaseModel):
 @router.get("/", response_model=List[HistoryItem])
 async def get_history(
     db: AsyncSession = Depends(get_db),
-    current_club: models.Club = Depends(get_current_club)
+    current_club: models.Club = Depends(get_current_club),
+    _: models.User = Depends(require_role([models.UserRole.OWNER, models.UserRole.MANAGER])),
 ):
     history = []
 
