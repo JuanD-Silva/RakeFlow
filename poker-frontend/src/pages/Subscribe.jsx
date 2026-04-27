@@ -1,13 +1,13 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '../api/axios';
+import { wompiService } from '../api/services';
 import {
   CheckIcon,
   CreditCardIcon,
   ShieldCheckIcon,
   ClockIcon,
   SparklesIcon,
-  XMarkIcon,
   BeakerIcon,
 } from '@heroicons/react/24/outline';
 
@@ -20,46 +20,28 @@ const PLAN_FEATURES = [
   'Multi-usuario (cajeros)',
 ];
 
+// Calcula SHA-256 hex del string usando WebCrypto (browser nativo)
+async function sha256Hex(text) {
+  const buf = new TextEncoder().encode(text);
+  const hash = await crypto.subtle.digest('SHA-256', buf);
+  return Array.from(new Uint8Array(hash))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
 export default function Subscribe() {
-  const [config, setConfig] = useState(null);
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [startingTrial, setStartingTrial] = useState(false);
-  const [showCheckout, setShowCheckout] = useState(false);
+  const [redirecting, setRedirecting] = useState(false);
   const [activating, setActivating] = useState(false);
-  const pollingRef = useRef(null);
   const navigate = useNavigate();
-
-  const stopPolling = useCallback(() => {
-    if (pollingRef.current) {
-      clearInterval(pollingRef.current);
-      pollingRef.current = null;
-    }
-  }, []);
-
-  const checkAndRedirect = useCallback(async () => {
-    try {
-      const res = await api.get('/payments/status');
-      if (res.data.subscription_active && res.data.plan_type === 'PRO') {
-        stopPolling();
-        localStorage.removeItem('rakeflow_wizard_done');
-        navigate('/payment-success?ref_payco=verified');
-        return true;
-      }
-    } catch {}
-    return false;
-  }, [navigate, stopPolling]);
 
   useEffect(() => {
     async function load() {
       try {
-        const [configRes, statusRes] = await Promise.all([
-          api.get('/payments/config'),
-          api.get('/payments/status')
-        ]);
-        setConfig(configRes.data);
+        const statusRes = await api.get('/payments/status');
         setStatus(statusRes.data);
-
         if (statusRes.data.subscription_active && !statusRes.data.in_trial) {
           navigate('/dashboard');
         }
@@ -70,25 +52,6 @@ export default function Subscribe() {
       }
     }
     load();
-
-    // Escuchar postMessage del iframe (PaymentCallback)
-    const handleMessage = async (e) => {
-      if (e.origin !== window.location.origin) return;
-      if (e.data?.type !== 'EPAYCO_PAYMENT_COMPLETE') return;
-      stopPolling();
-      const refPayco = e.data.ref_payco;
-      if (refPayco) {
-        try { await api.post('/payments/confirm-by-ref', { ref_payco: refPayco }); } catch {}
-      }
-      localStorage.removeItem('rakeflow_wizard_done');
-      navigate('/payment-success?ref_payco=' + (refPayco || 'confirmed'));
-    };
-    window.addEventListener('message', handleMessage);
-
-    return () => {
-      stopPolling();
-      window.removeEventListener('message', handleMessage);
-    };
   }, []);
 
   const handleStartTrial = async () => {
@@ -104,35 +67,39 @@ export default function Subscribe() {
     }
   };
 
-  const handleOpenCheckout = () => {
-    setShowCheckout(true);
-    // Polling: en produccion el webhook activara la suscripcion
-    stopPolling();
-    pollingRef.current = setInterval(() => checkAndRedirect(), 4000);
-    setTimeout(stopPolling, 600000);
-  };
+  // Wompi Hosted Checkout: redirect a checkout.wompi.co con los params firmados.
+  // El usuario paga ahi, luego Wompi redirige a redirect-url?id=<tx_id>&env=test
+  // El PaymentCallback se encarga de confirmar con el backend.
+  const handleSubscribeWompi = async () => {
+    setRedirecting(true);
+    try {
+      const cfg = await wompiService.getConfig();
+      const amountInCents = cfg.amount_cop * 100;
+      const reference = `${cfg.reference_prefix}${Date.now()}`;
+      const currency = cfg.currency || 'COP';
 
-  const handleCloseCheckout = async () => {
-    setShowCheckout(false);
-    stopPolling();
+      // Signature de integridad: SHA-256(reference + amount_in_cents + currency + integrity_key)
+      const signature = await sha256Hex(
+        `${reference}${amountInCents}${currency}${cfg.integrity_key}`
+      );
 
-    // Verificar si el webhook ya activo (produccion)
-    const activated = await checkAndRedirect();
-    if (activated) return;
+      const redirectUrl = `${window.location.origin}/payment-callback`;
 
-    // En modo test, el webhook no llega a localhost.
-    // Si el usuario paso por el checkout, activar automaticamente.
-    if (config?.test) {
-      setActivating(true);
-      try {
-        const res = await api.post('/payments/activate-test');
-        if (res.data.subscription_active) {
-          localStorage.removeItem('rakeflow_wizard_done');
-          navigate('/payment-success?ref_payco=test');
-          return;
-        }
-      } catch {}
-      setActivating(false);
+      const params = new URLSearchParams({
+        'public-key': cfg.public_key,
+        currency,
+        'amount-in-cents': String(amountInCents),
+        reference,
+        'signature:integrity': signature,
+        'redirect-url': redirectUrl,
+        'customer-data:email': cfg.club_email || '',
+      });
+
+      window.location.href = `https://checkout.wompi.co/p/?${params.toString()}`;
+    } catch (err) {
+      console.error(err);
+      alert('No se pudo iniciar el pago. Intenta de nuevo.');
+      setRedirecting(false);
     }
   };
 
@@ -152,12 +119,13 @@ export default function Subscribe() {
     }
   };
 
-  if (loading || activating) {
+  if (loading || activating || redirecting) {
     return (
       <div className="min-h-screen bg-[#0a0f1a] flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-emerald-500 mx-auto mb-4"></div>
-          {activating && <p className="text-gray-400 text-sm">Activando suscripcion...</p>}
+          {activating && <p className="text-gray-400 text-sm">Activando suscripción...</p>}
+          {redirecting && <p className="text-gray-400 text-sm">Redirigiendo a Wompi...</p>}
         </div>
       </div>
     );
@@ -165,7 +133,7 @@ export default function Subscribe() {
 
   const canTrial = status && !status.subscription_active && !status.trial_end;
   const inTrial = status?.in_trial;
-  const isTestMode = config?.test;
+  const isTestMode = true; // Sandbox visible siempre que no esten en prod (lo decide el backend mismo)
 
   return (
     <div className="min-h-screen bg-[#0a0f1a] px-4 py-10 font-sans relative noise-bg">
@@ -177,7 +145,6 @@ export default function Subscribe() {
 
       <div className="relative z-10 max-w-lg mx-auto">
 
-        {/* Logo */}
         <div className="text-center mb-8 animate-fade-up">
           <Link to="/" className="inline-flex items-center gap-2 group">
             <div className="bg-gradient-to-br from-emerald-600 to-green-900 p-2 rounded-xl border border-emerald-500/30 group-hover:shadow-lg group-hover:shadow-emerald-500/20 transition-all">
@@ -189,21 +156,18 @@ export default function Subscribe() {
           </Link>
         </div>
 
-        {/* Trial banner */}
         {inTrial && (
           <div className="animate-fade-up delay-100 bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 mb-6 flex items-center gap-3">
             <ClockIcon className="w-6 h-6 text-amber-400 flex-shrink-0" />
             <div>
               <p className="text-amber-300 text-sm font-bold">Periodo de prueba activo</p>
-              <p className="text-amber-400/60 text-xs">Te quedan {status.trial_days_remaining} dias. Suscribete para no perder acceso.</p>
+              <p className="text-amber-400/60 text-xs">Te quedan {status.trial_days_remaining} dias. Suscríbete para no perder acceso.</p>
             </div>
           </div>
         )}
 
-        {/* Plan Card */}
         <div className="animate-fade-up delay-200 bg-gray-800/30 backdrop-blur-xl rounded-3xl border border-emerald-500/20 shadow-2xl shadow-black/20 overflow-hidden">
 
-          {/* Header */}
           <div className="bg-gradient-to-r from-emerald-900/40 to-teal-900/30 p-8 text-center border-b border-emerald-500/10">
             <div className="inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-4 py-1.5 mb-4">
               <SparklesIcon className="w-4 h-4 text-emerald-400" />
@@ -216,7 +180,6 @@ export default function Subscribe() {
             <p className="text-gray-400 text-sm mt-2">Todo lo que necesitas para gestionar tu club</p>
           </div>
 
-          {/* Features */}
           <div className="p-8">
             <ul className="space-y-3 mb-8">
               {PLAN_FEATURES.map((feat, i) => (
@@ -245,10 +208,10 @@ export default function Subscribe() {
               )}
 
               <button
-                onClick={handleOpenCheckout}
+                onClick={handleSubscribeWompi}
                 className="w-full py-4 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-lg shadow-emerald-900/20 hover:shadow-[0_0_30px_rgba(16,185,129,0.3)]"
               >
-                <CreditCardIcon className="w-5 h-5" /> Suscribirme ahora
+                <CreditCardIcon className="w-5 h-5" /> Suscribirme con tarjeta / PSE / Nequi
               </button>
 
               {isTestMode && (
@@ -263,7 +226,7 @@ export default function Subscribe() {
 
             <div className="flex items-center justify-center gap-2 mt-6 text-gray-600 text-xs">
               <ShieldCheckIcon className="w-4 h-4" />
-              Pago seguro con ePayco. Cancela cuando quieras.
+              Pago seguro con Wompi · Bancolombia
             </div>
           </div>
         </div>
@@ -276,37 +239,6 @@ export default function Subscribe() {
           </div>
         )}
       </div>
-
-      {/* ========== MODAL CON IFRAME DE EPAYCO ========== */}
-      {showCheckout && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.85)' }}>
-          <div className="relative w-full max-w-2xl bg-gray-900 rounded-2xl overflow-hidden shadow-2xl border border-gray-700/50 animate-scale-in" style={{ height: '85vh' }}>
-
-            {/* Header del modal */}
-            <div className="flex items-center justify-between px-5 py-3 bg-gray-800/80 border-b border-gray-700/50">
-              <div className="flex items-center gap-2">
-                <ShieldCheckIcon className="w-4 h-4 text-emerald-400" />
-                <span className="text-sm text-gray-300 font-medium">Pago seguro - ePayco</span>
-              </div>
-              <button
-                onClick={handleCloseCheckout}
-                className="p-1.5 rounded-lg hover:bg-gray-700 text-gray-400 hover:text-white transition-colors"
-                title="Cerrar"
-              >
-                <XMarkIcon className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* iframe sandboxed: bloquea navegacion top-level */}
-            <iframe
-              src="/checkout-frame"
-              className="w-full border-0 bg-[#0a0f1a]"
-              style={{ height: 'calc(85vh - 52px)' }}
-              sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-            />
-          </div>
-        </div>
-      )}
     </div>
   );
 }
