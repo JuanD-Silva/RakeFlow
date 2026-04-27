@@ -25,9 +25,10 @@ class SessionStatus(str, enum.Enum):
     CLOSED = "CLOSED"
 
 class UserRole(str, enum.Enum):
-    SUPERADMIN = "superadmin" # Tú (Dueño del SaaS)
-    OWNER = "owner"           # Tu Cliente (Dueño del Club)
-    MANAGER = "manager"       # Cajero/Empleado
+    SUPERADMIN = "superadmin"  # Yo (Dueno del SaaS, no se asigna desde UI)
+    OWNER = "owner"            # Dueno del Club: gestiona usuarios, suscripcion, todo
+    MANAGER = "manager"        # Encargado: operacion + finanzas, no gestiona usuarios
+    CASHIER = "cashier"        # Cajero: solo operacion de mesa, no ve reportes globales
 
 class RuleType(str, enum.Enum):
     FIXED = "FIXED"           # Ej: Alquiler diario
@@ -73,17 +74,31 @@ class Club(Base):
 class User(Base):
     """
     Usuarios que pueden entrar al sistema (Login).
+    Cada User pertenece a un Club. El Club es el cliente SaaS;
+    el User es la persona fisica que opera (dueno, encargado, cajero).
     """
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
-    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True, index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False, index=True)
 
-    username = Column(String, unique=True, index=True)
-    hashed_password = Column(String)
-    role = Column(SqEnum(UserRole), default=UserRole.MANAGER)
-    
+    email = Column(String, unique=True, index=True, nullable=False)
+    name = Column(String, nullable=True)
+    hashed_password = Column(String, nullable=True)  # null hasta aceptar invitacion
+    role = Column(SqEnum(UserRole), default=UserRole.CASHIER, nullable=False)
     is_active = Column(Boolean, default=True)
+
+    # Invitacion
+    invitation_token = Column(String, nullable=True, index=True)
+    invitation_expires_at = Column(DateTime, nullable=True)
+    invitation_sent_at = Column(DateTime, nullable=True)
+    invited_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    last_login_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Username legacy (se mantiene por compat con datos viejos, no se usa)
+    username = Column(String, unique=True, index=True, nullable=True)
 
     club = relationship("Club", back_populates="users")
 

@@ -62,6 +62,57 @@ def send_verification_email(to_email: str, token: str, club_name: str):
         return False
 
 
+def send_invitation_email(to_email: str, token: str, inviter_name: str, club_name: str, role: str):
+    config = _get_config()
+    if not config["api_key"]:
+        logger.warning("RESEND_API_KEY not set, skipping invitation email to %s", to_email)
+        return False
+
+    accept_link = f"{config['frontend_url']}/accept-invitation?token={token}"
+    role_label = {
+        "owner": "Dueño",
+        "manager": "Encargado",
+        "cashier": "Cajero",
+    }.get(str(role).lower(), role)
+
+    try:
+        resend.Emails.send({
+            "from": f"RakeFlow <{config['from_email']}>",
+            "to": [to_email],
+            "subject": f"Te invitaron a {club_name} en RakeFlow",
+            "html": f"""
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 500px; margin: 0 auto; padding: 40px 20px;">
+                <div style="text-align: center; margin-bottom: 30px;">
+                    <span style="font-size: 24px; font-weight: 900; color: #10b981;">RakeFlow</span>
+                </div>
+                <div style="background: #1e293b; border-radius: 16px; padding: 32px; border: 1px solid #334155;">
+                    <h2 style="color: #ffffff; margin: 0 0 8px 0; font-size: 20px;">Te invitaron a {club_name}</h2>
+                    <p style="color: #94a3b8; font-size: 14px; line-height: 1.6; margin: 0 0 12px 0;">
+                        <strong style="color: #ffffff;">{inviter_name}</strong> te invitó a unirte como <strong style="color: #10b981;">{role_label}</strong>.
+                    </p>
+                    <p style="color: #94a3b8; font-size: 14px; line-height: 1.6; margin: 0 0 24px 0;">
+                        Acepta la invitación para crear tu contraseña y comenzar a operar.
+                    </p>
+                    <a href="{accept_link}" style="display: block; background: linear-gradient(to right, #059669, #10b981); color: white; text-decoration: none; padding: 14px 24px; border-radius: 12px; font-weight: 700; font-size: 14px; text-align: center; letter-spacing: 0.05em; text-transform: uppercase;">
+                        Aceptar Invitación
+                    </a>
+                    <p style="color: #64748b; font-size: 12px; margin: 24px 0 0 0; text-align: center;">
+                        Este enlace expira en 7 días. Si no esperabas esta invitación, ignora este correo.
+                    </p>
+                </div>
+                <p style="color: #475569; font-size: 11px; text-align: center; margin-top: 20px;">
+                    &copy; 2026 RakeFlow.
+                </p>
+            </div>
+            """
+        })
+        logger.info("Invitation email sent to %s", to_email)
+        return True
+    except Exception as e:
+        logger.error("Failed to send invitation email to %s: %s", to_email, e)
+        return False
+
+
 def send_password_reset_email(to_email: str, token: str, club_name: str):
     config = _get_config()
     if not config["api_key"]:

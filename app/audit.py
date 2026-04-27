@@ -89,29 +89,41 @@ async def log_action(
     entity_type: Optional[str] = None,
     entity_id: Optional[int] = None,
     meta: Optional[dict[str, Any]] = None,
-    actor_type: str = "CLUB",
+    actor_type: str = "USER",
+    user: Optional["models.User"] = None,
 ) -> None:
     """
     Agrega un AuditLog a la sesion actual. No hace commit.
     Nunca lanza: si algo falla aqui no debe romper la accion del usuario.
+
+    Si se pasa `user`, lo registramos como actor (caso multi-usuario).
+    Si no, fallback al Club (compat con codigo viejo).
     """
     try:
         ip = None
         user_agent = None
         request_id = None
         if request is not None:
-            # En Railway/Vercel la IP real viene en X-Forwarded-For
             fwd = request.headers.get("x-forwarded-for", "")
             ip = fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else None)
             ua = request.headers.get("user-agent", "")
             user_agent = ua[:500] if ua else None
             request_id = request.headers.get("x-request-id") or getattr(request.state, "request_id", None)
 
+        if user is not None:
+            actor_id = user.id
+            actor_email = user.email
+            actor_type = "USER"
+        else:
+            actor_id = club.id
+            actor_email = club.email
+            actor_type = actor_type or "CLUB"
+
         log = models.AuditLog(
             club_id=club.id,
             actor_type=actor_type,
-            actor_id=club.id,
-            actor_email=club.email,
+            actor_id=actor_id,
+            actor_email=actor_email,
             action=action,
             entity_type=entity_type,
             entity_id=entity_id,

@@ -10,7 +10,7 @@ from sqlalchemy.future import select
 from sqlalchemy import delete
 from pydantic import BaseModel
 from .. import models, schemas, auth_utils
-from ..dependencies import get_db, get_current_club
+from ..dependencies import get_db, get_current_club, get_current_user
 from ..email_service import send_password_reset_email, send_verification_email
 from ..rate_limit import limiter
 from ..audit import log_action, log_standalone, AuditAction
@@ -56,6 +56,17 @@ async def register_club(request: Request, club_data: schemas.ClubCreate, db: Asy
     db.add(new_club)
     await db.flush()  # Obtiene el ID sin hacer commit
 
+    # User OWNER inicial vinculado al Club
+    owner_user = models.User(
+        club_id=new_club.id,
+        email=club_data.email,
+        name=club_data.name,
+        hashed_password=hashed_pwd,
+        role=models.UserRole.OWNER,
+        is_active=True,
+    )
+    db.add(owner_user)
+
     db.add_all([
         models.DistributionRule(club_id=new_club.id, name="Caja (Gastos Fijos)", rule_type=models.RuleType.MONTHLY_QUOTA, value=400000, priority=1, active=True),
         models.DistributionRule(club_id=new_club.id, name="Utilidad Socios", rule_type=models.RuleType.PERCENTAGE, value=1.00, priority=2, active=True),
@@ -90,25 +101,36 @@ async def login(request: Request, db: AsyncSession = Depends(get_db)):
         username = form.get("username", "")
         password = form.get("password", "")
 
-    result = await db.execute(select(models.Club).where(models.Club.email == username))
-    club = result.scalars().first()
+    # Buscar User por email (multi-usuario). Si no hay match, fallback al Club
+    # para casos de tokens viejos. Pero priorizamos User.
+    user_result = await db.execute(
+        select(models.User).where(models.User.email == username)
+    )
+    user = user_result.scalars().first()
 
+    if not user or not user.is_active or user.hashed_password is None:
+        logger.info("login_failed_unknown_or_pending email=%s", username)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciales incorrectas (Email o Contraseña)",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Cargar Club asociado (para campos como setup_completed, subscription, etc.)
+    club_result = await db.execute(select(models.Club).where(models.Club.id == user.club_id))
+    club = club_result.scalars().first()
     if not club:
-        # Login fallido: email no existe. Solo logueamos en aplicacion, no en DB
-        # para evitar polucion por intentos contra emails invalidos.
-        logger.info("login_failed_unknown_email email=%s", username)
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciales incorrectas (Email o Contraseña)", headers={"WWW-Authenticate": "Bearer"})
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Club no encontrado")
 
     import asyncio
     loop = asyncio.get_event_loop()
-    valid = await loop.run_in_executor(None, auth_utils.verify_password, password, club.hashed_password)
+    valid = await loop.run_in_executor(None, auth_utils.verify_password, password, user.hashed_password)
 
     if not valid:
-        # Contrasena incorrecta contra un club real: si es importante auditarlo
         await log_standalone(
-            db, club_id=club.id, actor_email=club.email,
+            db, club_id=club.id, actor_email=user.email,
             action=AuditAction.LOGIN_FAILED, request=request,
-            meta={"reason": "invalid_password"},
+            meta={"reason": "invalid_password", "user_id": user.id},
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -117,12 +139,19 @@ async def login(request: Request, db: AsyncSession = Depends(get_db)):
         )
 
     access_token = auth_utils.create_access_token(
-        data={"sub": club.email, "club_id": club.id}
+        data={
+            "sub": user.email,
+            "club_id": club.id,
+            "user_id": user.id,
+            "role": user.role.value if hasattr(user.role, "value") else str(user.role),
+        }
     )
 
+    user.last_login_at = datetime.utcnow()
     await log_action(
         db, request=request, club=club,
         action=AuditAction.LOGIN_SUCCESS,
+        meta={"user_id": user.id, "role": user.role.value if hasattr(user.role, "value") else str(user.role)},
     )
     await db.commit()
 
@@ -131,22 +160,33 @@ async def login(request: Request, db: AsyncSession = Depends(get_db)):
         "token_type": "bearer",
         "setup_completed": club.setup_completed or False,
         "email_verified": club.email_verified or False,
-        "subscription_active": club.subscription_active or False
+        "subscription_active": club.subscription_active or False,
+        "role": user.role.value if hasattr(user.role, "value") else str(user.role),
+        "user_name": user.name,
     }
 
 @router.get("/auth/me")
 async def get_current_club_info(
     db: AsyncSession = Depends(get_db),
-    current_club: models.Club = Depends(get_current_club)
+    current_user: models.User = Depends(get_current_user),
+    current_club: models.Club = Depends(get_current_club),
 ):
     return {
+        # Datos del Club (cliente SaaS)
         "id": current_club.id,
         "name": current_club.name,
         "email": current_club.email,
         "setup_completed": current_club.setup_completed or False,
         "email_verified": current_club.email_verified or False,
         "subscription_active": current_club.subscription_active or False,
-        "plan_type": current_club.plan_type
+        "plan_type": current_club.plan_type,
+        # Datos del Usuario autenticado
+        "user": {
+            "id": current_user.id,
+            "email": current_user.email,
+            "name": current_user.name,
+            "role": current_user.role.value if hasattr(current_user.role, "value") else str(current_user.role),
+        },
     }
 
 @router.post("/auth/verify-email")

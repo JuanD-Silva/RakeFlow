@@ -45,6 +45,54 @@ class Token(BaseModel):
     access_token: str
     token_type: str
 
+
+# --- USERS (multi-usuario por club) ---
+class UserRoleEnum(str, Enum):
+    OWNER = "owner"
+    MANAGER = "manager"
+    CASHIER = "cashier"
+
+
+class UserInvite(BaseModel):
+    email: str = Field(..., min_length=5, max_length=150)
+    name: Optional[str] = Field(None, max_length=100)
+    role: UserRoleEnum = UserRoleEnum.CASHIER
+
+
+class UserUpdate(BaseModel):
+    name: Optional[str] = Field(None, max_length=100)
+    role: Optional[UserRoleEnum] = None
+    is_active: Optional[bool] = None
+
+
+class UserResponse(BaseSchema):
+    id: int
+    email: str
+    name: Optional[str] = None
+    role: str
+    is_active: bool
+    invitation_pending: bool = False
+    invitation_sent_at: Optional[datetime] = None
+    last_login_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+
+
+class AcceptInvitation(BaseModel):
+    token: str
+    name: str = Field(..., min_length=1, max_length=100)
+    password: str = Field(..., min_length=8, max_length=128)
+
+    @field_validator('password')
+    @classmethod
+    def password_strength(cls, v):
+        if not any(c.isupper() for c in v):
+            raise ValueError('La contrasena debe tener al menos una mayuscula')
+        if not any(c.islower() for c in v):
+            raise ValueError('La contrasena debe tener al menos una minuscula')
+        if not any(c.isdigit() for c in v):
+            raise ValueError('La contrasena debe tener al menos un numero')
+        return v
+
 # --- JUGADORES ---
 class PlayerBase(BaseSchema):
     name: str = Field(..., min_length=1, max_length=100)
