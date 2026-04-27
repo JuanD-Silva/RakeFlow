@@ -130,6 +130,8 @@ class Session(Base):
     id = Column(Integer, primary_key=True, index=True)
     club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False, index=True)
 
+    name = Column(String, nullable=True)  # "Mesa VIP", "Mesa 1"... null => "Mesa #ID"
+
     start_time = Column(DateTime, default=datetime.utcnow)
     end_time = Column(DateTime, nullable=True)
     status = Column(SqEnum(SessionStatus), default=SessionStatus.OPEN)

@@ -27,22 +27,17 @@ logger = logging.getLogger("uvicorn.error")
 # 1. ABRIR SESIÓN (Start Session)
 # ---------------------------------------------------------
 @router.post("/", response_model=schemas.SessionResponse)
-async def create_session(session_in: schemas.SessionCreate, db: AsyncSession = Depends(get_db), current_club: models.Club = Depends(get_current_club) ):
-    # Validar si ya hay mesa abierta en este club
-    result = await db.execute(
-        select(models.Session).where(
-            models.Session.status == models.SessionStatus.OPEN,
-            models.Session.club_id == current_club.id
-        )
-    )
-    if result.scalars().first():
-        raise HTTPException(status_code=400, detail="Ya hay una sesión abierta en este club.")
-
-    # Crear sesión asignada al Club
+async def create_session(
+    session_in: schemas.SessionCreate,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+):
+    """Crear una nueva sesion. Multi-mesa: pueden coexistir varias sesiones OPEN en el mismo club."""
     new_session = models.Session(
         status=models.SessionStatus.OPEN,
         start_time=datetime.utcnow(),
-        club_id=current_club.id 
+        club_id=current_club.id,
+        name=(session_in.name or None) if session_in else None,
     )
     db.add(new_session)
     await db.commit()
@@ -68,22 +63,9 @@ async def read_sessions(skip: int = 0, limit: int = 100, db: AsyncSession = Depe
 # ---------------------------------------------------------
 # 3. ESTADÍSTICAS / AUDITORÍA EN TIEMPO REAL
 # ---------------------------------------------------------
-@router.get("/current/players-stats")
-async def get_current_session_stats(
-    db: AsyncSession = Depends(get_db), 
-    current_club: models.Club = Depends(get_current_club)
-):
-    # 1. Buscar sesión activa
-    stmt = select(models.Session).where(
-        models.Session.club_id == current_club.id, 
-        models.Session.status == models.SessionStatus.OPEN
-    )
-    session = (await db.execute(stmt)).scalars().first()
-    
-    if not session:
-        raise HTTPException(status_code=404, detail="No hay sesión activa")
-
-    # 2. SQL para TOTALES (Incluye la lógica de BONOS)
+async def _build_players_stats(db: AsyncSession, session: models.Session) -> list:
+    """Calcula los stats de jugadores y detalle de transacciones para una sesion dada."""
+    # 1. SQL para TOTALES (Incluye la lógica de BONOS)
     sql = text("""
         SELECT 
             p.id as player_id,
@@ -178,6 +160,42 @@ async def get_current_session_stats(
 
     # 6. Retornar lista
     return list(players_map.values())
+
+
+@router.get("/current/players-stats")
+async def get_current_session_stats(
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+):
+    """[DEPRECADO en multi-mesa] Devuelve stats de la primera sesion OPEN del club.
+    Mantener para compat. Usar GET /sessions/{id}/players-stats."""
+    stmt = select(models.Session).where(
+        models.Session.club_id == current_club.id,
+        models.Session.status == models.SessionStatus.OPEN,
+    ).order_by(models.Session.id.asc())
+    session = (await db.execute(stmt)).scalars().first()
+    if not session:
+        raise HTTPException(status_code=404, detail="No hay sesión activa")
+    return await _build_players_stats(db, session)
+
+
+@router.get("/{session_id}/players-stats")
+async def get_session_players_stats(
+    session_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+):
+    """Stats de jugadores y detalle de transacciones para una mesa especifica."""
+    stmt = select(models.Session).where(
+        models.Session.id == session_id,
+        models.Session.club_id == current_club.id,
+    )
+    session = (await db.execute(stmt)).scalars().first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Mesa no encontrada")
+    return await _build_players_stats(db, session)
+
+
 # ---------------------------------------------------------
 # 4. AUDITORÍA FINANCIERA (Para el botón de auditar)
 # ---------------------------------------------------------

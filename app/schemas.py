@@ -126,6 +126,7 @@ class PlayerSessionStats(BaseModel):
 class SessionCreate(BaseSchema):
     blind_level: str = "500/1000"
     default_rake_per_hour: Decimal = Decimal(0)
+    name: Optional[str] = Field(None, max_length=100)
 
 class SessionCloseRequest(BaseModel):
     declared_rake_cash: Decimal = Field(..., ge=0)
@@ -134,6 +135,7 @@ class SessionCloseRequest(BaseModel):
 
 class SessionResponse(BaseSchema):
     id: int
+    name: Optional[str] = None
     status: SessionStatus
     start_time: datetime
     end_time: Optional[datetime] = None
@@ -145,7 +147,7 @@ class SessionResponse(BaseSchema):
 # --- TRANSACCIONES ---
 class TransactionCreate(BaseSchema):
     player_id: Optional[int] = None
-    session_id: int
+    session_id: Optional[int] = None  # opcional para compat; si no viene, fallback a primera OPEN
     amount: Decimal = Field(..., gt=0, decimal_places=2)
     method: str = "CASH"
 

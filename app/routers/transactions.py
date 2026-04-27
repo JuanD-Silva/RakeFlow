@@ -26,21 +26,40 @@ class TransactionUpdate(BaseModel):
 # ---------------------------------------------------------
 # HELPER: Buscar Sesión Activa (Actualizado para SaaS)
 # ---------------------------------------------------------
-async def get_active_session(db: AsyncSession, club_id: int):
+async def get_active_session(db: AsyncSession, club_id: int, session_id: int | None = None):
     """
-    Busca una sesión abierta específicamente para el club indicado.
+    Resuelve la mesa cash a usar.
+    - Si `session_id` viene: valida que pertenezca al club y este OPEN.
+    - Si no viene (compat): retorna la primera OPEN del club.
+    Multi-mesa: el cliente debe pasar session_id; el fallback se mantiene
+    solo para compat con clientes viejos durante la migracion.
     """
+    if session_id is not None:
+        result = await db.execute(
+            select(models.Session).where(
+                models.Session.id == session_id,
+                models.Session.club_id == club_id,
+            )
+        )
+        session = result.scalars().first()
+        if not session:
+            raise HTTPException(status_code=404, detail="Mesa no encontrada en este club")
+        if session.status != models.SessionStatus.OPEN:
+            raise HTTPException(status_code=400, detail="La mesa indicada esta cerrada")
+        return session
+
+    # Fallback: primera OPEN
     result = await db.execute(
         select(models.Session).where(
             models.Session.status == models.SessionStatus.OPEN,
-            models.Session.club_id == club_id # 👈 Seguridad: Filtro por Club ID
-        )
+            models.Session.club_id == club_id,
+        ).order_by(models.Session.id.asc())
     )
     session = result.scalars().first()
     if not session:
         raise HTTPException(
-            status_code=400, 
-            detail="No hay ninguna mesa abierta en este club. Abre una sesión primero."
+            status_code=400,
+            detail="No hay ninguna mesa abierta en este club. Abre una sesion primero.",
         )
     return session
 
@@ -58,7 +77,7 @@ async def create_buyin(
     """
     Registra la compra de fichas (Entrada inicial o Recompra).
     """
-    session = await get_active_session(db, current_club.id)
+    session = await get_active_session(db, current_club.id, tx.session_id)
 
     new_tx = models.Transaction(
         session_id=session.id,
@@ -94,7 +113,7 @@ async def create_cashout(
     db: AsyncSession = Depends(get_db),
     current_club: models.Club = Depends(get_current_club)
 ):
-    session = await get_active_session(db, current_club.id)
+    session = await get_active_session(db, current_club.id, tx.session_id)
 
     new_tx = models.Transaction(
         session_id=session.id,
@@ -231,7 +250,7 @@ async def create_spend(
     """
     Registra cuando un jugador paga bebidas/comida con fichas.
     """
-    session = await get_active_session(db, current_club.id)
+    session = await get_active_session(db, current_club.id, tx.session_id)
 
     new_tx = models.Transaction(
         session_id=session.id,
@@ -257,7 +276,7 @@ async def create_tip(
     """
     Registra propina al dealer (fichas que salen de juego).
     """
-    session = await get_active_session(db, current_club.id)
+    session = await get_active_session(db, current_club.id, tx.session_id)
 
     new_tx = models.Transaction(
         session_id=session.id,
@@ -316,7 +335,7 @@ async def create_jackpot_payout(
         )
 
     # --- B. REGISTRO DE LA TRANSACCIÓN ---
-    session = await get_active_session(db, current_club.id)
+    session = await get_active_session(db, current_club.id, tx.session_id)
 
     new_tx = models.Transaction(
         session_id=session.id,
@@ -388,6 +407,7 @@ async def create_bonus(
 # ---------------------------------------------------------
 class BustRequest(BaseModel):
     player_id: int
+    session_id: int | None = None  # opcional para compat
 
 
 @router.post("/bust")
@@ -397,12 +417,12 @@ async def toggle_bust(
     db: AsyncSession = Depends(get_db),
     current_club: models.Club = Depends(get_current_club),
 ):
-    """Marca o desmarca a un jugador como quebrado en la sesion activa.
+    """Marca o desmarca a un jugador como quebrado en la sesion indicada (o la primera OPEN).
 
-    Idempotente: si ya existe un BUST del jugador en la sesion activa lo borra
+    Idempotente: si ya existe un BUST del jugador en la sesion lo borra
     (deshacer click erroneo); si no existe lo crea con amount=0.
     """
-    session = await get_active_session(db, current_club.id)
+    session = await get_active_session(db, current_club.id, data.session_id)
 
     existing_stmt = select(models.Transaction).where(
         models.Transaction.session_id == session.id,
