@@ -3,18 +3,24 @@ import * as Sentry from '@sentry/react';
 
 const AuthContext = createContext(null);
 
+function decodePayload(token) {
+  if (!token) return null;
+  try {
+    return JSON.parse(atob(token.split('.')[1]));
+  } catch {
+    return null;
+  }
+}
+
 function syncSentryUser(token) {
-  if (!token) {
+  const payload = decodePayload(token);
+  if (!payload) {
     Sentry.setUser(null);
     return;
   }
-  try {
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    Sentry.setUser({ id: String(payload.club_id ?? ''), email: payload.sub });
-    Sentry.setTag('club_id', String(payload.club_id ?? ''));
-  } catch {
-    Sentry.setUser(null);
-  }
+  Sentry.setUser({ id: String(payload.club_id ?? ''), email: payload.sub });
+  Sentry.setTag('club_id', String(payload.club_id ?? ''));
+  if (payload.role) Sentry.setTag('role', String(payload.role));
 }
 
 export function AuthProvider({ children }) {
@@ -23,6 +29,12 @@ export function AuthProvider({ children }) {
     syncSentryUser(t);
     return t;
   });
+
+  const payload = decodePayload(token);
+  const role = payload?.role || null;
+  const userId = payload?.user_id ?? null;
+  const clubId = payload?.club_id ?? null;
+  const email = payload?.sub ?? null;
 
   // Sincronizar token entre pestanas
   useEffect(() => {
@@ -47,8 +59,19 @@ export function AuthProvider({ children }) {
     setToken(null);
   };
 
+  const isOwner = role === 'owner';
+  const isManager = role === 'manager';
+  const isCashier = role === 'cashier';
+  const canManageUsers = isOwner;
+  const canSeeReports = isOwner || isManager;
+
   return (
-    <AuthContext.Provider value={{ token, login, logout }}>
+    <AuthContext.Provider value={{
+      token, login, logout,
+      role, userId, clubId, email,
+      isOwner, isManager, isCashier,
+      canManageUsers, canSeeReports,
+    }}>
       {children}
     </AuthContext.Provider>
   );

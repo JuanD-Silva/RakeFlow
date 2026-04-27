@@ -283,9 +283,40 @@ endTournament: async (tournamentId) => {
 
 export const historyService = {
     getAll: async () => {
-        const response = await api.get('/history/'); 
+        const response = await api.get('/history/');
         return response.data;
     }
+};
+
+// --- USUARIOS (multi-usuario por club) ---
+export const userService = {
+    list: async () => {
+        const res = await api.get('/users/');
+        return res.data;
+    },
+    invite: async ({ email, name, role }) => {
+        const res = await api.post('/users/invite', { email, name, role });
+        return res.data;
+    },
+    update: async (userId, { name, role, is_active }) => {
+        const payload = {};
+        if (name !== undefined) payload.name = name;
+        if (role !== undefined) payload.role = role;
+        if (is_active !== undefined) payload.is_active = is_active;
+        const res = await api.patch(`/users/${userId}`, payload);
+        return res.data;
+    },
+    deactivate: async (userId) => {
+        await api.delete(`/users/${userId}`);
+    },
+    resendInvitation: async (userId) => {
+        const res = await api.post(`/users/${userId}/resend-invitation`);
+        return res.data;
+    },
+    acceptInvitation: async ({ token, name, password }) => {
+        const res = await api.post('/users/accept-invitation', { token, name, password });
+        return res.data;
+    },
 };
 
 const getAll = async () => {

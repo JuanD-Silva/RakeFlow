@@ -3,18 +3,22 @@ import {
   ClockIcon,
   TrophyIcon,
   ChartBarIcon,
-  Cog6ToothIcon
+  Cog6ToothIcon,
+  UsersIcon,
 } from '@heroicons/react/24/solid';
+import { useAuth } from '../context/AuthContext';
 
-export default function Navigation({ currentView, setView }) { // 👈 Ya no necesitamos onLogout aquí
-  
+export default function Navigation({ currentView, setView }) {
+  const { isOwner, isManager, canSeeReports } = useAuth();
+
   const navItems = [
-    { id: 'game', label: 'Mesa Activa', icon: <PlayCircleIcon className="w-5 h-5" /> },
-    { id: 'history', label: 'Historial', icon: <ClockIcon className="w-5 h-5" /> },
-    { id: 'finance', label: 'Caja Semanal', icon: <ChartBarIcon className="w-5 h-5" /> }, 
-    { id: 'ranking', label: 'Ranking', icon: <TrophyIcon className="w-5 h-5" /> },
-    { id: 'config', label: 'Reglas', icon: <Cog6ToothIcon className="w-5 h-5" /> },
-  ];
+    { id: 'game', label: 'Mesa Activa', icon: <PlayCircleIcon className="w-5 h-5" />, show: true },
+    { id: 'history', label: 'Historial', icon: <ClockIcon className="w-5 h-5" />, show: canSeeReports },
+    { id: 'finance', label: 'Caja Semanal', icon: <ChartBarIcon className="w-5 h-5" />, show: canSeeReports },
+    { id: 'ranking', label: 'Ranking', icon: <TrophyIcon className="w-5 h-5" />, show: canSeeReports },
+    { id: 'team', label: 'Equipo', icon: <UsersIcon className="w-5 h-5" />, show: isOwner || isManager },
+    { id: 'config', label: 'Reglas', icon: <Cog6ToothIcon className="w-5 h-5" />, show: isOwner },
+  ].filter(item => item.show);
 
   return (
     <nav className="bg-gray-900 border-b border-gray-800 sticky top-0 z-50 shadow-2xl">

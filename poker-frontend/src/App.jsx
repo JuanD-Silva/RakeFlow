@@ -26,6 +26,8 @@ import CheckoutFrame from './pages/CheckoutFrame';
 import PaymentCallback from './pages/PaymentCallback';
 import Terms from './pages/Terms';
 import Privacy from './pages/Privacy';
+import AcceptInvitation from './pages/AcceptInvitation';
+import TeamPanel from './components/TeamPanel';
 
 // --- COMPONENTE PRINCIPAL (Dashboard Protegido) ---
 function PokerManagerApp() {
@@ -139,6 +141,7 @@ function PokerManagerApp() {
           {currentView === 'history' && <SessionHistory />}
           {currentView === 'finance' && <WeeklyReport />}
           {currentView === 'ranking' && <PlayerLeaderboard />}
+          {currentView === 'team' && <TeamPanel />}
           {currentView === 'config' && <ConfigPanel />}
         </ErrorBoundary>
       </main>
@@ -169,6 +172,9 @@ function AppRoutes() {
       {/* Paginas legales (publicas) */}
       <Route path="/terms" element={<Terms />} />
       <Route path="/privacy" element={<Privacy />} />
+
+      {/* Aceptar invitacion (publica) */}
+      <Route path="/accept-invitation" element={<AcceptInvitation />} />
 
       {/* Configuracion Inicial */}
       <Route path="/setup" element={token ? <Setup /> : <Navigate to="/login" />} />
