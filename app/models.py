@@ -62,6 +62,12 @@ class Club(Base):
     password_reset_expires = Column(DateTime, nullable=True)
     rankings_reset_at = Column(DateTime, nullable=True)
     terms_accepted_at = Column(DateTime, nullable=True)
+    # Wompi: tarjeta tokenizada del cliente para cobro recurrente
+    wompi_payment_source_id = Column(Integer, nullable=True)
+    wompi_customer_email = Column(String, nullable=True)
+    wompi_card_brand = Column(String, nullable=True)   # VISA, MC, AMEX
+    wompi_card_last4 = Column(String, nullable=True)
+    subscription_period_end = Column(DateTime, nullable=True)  # cuando expira el periodo actual
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relaciones

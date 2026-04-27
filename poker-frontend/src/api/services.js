@@ -311,6 +311,18 @@ export const historyService = {
     }
 };
 
+// --- WOMPI (pasarela de pagos: tokenizacion + cobro recurrente) ---
+export const wompiService = {
+    getConfig: async () => {
+        const res = await api.get('/payments/wompi/config');
+        return res.data;
+    },
+    confirmTransaction: async (transactionId) => {
+        const res = await api.post('/payments/wompi/confirm', { transaction_id: transactionId });
+        return res.data;
+    },
+};
+
 // --- USUARIOS (multi-usuario por club) ---
 export const userService = {
     list: async () => {
