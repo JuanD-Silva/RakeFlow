@@ -69,6 +69,7 @@ export default function GameControl() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeletingSession, setIsDeletingSession] = useState(false);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showEndTournamentModal, setShowEndTournamentModal] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   
@@ -451,7 +452,7 @@ const handleCreateTournament = async (formData) => {
                     <ArrowLeftIcon className="w-4 h-4" />
                     Volver al Menu
                  </button>
-                 <button onClick={logout} className="text-gray-600 hover:text-red-400 text-xs font-bold uppercase tracking-widest flex items-center gap-2 transition-colors">
+                 <button onClick={() => setShowLogoutConfirm(true)} className="text-gray-600 hover:text-red-400 text-xs font-bold uppercase tracking-widest flex items-center gap-2 transition-colors">
                     <ArrowRightOnRectangleIcon className="w-4 h-4" />
                     Salir del Sistema
                  </button>
@@ -547,7 +548,7 @@ const handleCreateTournament = async (formData) => {
 
                <div className="h-px bg-gray-700 w-full my-2"></div>
 
-               <button onClick={logout} className="w-full flex items-center justify-center gap-2 text-gray-500 hover:text-red-400 py-2 rounded-xl hover:bg-red-900/10 transition-all text-sm font-bold uppercase tracking-widest">
+               <button onClick={() => setShowLogoutConfirm(true)} className="w-full flex items-center justify-center gap-2 text-gray-500 hover:text-red-400 py-2 rounded-xl hover:bg-red-900/10 transition-all text-sm font-bold uppercase tracking-widest">
                   <ArrowRightOnRectangleIcon className="w-4 h-4" /> Cerrar Sistema
                </button>
            </div>           
@@ -590,6 +591,17 @@ const handleCreateTournament = async (formData) => {
         }}
         title="¿Cerrar caja definitivamente?"
         message={`Vas a cerrar la ${activeSession?.name ? `"${activeSession.name}"` : `Sesión #${activeSession?.id}`} y aplicar la distribución de utilidades.\n\nAsegúrate de haber registrado todos los buy-ins, cashouts y propinas. Una vez cerrada no se puede modificar.`}
+      />
+
+      <ConfirmModal
+        isOpen={showLogoutConfirm}
+        onClose={() => setShowLogoutConfirm(false)}
+        onConfirm={() => {
+          setShowLogoutConfirm(false);
+          logout();
+        }}
+        title="¿Cerrar sesión del sistema?"
+        message={`Vas a salir de RakeFlow. Las mesas y torneos abiertos seguirán activos para la próxima vez que entres.\n\n¿Confirmas?`}
       />
 
       {/* MODAL NUEVA MESA */}
