@@ -68,6 +68,7 @@ export default function GameControl() {
   const [modalTitle, setModalTitle] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeletingSession, setIsDeletingSession] = useState(false);
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [showEndTournamentModal, setShowEndTournamentModal] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   
@@ -438,9 +439,9 @@ const handleCreateTournament = async (formData) => {
                 🕵️‍♂️ Auditar Caja (Pre-Cierre)
               </button>
 
-              <button 
+              <button
                 className="w-full bg-gray-700 hover:bg-red-900/80 text-red-200 font-bold py-3 rounded-lg border border-red-900/50 transition-colors cursor-pointer"
-                onClick={() => handleOpenModal("close", "Cierre de Caja y Auditoría")}
+                onClick={() => setShowCloseConfirm(true)}
               >
                 🔒 Cerrar Sesión Definitivamente
               </button>
@@ -578,6 +579,17 @@ const handleCreateTournament = async (formData) => {
         isDeleting={isDeletingSession}
         title="¿Eliminar Mesa Activa?"
         message={`Estás a punto de borrar la Sesión #${activeSession?.id}.\n\n⚠️ ESTO ES IRREVERSIBLE.`}
+      />
+
+      <ConfirmModal
+        isOpen={showCloseConfirm}
+        onClose={() => setShowCloseConfirm(false)}
+        onConfirm={() => {
+          setShowCloseConfirm(false);
+          handleOpenModal("close", "Cierre de Caja y Auditoría");
+        }}
+        title="¿Cerrar caja definitivamente?"
+        message={`Vas a cerrar la ${activeSession?.name ? `"${activeSession.name}"` : `Sesión #${activeSession?.id}`} y aplicar la distribución de utilidades.\n\nAsegúrate de haber registrado todos los buy-ins, cashouts y propinas. Una vez cerrada no se puede modificar.`}
       />
 
       {/* MODAL NUEVA MESA */}
