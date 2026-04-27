@@ -3,20 +3,23 @@ import api from './axios';
 
 // --- GESTIÓN DE MESAS ---
 export const sessionService = {
-    // Verificar si hay mesa abierta
-    getActiveSession: async () => {
-        // Como no tenemos un endpoint específico de "check status", 
-        // usamos el de stats. Si falla (404), es que no hay mesa.
+    // Carga players-stats. Si recibe sessionId apunta a esa mesa especifica;
+    // sino cae al endpoint legacy /current/players-stats (primera OPEN).
+    getActiveSession: async (sessionId = null) => {
         try {
-            const response = await api.get('/sessions/current/players-stats');
-            return response.data; // Retorna la lista de jugadores activos
+            const path = sessionId
+                ? `/sessions/${sessionId}/players-stats`
+                : '/sessions/current/players-stats';
+            const response = await api.get(path);
+            return response.data;
         } catch (error) {
-            return null; // No hay sesión activa
+            return null;
         }
     },
 
-createSession: async () => {
-        const response = await api.post('/sessions/', {}); 
+    createSession: async (name = null) => {
+        const payload = name ? { name } : {};
+        const response = await api.post('/sessions/', payload);
         return response.data;
     },
 
@@ -35,14 +38,25 @@ createSession: async () => {
         return response.data;
     },
 
+    // [DEPRECADO multi-mesa] Devuelve la primera OPEN. Usar findOpenSessions.
     findOpenSession: async () => {
-        const response = await api.get('/sessions/?skip=0&limit=20'); // Traemos las últimas
-        const sessions = response.data;
-        // Buscamos la primera que esté OPEN
-        return sessions.find(s => s.status === "OPEN") || null;
+        const response = await api.get('/sessions/?skip=0&limit=50');
+        return response.data.find(s => s.status === "OPEN") || null;
     },
 
-    // 👇 AGREGA ESTO: Para el botón de auditar
+    // Lista todas las sesiones OPEN del club (multi-mesa)
+    findOpenSessions: async () => {
+        const response = await api.get('/sessions/?skip=0&limit=50');
+        return response.data.filter(s => s.status === "OPEN");
+    },
+
+    // Auditoria por mesa especifica (multi-mesa)
+    getAuditDataForTable: async (sessionId) => {
+        const response = await api.get(`/sessions/${sessionId}/audit`);
+        return response.data;
+    },
+
+    // [DEPRECADO multi-mesa] Audit de la mesa "actual" (primera OPEN).
     getAuditData: async () => {
         const response = await api.get('/sessions/audit/current-session');
         return response.data;
@@ -149,8 +163,10 @@ export const transactionService = {
         });
     },
 
-    toggleBust: async (playerId) => {
-        const response = await api.post('/transactions/bust', { player_id: playerId });
+    toggleBust: async (playerId, sessionId = null) => {
+        const payload = { player_id: playerId };
+        if (sessionId) payload.session_id = sessionId;
+        const response = await api.post('/transactions/bust', payload);
         return response.data;
     }
 };

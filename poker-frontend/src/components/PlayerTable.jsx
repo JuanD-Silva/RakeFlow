@@ -13,9 +13,16 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
 
   useEffect(() => {
     const fetchStats = async () => {
+      // Si no hay sessionId, no podemos pedir nada
+      if (!sessionId) {
+        setPlayers([]);
+        setTotals({ buyin: 0, cashout: 0, balance: 0 });
+        setLoading(false);
+        return;
+      }
       try {
         setError(null);
-        const response = await api.get('/sessions/current/players-stats');
+        const response = await api.get(`/sessions/${sessionId}/players-stats`);
         const data = response.data;
         setPlayers(data);
 
@@ -40,7 +47,7 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
     };
 
     fetchStats();
-  }, [refreshTrigger]);
+  }, [refreshTrigger, sessionId]);
 
   const togglePaid = async (player) => {
     if (!sessionId) return;
@@ -78,7 +85,7 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
       : p
     ));
     try {
-      await transactionService.toggleBust(player.player_id);
+      await transactionService.toggleBust(player.player_id, sessionId);
       if (onRefresh) onRefresh();
     } catch (err) {
       console.error(err);

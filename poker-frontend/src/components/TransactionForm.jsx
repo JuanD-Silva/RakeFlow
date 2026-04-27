@@ -79,12 +79,13 @@ export default function TransactionForm({ type, onSuccess, sessionId, createSess
       if (type === 'buyin') {
         data = await playerService.getAll();
       } else {
-        const stats = await sessionService.getActiveSession();
+        // Para cashout/spend/jackpot/bonus: jugadores que estan en la mesa actual
+        const stats = await sessionService.getActiveSession(sessionId);
         if (stats) {
-          data = stats.map(s => ({ 
-            id: s.player_id, 
-            name: s.name, 
-            phone: s.phone 
+          data = stats.map(s => ({
+            id: s.player_id,
+            name: s.name,
+            phone: s.phone
           }));
         }
       }

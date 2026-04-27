@@ -13,7 +13,7 @@ import {
   CheckIcon
 } from '@heroicons/react/24/solid';
 
-export default function StatsPanel({ refreshTrigger }) {
+export default function StatsPanel({ refreshTrigger, sessionId = null }) {
   const [jackpot, setJackpot] = useState(0);
   const [avgBuyin, setAvgBuyin] = useState(0);
   const [playerCount, setPlayerCount] = useState(0);
@@ -33,7 +33,10 @@ export default function StatsPanel({ refreshTrigger }) {
       setJackpot(jackpotVal?.total_jackpot || jackpotVal || 0);
 
       try {
-        const res = await api.get('/sessions/current/players-stats');
+        const path = sessionId
+          ? `/sessions/${sessionId}/players-stats`
+          : '/sessions/current/players-stats';
+        const res = await api.get(path);
         const players = res.data || [];
         setPlayerCount(players.length);
         if (players.length > 0) {
@@ -58,7 +61,7 @@ export default function StatsPanel({ refreshTrigger }) {
     loadStats();
     const interval = setInterval(loadStats, 30000);
     return () => clearInterval(interval);
-  }, [refreshTrigger]);
+  }, [refreshTrigger, sessionId]);
 
   const handleAdjust = async () => {
     const amt = parseFloat(adjustAmount);

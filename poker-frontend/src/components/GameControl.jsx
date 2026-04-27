@@ -28,29 +28,37 @@ import {
   UserGroupIcon,
   TrophyIcon,
   ArrowLeftIcon,
+  ArrowRightIcon,
   ExclamationTriangleIcon,
   ArrowRightOnRectangleIcon
 } from '@heroicons/react/24/solid';
 
 export default function GameControl() {
   const { logout } = useAuth();
-  const [activeSession, setActiveSession] = useState(null);
+  const [tables, setTables] = useState([]); // Sessions OPEN del club
+  const [currentTableId, setCurrentTableId] = useState(null);
+  const activeSession = tables.find(t => t.id === currentTableId) || null;
+
   const [activeTournament, setActiveTournament] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [refreshKey, setRefreshKey] = useState(0); 
+  const [refreshKey, setRefreshKey] = useState(0);
   const [selectedPlayerForHistory, setSelectedPlayerForHistory] = useState(null);
   const [viewMode, setViewMode] = useState("menu"); // "menu", "cash" o "tournament"
   const isFirstLoad = useRef(true);
   const [newTournamentName, setNewTournamentName] = useState("");
-  const [tournamentCost, setTournamentCost] = useState({ 
-      buyin: 0, 
+  const [tournamentCost, setTournamentCost] = useState({
+      buyin: 0,
       tip: 0,
-      // 👇 NUEVOS CAMPOS
-      rebuy: 0, 
-      doubleRebuy: 0, 
-      addon: 0, 
-      doubleAddon: 0 
+      rebuy: 0,
+      doubleRebuy: 0,
+      addon: 0,
+      doubleAddon: 0
   });
+
+  // Modal "Nueva mesa"
+  const [showNewTableModal, setShowNewTableModal] = useState(false);
+  const [newTableName, setNewTableName] = useState("");
+  const [creatingTable, setCreatingTable] = useState(false);
   
 
   // ESTADOS DEL MODAL
@@ -70,34 +78,40 @@ export default function GameControl() {
 useEffect(() => {
     const checkSystemState = async () => {
       try {
-        // setLoading(true); // Ya lo comentamos antes para la carga silenciosa
-
-        const [session, tournament] = await Promise.all([
-            sessionService.findOpenSession(),
+        const [openTables, tournament] = await Promise.all([
+            sessionService.findOpenSessions(),
             tournamentService.findActive()
         ]);
 
-        setActiveSession(session);
+        setTables(openTables);
         setActiveTournament(tournament);
 
-        // Determinar vista automáticamente al montar
+        // En el primer load: decidir vista por defecto y mesa actual
         if (isFirstLoad.current) {
             isFirstLoad.current = false;
-            if (session && tournament) {
+            if (openTables.length > 0 && tournament) {
                 setViewMode("menu");
             } else if (tournament) {
                 setViewMode("tournament");
-            } else if (session) {
+            } else if (openTables.length === 1) {
+                setCurrentTableId(openTables[0].id);
                 setViewMode("cash");
+            } else if (openTables.length > 1) {
+                setViewMode("menu");
             } else {
                 setViewMode("menu");
             }
+        } else {
+            // Refresh posterior: si la mesa actual ya no esta abierta, ir a menu
+            if (currentTableId && !openTables.some(t => t.id === currentTableId)) {
+                setCurrentTableId(null);
+                if (openTables.length === 0) setViewMode("menu");
+            }
         }
-
       } catch (error) {
         console.error("Error conectando:", error);
       } finally {
-        setLoading(false); 
+        setLoading(false);
       }
     };
     checkSystemState();
@@ -105,14 +119,35 @@ useEffect(() => {
 
   const refresh = () => setRefreshKey(prev => prev + 1);
 
-  // 2. INICIAR MESA DE CASH (no crea sesión hasta confirmar primer jugador)
+  // 2. INICIAR MESA DE CASH (multi-mesa: pide nombre opcional y crea inmediatamente)
   const [pendingSessionOpen, setPendingSessionOpen] = useState(false);
 
   const handleStartSession = () => {
-    setPendingSessionOpen(true);
-    setModalType("buyin");
-    setModalTitle("Primer Jugador (Apertura de Mesa)");
-    setIsModalOpen(true);
+    setNewTableName("");
+    setShowNewTableModal(true);
+  };
+
+  const handleCreateNewTable = async () => {
+    if (creatingTable) return;
+    setCreatingTable(true);
+    try {
+      const session = await sessionService.createSession(newTableName.trim() || null);
+      setTables(prev => [...prev, session]);
+      setCurrentTableId(session.id);
+      setShowNewTableModal(false);
+      setViewMode("cash");
+      refresh();
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.detail || "Error al crear la mesa");
+    } finally {
+      setCreatingTable(false);
+    }
+  };
+
+  const handleSwitchTable = (tableId) => {
+    setCurrentTableId(tableId);
+    setViewMode("cash");
   };
 
   // 3. INICIAR TORNEO
@@ -141,17 +176,15 @@ const handleCreateTournament = async (formData) => {
   };
 
   const handleTransactionSuccess = () => {
-    if (pendingSessionOpen) {
-      setViewMode("cash");
-    }
     setIsModalOpen(false);
     setPendingSessionOpen(false);
     refresh();
   };
 
   const handleAudit = async () => {
+    if (!activeSession) return;
     try {
-      const data = await sessionService.getAuditData();
+      const data = await sessionService.getAuditDataForTable(activeSession.id);
       setAuditData(data);
       setShowAuditModal(true);
     } catch (error) {
@@ -167,14 +200,23 @@ const handleCreateTournament = async (formData) => {
   };
 
   const executeDeleteSession = async () => {
-     setIsDeletingSession(true); 
+     if (!activeSession) return;
+     setIsDeletingSession(true);
+     const deletedId = activeSession.id;
      try {
-        await api.delete(`/sessions/${activeSession.id}`);
-        setActiveSession(null);
-        setShowDeleteConfirm(false);   
+        await api.delete(`/sessions/${deletedId}`);
+        const remaining = tables.filter(t => t.id !== deletedId);
+        setTables(remaining);
+        if (remaining.length === 0) {
+          setCurrentTableId(null);
+          setViewMode("menu");
+        } else {
+          setCurrentTableId(remaining[0].id);
+        }
+        setShowDeleteConfirm(false);
      } catch (error) {
         console.error(error);
-        alert("Error al eliminar"); 
+        alert(error.response?.data?.detail || "Error al eliminar");
      } finally {
         setIsDeletingSession(false);
      }
@@ -206,6 +248,33 @@ const handleCreateTournament = async (formData) => {
   return (
   <div className="max-w-4xl mx-auto p-4">
       {isLoading && <GlobalLoader />}
+
+      {/* STRIP DE MESAS (multi-mesa, solo en cash con >= 2 mesas) */}
+      {viewMode === "cash" && tables.length >= 2 && (
+        <div className="mb-4 flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
+          {tables.map(t => (
+            <button
+              key={t.id}
+              onClick={() => handleSwitchTable(t.id)}
+              className={`shrink-0 px-4 py-2 rounded-lg font-bold text-sm uppercase tracking-wider border transition-all ${
+                t.id === currentTableId
+                  ? 'bg-emerald-600 text-white border-emerald-500 shadow-lg shadow-emerald-900/30'
+                  : 'bg-gray-800 text-gray-300 border-gray-700 hover:bg-gray-700 hover:border-gray-600'
+              }`}
+            >
+              <TableCellsIcon className="w-4 h-4 inline mr-2" />
+              {t.name || `Mesa #${t.id}`}
+            </button>
+          ))}
+          <button
+            onClick={handleStartSession}
+            className="shrink-0 px-4 py-2 rounded-lg font-bold text-sm uppercase tracking-wider border border-dashed border-gray-600 text-gray-400 hover:border-emerald-500/60 hover:text-emerald-400 hover:bg-emerald-500/5 transition-all"
+          >
+            + Nueva mesa
+          </button>
+        </div>
+      )}
+
       {/* HEADER: BARRA DE ESTADO PRO (Dinámica según el modo) */}
       <header className={`border-b-4 rounded-t-lg shadow-xl p-5 flex flex-col md:flex-row justify-between items-center mb-8 gap-4 ${viewMode === 'tournament' ? 'bg-gray-900 border-violet-600' : 'bg-gray-800 border-emerald-600'}`}>
         
@@ -245,7 +314,7 @@ const handleCreateTournament = async (formData) => {
 
               <div>
                   <h1 className="text-white font-black text-xl tracking-tight uppercase leading-none">
-                    Mesa Principal <span className="text-gray-500 font-medium text-lg">#{activeSession.id}</span>
+                    {activeSession.name || 'Mesa'} <span className="text-gray-500 font-medium text-lg">#{activeSession.id}</span>
                   </h1>
                   <div className="flex items-center gap-2 mt-1.5">
                       <span className="text-emerald-500 text-xs font-bold uppercase tracking-[0.15em]">Sistema Online</span>
@@ -351,7 +420,7 @@ const handleCreateTournament = async (formData) => {
            <ActionButton color="yellow" label="🤝 Propina Dealer" onClick={() => handleOpenModal("tip", "Registrar Propina")} />    
 
            <div className="col-span-2 md:col-span-3 mt-4">
-              <StatsPanel refreshTrigger={refreshKey} />
+              <StatsPanel refreshTrigger={refreshKey} sessionId={activeSession?.id} />
               <PlayerTable
                 refreshTrigger={refreshKey}
                 sessionId={activeSession?.id}
@@ -403,15 +472,37 @@ const handleCreateTournament = async (formData) => {
            <p className="text-gray-500 mb-8 text-center max-w-md font-medium text-sm">Selecciona el tipo de juego para comenzar</p>
 
            <div className="flex flex-col gap-5 w-full max-w-md px-4">
-               {/* Opción CASH */}
-               {activeSession ? (
-                 <button
-                   onClick={() => setViewMode("cash")}
-                   className="group relative overflow-hidden w-full bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold text-lg py-4 px-8 rounded-xl shadow-[0_0_20px_rgba(16,185,129,0.4)] border-b-4 border-emerald-900 active:border-b-0 active:translate-y-1 transition-all duration-150 flex items-center justify-center gap-4 uppercase tracking-wider"
-                 >
-                   <div className="bg-white/20 p-2 rounded-lg"><PlayIcon className="w-6 h-6 text-white" /></div>
-                   <div className="text-left"><span className="block text-xs text-emerald-100 font-medium">Mesa en Curso</span><span className="block leading-none">Continuar Cash Game</span></div>
-                 </button>
+               {/* Opcion CASH: lista de mesas activas + boton nueva */}
+               {tables.length > 0 ? (
+                 <div className="space-y-3">
+                   <div className="flex items-center justify-between px-2">
+                     <span className="text-emerald-400 text-xs font-bold uppercase tracking-widest">
+                       Mesas activas ({tables.length})
+                     </span>
+                   </div>
+                   {tables.map(t => (
+                     <button
+                       key={t.id}
+                       onClick={() => handleSwitchTable(t.id)}
+                       className="group relative overflow-hidden w-full bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold py-3.5 px-6 rounded-xl shadow-[0_0_20px_rgba(16,185,129,0.3)] border-b-4 border-emerald-900 active:border-b-0 active:translate-y-1 transition-all duration-150 flex items-center justify-between gap-3 uppercase tracking-wider"
+                     >
+                       <div className="flex items-center gap-3">
+                         <div className="bg-white/20 p-2 rounded-lg shrink-0"><TableCellsIcon className="w-5 h-5 text-white" /></div>
+                         <div className="text-left">
+                           <span className="block text-[10px] text-emerald-100 font-medium tracking-widest">Mesa #{t.id}</span>
+                           <span className="block leading-none text-base">{t.name || 'Sin nombre'}</span>
+                         </div>
+                       </div>
+                       <ArrowRightIcon className="w-5 h-5 text-white/70 group-hover:text-white" />
+                     </button>
+                   ))}
+                   <button
+                     onClick={handleStartSession}
+                     className="w-full bg-gray-800/60 hover:bg-emerald-500/10 text-gray-400 hover:text-emerald-400 border-2 border-dashed border-gray-700 hover:border-emerald-500/50 rounded-xl py-3 font-bold text-sm uppercase tracking-widest transition-all"
+                   >
+                     + Nueva mesa
+                   </button>
+                 </div>
                ) : (
                  <button
                    onClick={handleStartSession}
@@ -472,7 +563,7 @@ const handleCreateTournament = async (formData) => {
         )}
       </Modal>
 
-      <ConfirmModal 
+      <ConfirmModal
         isOpen={showDeleteConfirm}
         onClose={() => setShowDeleteConfirm(false)}
         onConfirm={executeDeleteSession}
@@ -480,6 +571,51 @@ const handleCreateTournament = async (formData) => {
         title="¿Eliminar Mesa Activa?"
         message={`Estás a punto de borrar la Sesión #${activeSession?.id}.\n\n⚠️ ESTO ES IRREVERSIBLE.`}
       />
+
+      {/* MODAL NUEVA MESA */}
+      {showNewTableModal && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[60] backdrop-blur-md p-4 animate-fade-in">
+          <div className="bg-gray-900 rounded-2xl border border-emerald-500/30 shadow-2xl w-full max-w-sm overflow-hidden">
+            <div className="bg-gray-800 p-4 border-b border-gray-700 flex items-center gap-3">
+              <TableCellsIcon className="w-6 h-6 text-emerald-400" />
+              <h3 className="text-lg font-bold text-white">Nueva mesa</h3>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-2 block">
+                  Nombre de la mesa <span className="text-gray-600 normal-case font-normal">(opcional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={newTableName}
+                  onChange={(e) => setNewTableName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !creatingTable) handleCreateNewTable(); }}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/30 focus:outline-none"
+                  placeholder="Mesa VIP, Mesa Principal, ..."
+                  maxLength={100}
+                  autoFocus
+                />
+                <p className="text-xs text-gray-500 mt-2">Si lo dejas vacio se mostrara como "Mesa #ID".</p>
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={() => setShowNewTableModal(false)}
+                  className="flex-1 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-xl font-bold text-sm uppercase tracking-wider"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleCreateNewTable}
+                  disabled={creatingTable}
+                  className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-sm uppercase tracking-wider shadow-lg shadow-emerald-900/30 disabled:opacity-60"
+                >
+                  {creatingTable ? 'Creando...' : 'Crear mesa'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODAL DE AUDITORÍA */}
       {showAuditModal && auditData && (
