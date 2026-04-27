@@ -12,6 +12,20 @@ import api from '../api/axios';
 import ConfirmModal from './ConfirmModal';
 import TournamentPlayerTable from './TournamentPlayerTable';
 import { useAuth } from '../context/AuthContext';
+import { formatMoney } from '../utils/formatters';
+
+// Formatea una duracion en mins -> "1h 30m", "45m", "2h"
+function formatDuration(startIso) {
+  if (!startIso) return null;
+  const start = new Date(startIso).getTime();
+  if (isNaN(start)) return null;
+  const minutes = Math.floor((Date.now() - start) / 60000);
+  if (minutes < 1) return "<1m";
+  if (minutes < 60) return `${minutes}m`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
 
 import {
   PlayIcon,
@@ -255,23 +269,33 @@ const handleCreateTournament = async (formData) => {
       {/* STRIP DE MESAS (multi-mesa, solo en cash con >= 2 mesas) */}
       {viewMode === "cash" && tables.length >= 2 && (
         <div className="mb-4 flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
-          {tables.map(t => (
-            <button
-              key={t.id}
-              onClick={() => handleSwitchTable(t.id)}
-              className={`shrink-0 px-4 py-2 rounded-lg font-bold text-sm uppercase tracking-wider border transition-all ${
-                t.id === currentTableId
-                  ? 'bg-emerald-600 text-white border-emerald-500 shadow-lg shadow-emerald-900/30'
-                  : 'bg-gray-800 text-gray-300 border-gray-700 hover:bg-gray-700 hover:border-gray-600'
-              }`}
-            >
-              <TableCellsIcon className="w-4 h-4 inline mr-2" />
-              {t.name || `Mesa #${t.id}`}
-            </button>
-          ))}
+          {tables.map(t => {
+            const isActive = t.id === currentTableId;
+            const duration = formatDuration(t.start_time);
+            return (
+              <button
+                key={t.id}
+                onClick={() => handleSwitchTable(t.id)}
+                className={`shrink-0 px-4 py-2 rounded-lg font-bold border transition-all text-left ${
+                  isActive
+                    ? 'bg-emerald-600 text-white border-emerald-500 shadow-lg shadow-emerald-900/30'
+                    : 'bg-gray-800 text-gray-300 border-gray-700 hover:bg-gray-700 hover:border-gray-600'
+                }`}
+              >
+                <div className="flex items-center gap-2 text-sm uppercase tracking-wider">
+                  <TableCellsIcon className="w-4 h-4 shrink-0" />
+                  <span>{t.name || `Mesa #${t.id}`}</span>
+                </div>
+                <div className={`flex items-center gap-2 text-[10px] font-mono mt-1 ${isActive ? 'text-emerald-100' : 'text-gray-500'}`}>
+                  <span>{t.players_count ?? 0} jug</span>
+                  {duration && <><span>·</span><span>{duration}</span></>}
+                </div>
+              </button>
+            );
+          })}
           <button
             onClick={handleStartSession}
-            className="shrink-0 px-4 py-2 rounded-lg font-bold text-sm uppercase tracking-wider border border-dashed border-gray-600 text-gray-400 hover:border-emerald-500/60 hover:text-emerald-400 hover:bg-emerald-500/5 transition-all"
+            className="shrink-0 px-4 py-3 rounded-lg font-bold text-sm uppercase tracking-wider border border-dashed border-gray-600 text-gray-400 hover:border-emerald-500/60 hover:text-emerald-400 hover:bg-emerald-500/5 transition-all"
           >
             + Nueva mesa
           </button>
@@ -483,28 +507,38 @@ const handleCreateTournament = async (formData) => {
                        Mesas activas ({tables.length})
                      </span>
                    </div>
-                   {tables.map(t => (
-                     <button
-                       key={t.id}
-                       onClick={() => handleSwitchTable(t.id)}
-                       className="group relative overflow-hidden w-full bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold py-3.5 px-6 rounded-xl shadow-[0_0_20px_rgba(16,185,129,0.3)] border-b-4 border-emerald-900 active:border-b-0 active:translate-y-1 transition-all duration-150 flex items-center justify-between gap-3 uppercase tracking-wider"
-                     >
-                       <div className="flex items-center gap-3">
-                         <div className="bg-white/20 p-2 rounded-lg shrink-0"><TableCellsIcon className="w-5 h-5 text-white" /></div>
-                         <div className="text-left">
-                           {t.name ? (
-                             <>
-                               <span className="block text-[10px] text-emerald-100 font-medium tracking-widest">Mesa #{t.id}</span>
-                               <span className="block leading-none text-base">{t.name}</span>
-                             </>
-                           ) : (
-                             <span className="block leading-none text-base">Mesa #{t.id}</span>
-                           )}
+                   {tables.map(t => {
+                     const duration = formatDuration(t.start_time);
+                     const players = t.players_count ?? 0;
+                     const buyin = t.total_buyin ?? 0;
+                     return (
+                       <button
+                         key={t.id}
+                         onClick={() => handleSwitchTable(t.id)}
+                         className="group relative overflow-hidden w-full bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold py-3.5 px-6 rounded-xl shadow-[0_0_20px_rgba(16,185,129,0.3)] border-b-4 border-emerald-900 active:border-b-0 active:translate-y-1 transition-all duration-150 flex items-center justify-between gap-3 uppercase tracking-wider"
+                       >
+                         <div className="flex items-center gap-3 min-w-0">
+                           <div className="bg-white/20 p-2 rounded-lg shrink-0"><TableCellsIcon className="w-5 h-5 text-white" /></div>
+                           <div className="text-left min-w-0">
+                             {t.name ? (
+                               <>
+                                 <span className="block text-[10px] text-emerald-100 font-medium tracking-widest">Mesa #{t.id}</span>
+                                 <span className="block leading-none text-base truncate">{t.name}</span>
+                               </>
+                             ) : (
+                               <span className="block leading-none text-base">Mesa #{t.id}</span>
+                             )}
+                             <div className="flex items-center gap-2 mt-1.5 text-[10px] font-mono text-emerald-100/80 normal-case tracking-normal">
+                               <span>{players} jug</span>
+                               {duration && <><span>·</span><span>{duration}</span></>}
+                               {buyin > 0 && <><span>·</span><span>{formatMoney(buyin)}</span></>}
+                             </div>
+                           </div>
                          </div>
-                       </div>
-                       <ArrowRightIcon className="w-5 h-5 text-white/70 group-hover:text-white" />
-                     </button>
-                   ))}
+                         <ArrowRightIcon className="w-5 h-5 text-white/70 group-hover:text-white shrink-0" />
+                       </button>
+                     );
+                   })}
                    <button
                      onClick={handleStartSession}
                      className="w-full bg-gray-800/60 hover:bg-emerald-500/10 text-gray-400 hover:text-emerald-400 border-2 border-dashed border-gray-700 hover:border-emerald-500/50 rounded-xl py-3 font-bold text-sm uppercase tracking-widest transition-all"

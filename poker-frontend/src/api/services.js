@@ -44,10 +44,17 @@ export const sessionService = {
         return response.data.find(s => s.status === "OPEN") || null;
     },
 
-    // Lista todas las sesiones OPEN del club (multi-mesa)
+    // Lista todas las sesiones OPEN del club con stats agregados (players_count,
+    // total_buyin, total_cashout, last_activity_at). Multi-mesa.
     findOpenSessions: async () => {
-        const response = await api.get('/sessions/?skip=0&limit=50');
-        return response.data.filter(s => s.status === "OPEN");
+        try {
+            const response = await api.get('/sessions/active-summary');
+            return response.data;
+        } catch (err) {
+            // Fallback al endpoint viejo por si el deploy del backend va atrasado
+            const response = await api.get('/sessions/?skip=0&limit=50');
+            return response.data.filter(s => s.status === "OPEN");
+        }
     },
 
     // Auditoria por mesa especifica (multi-mesa)

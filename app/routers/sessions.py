@@ -61,6 +61,56 @@ async def read_sessions(skip: int = 0, limit: int = 100, db: AsyncSession = Depe
 
 
 # ---------------------------------------------------------
+# 2.b RESUMEN DE MESAS ACTIVAS (multi-mesa: stats agregados por sesion)
+# ---------------------------------------------------------
+@router.get("/active-summary")
+async def get_active_sessions_summary(
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+):
+    """
+    Devuelve la lista de mesas OPEN del club con stats agregados por mesa
+    (player_count, total_buyin, last_activity_at) en una sola query.
+    Util para mostrar indicadores en la lista de mesas y en los tabs.
+    """
+    sql = text("""
+        SELECT
+            s.id,
+            s.name,
+            s.start_time,
+            CAST(s.status AS TEXT) AS status,
+            COALESCE(COUNT(DISTINCT t.player_id) FILTER (
+                WHERE CAST(t.type AS TEXT) IN ('BUYIN', 'REBUY')
+            ), 0) AS players_count,
+            COALESCE(SUM(CASE WHEN CAST(t.type AS TEXT) IN ('BUYIN', 'REBUY')
+                              THEN t.amount ELSE 0 END), 0) AS total_buyin,
+            COALESCE(SUM(CASE WHEN CAST(t.type AS TEXT) = 'CASHOUT'
+                              THEN t.amount ELSE 0 END), 0) AS total_cashout,
+            MAX(t.timestamp) AS last_activity_at
+        FROM sessions s
+        LEFT JOIN transactions t ON t.session_id = s.id
+        WHERE s.club_id = :cid
+          AND s.status = 'OPEN'
+        GROUP BY s.id, s.name, s.start_time, s.status
+        ORDER BY s.id DESC
+    """)
+    rows = (await db.execute(sql, {"cid": current_club.id})).fetchall()
+    return [
+        {
+            "id": r.id,
+            "name": r.name,
+            "status": r.status,
+            "start_time": r.start_time.isoformat() if r.start_time else None,
+            "players_count": int(r.players_count or 0),
+            "total_buyin": float(r.total_buyin or 0),
+            "total_cashout": float(r.total_cashout or 0),
+            "last_activity_at": r.last_activity_at.isoformat() if r.last_activity_at else None,
+        }
+        for r in rows
+    ]
+
+
+# ---------------------------------------------------------
 # 3. ESTADÍSTICAS / AUDITORÍA EN TIEMPO REAL
 # ---------------------------------------------------------
 async def _build_players_stats(db: AsyncSession, session: models.Session) -> list:
