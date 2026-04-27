@@ -35,7 +35,7 @@ export default function Privacy() {
       <P><Strong>Del Club/Usuario:</Strong></P>
       <UL>
         <li>Nombre del club, correo electrónico, contraseña (almacenada con hash Argon2 — nunca en texto plano).</li>
-        <li>Datos de suscripción y pago (procesados por ePayco; RakeFlow no almacena tarjetas).</li>
+        <li>Datos de suscripción y pago (procesados por Wompi; RakeFlow no almacena datos completos de tarjetas).</li>
         <li>Datos técnicos: dirección IP, tipo de navegador, timestamps de acceso, identificadores de sesión.</li>
       </UL>
       <P><Strong>De los Jugadores (ingresados por el Club):</Strong></P>
@@ -75,7 +75,7 @@ export default function Privacy() {
         <li><Strong>Railway</Strong> (hosting de backend y base de datos) — Estados Unidos.</li>
         <li><Strong>Vercel</Strong> (hosting de frontend) — Estados Unidos.</li>
         <li><Strong>Resend</Strong> (envío de correos transaccionales) — Estados Unidos.</li>
-        <li><Strong>ePayco</Strong> (pasarela de pagos) — Colombia.</li>
+        <li><Strong>Wompi</Strong> (pasarela de pagos, Bancolombia) — Colombia.</li>
         <li><Strong>Sentry</Strong> (monitoreo de errores, datos técnicos agregados) — Estados Unidos.</li>
       </UL>
       <P>

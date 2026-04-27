@@ -22,7 +22,6 @@ import ResetPassword from './pages/ResetPassword';
 import VerifyEmail from './pages/VerifyEmail';
 import Subscribe from './pages/Subscribe';
 import PaymentSuccess from './pages/PaymentSuccess';
-import CheckoutFrame from './pages/CheckoutFrame';
 import PaymentCallback from './pages/PaymentCallback';
 import Terms from './pages/Terms';
 import Privacy from './pages/Privacy';
@@ -183,7 +182,6 @@ function AppRoutes() {
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/verify-email" element={<VerifyEmail />} />
       <Route path="/subscribe" element={token ? <Subscribe /> : <Navigate to="/login" />} />
-      <Route path="/checkout-frame" element={token ? <CheckoutFrame /> : <Navigate to="/login" />} />
       <Route path="/payment-callback" element={<PaymentCallback />} />
       <Route path="/payment-success" element={token ? <PaymentSuccess /> : <Navigate to="/login" />} />
 

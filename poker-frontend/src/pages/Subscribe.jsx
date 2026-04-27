@@ -109,7 +109,7 @@ export default function Subscribe() {
       const res = await api.post('/payments/activate-test');
       if (res.data.subscription_active) {
         localStorage.removeItem('rakeflow_wizard_done');
-        navigate('/payment-success?ref_payco=test');
+        navigate('/payment-success?id=test');
       }
     } catch (err) {
       console.error(err);

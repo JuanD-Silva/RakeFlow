@@ -8,24 +8,14 @@ import {
 
 export default function PaymentSuccess() {
   const [searchParams] = useSearchParams();
-  const refPayco = searchParams.get('ref_payco') || '';
+  // Wompi pasa ?id=<tx_id>; el flujo viejo (test/manual) usaba ?ref_payco=...
+  const ref = searchParams.get('id') || searchParams.get('ref_payco') || '';
   const [status, setStatus] = useState('loading');
 
   useEffect(() => {
-    async function confirmPayment() {
-      // Si hay referencia real, verificar con ePayco
-      if (refPayco && refPayco !== 'pending') {
-        try {
-          const res = await api.post('/payments/confirm-by-ref', { ref_payco: refPayco });
-          if (res.data.subscription_active) {
-            localStorage.removeItem('rakeflow_wizard_done');
-            setStatus('success');
-            return;
-          }
-        } catch {}
-      }
-
-      // Si no hay ref o es pending, revisar el status del club directamente
+    async function checkStatus() {
+      // PaymentCallback ya confirmo con Wompi antes de redirigir aca.
+      // Solo revalidamos el status del club.
       try {
         const statusRes = await api.get('/payments/status');
         if (statusRes.data.subscription_active && statusRes.data.plan_type === 'PRO') {
@@ -38,8 +28,8 @@ export default function PaymentSuccess() {
         setStatus('pending');
       }
     }
-    confirmPayment();
-  }, [refPayco]);
+    checkStatus();
+  }, [ref]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#0a0f1a] px-4 font-sans relative noise-bg">
@@ -66,7 +56,7 @@ export default function PaymentSuccess() {
               </div>
               <h1 className="text-2xl font-black text-white tracking-tight mb-2">Pago exitoso</h1>
               <p className="text-gray-400 text-sm mb-2">Tu suscripcion a RakeFlow Pro esta activa.</p>
-              {refPayco && <p className="text-gray-600 text-xs font-mono mb-8">Ref: {refPayco}</p>}
+              {ref && <p className="text-gray-600 text-xs font-mono mb-8">Ref: {ref}</p>}
               <Link to="/dashboard" className="inline-flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold py-4 px-8 rounded-xl transition-all active:scale-[0.98] text-sm uppercase tracking-wider shadow-lg shadow-emerald-900/20">
                 Ir al Dashboard
               </Link>
@@ -80,7 +70,7 @@ export default function PaymentSuccess() {
               </div>
               <h1 className="text-2xl font-black text-white tracking-tight mb-2">Pago en proceso</h1>
               <p className="text-gray-400 text-sm mb-2">Tu pago esta siendo procesado. La suscripcion se activara automaticamente en unos minutos.</p>
-              {refPayco && <p className="text-gray-600 text-xs font-mono mb-8">Ref: {refPayco}</p>}
+              {ref && <p className="text-gray-600 text-xs font-mono mb-8">Ref: {ref}</p>}
               <Link to="/dashboard" className="inline-flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-bold py-4 px-8 rounded-xl transition-all active:scale-[0.98] text-sm uppercase tracking-wider">
                 Ir al Dashboard
               </Link>

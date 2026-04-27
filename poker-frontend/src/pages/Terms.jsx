@@ -58,7 +58,7 @@ export default function Terms() {
       <UL>
         <li>RakeFlow ofrece un periodo de prueba gratuito. Al finalizar, el Cliente debe contratar un plan para continuar usando el servicio.</li>
         <li>Los precios se publican en el sitio y pueden modificarse con 30 días de aviso previo.</li>
-        <li>Los pagos se procesan a través de <Strong>ePayco</Strong>, pasarela autorizada en Colombia. RakeFlow no almacena datos de tarjetas.</li>
+        <li>Los pagos se procesan a través de <Strong>Wompi</Strong> (Bancolombia), pasarela autorizada en Colombia. RakeFlow no almacena datos completos de tarjetas; solo conserva un identificador tokenizado para cobros recurrentes.</li>
         <li>Las suscripciones se cobran de forma recurrente hasta que el Cliente cancele. La cancelación surte efecto al final del periodo pagado; no hay reembolsos proporcionales.</li>
         <li>El Cliente podrá solicitar factura electrónica emitida conforme a la normativa DIAN.</li>
       </UL>
@@ -104,7 +104,7 @@ export default function Terms() {
         <li>Daños indirectos, lucro cesante, pérdida de oportunidad o daño reputacional.</li>
         <li>Errores operativos del Cliente al registrar o interpretar información.</li>
         <li>Decisiones financieras, tributarias o legales del Cliente basadas en los reportes.</li>
-        <li>Interrupciones causadas por terceros (ePayco, Railway, Vercel, Resend, etc.).</li>
+        <li>Interrupciones causadas por terceros (Wompi, Railway, Vercel, Resend, etc.).</li>
       </UL>
       <P>
         La responsabilidad total de RakeFlow frente al Cliente, por cualquier concepto, estará
