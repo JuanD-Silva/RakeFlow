@@ -76,16 +76,24 @@ async def charge_payment_source(*, payment_source_id: int, customer_email: str, 
     """
     Cobra un payment_source ya tokenizado (cobro recurrente real).
     amount_cop en pesos enteros (no centavos).
+    Wompi requiere signature de integridad: SHA-256(reference+amount_in_cents+currency+integrity_key).
     """
     private_key = os.getenv("WOMPI_PRIVATE_KEY", "")
-    if not private_key:
-        raise RuntimeError("WOMPI_PRIVATE_KEY no configurada")
+    integrity_key = os.getenv("WOMPI_INTEGRITY_KEY", "")
+    if not private_key or not integrity_key:
+        raise RuntimeError("WOMPI_PRIVATE_KEY o WOMPI_INTEGRITY_KEY no configuradas")
+    amount_in_cents = amount_cop * 100
+    currency = "COP"
+    sig_input = f"{reference}{amount_in_cents}{currency}{integrity_key}"
+    signature = hashlib.sha256(sig_input.encode("utf-8")).hexdigest()
     payload = {
-        "amount_in_cents": amount_cop * 100,
-        "currency": "COP",
+        "amount_in_cents": amount_in_cents,
+        "currency": currency,
         "customer_email": customer_email,
         "payment_source_id": payment_source_id,
         "reference": reference,
+        "signature": signature,
+        "payment_method": {"installments": 1},
     }
     headers = {"Authorization": f"Bearer {private_key}"}
     async with httpx.AsyncClient(timeout=15) as client:
