@@ -55,10 +55,11 @@ export default function GameControl() {
       doubleAddon: 0
   });
 
-  // Modal "Nueva mesa"
+  // Modal "Nueva mesa": en este flujo, la sesion se crea junto con el
+  // primer buy-in (no antes). Solo capturamos el nombre opcional.
   const [showNewTableModal, setShowNewTableModal] = useState(false);
   const [newTableName, setNewTableName] = useState("");
-  const [creatingTable, setCreatingTable] = useState(false);
+  const [pendingTableName, setPendingTableName] = useState(null);
   
 
   // ESTADOS DEL MODAL
@@ -127,22 +128,16 @@ useEffect(() => {
     setShowNewTableModal(true);
   };
 
-  const handleCreateNewTable = async () => {
-    if (creatingTable) return;
-    setCreatingTable(true);
-    try {
-      const session = await sessionService.createSession(newTableName.trim() || null);
-      setTables(prev => [...prev, session]);
-      setCurrentTableId(session.id);
-      setShowNewTableModal(false);
-      setViewMode("cash");
-      refresh();
-    } catch (err) {
-      console.error(err);
-      alert(err.response?.data?.detail || "Error al crear la mesa");
-    } finally {
-      setCreatingTable(false);
-    }
+  // El usuario confirma el nombre y pasamos al modal de primer buy-in.
+  // La mesa NO se crea hasta que se confirme el primer jugador.
+  const handleConfirmTableName = () => {
+    setPendingTableName(newTableName.trim() || null);
+    setShowNewTableModal(false);
+    setPendingSessionOpen(true);
+    setModalType("buyin");
+    const label = newTableName.trim() ? newTableName.trim() : "Apertura de Mesa";
+    setModalTitle(`Primer Jugador (${label})`);
+    setIsModalOpen(true);
   };
 
   const handleSwitchTable = (tableId) => {
@@ -175,9 +170,15 @@ const handleCreateTournament = async (formData) => {
     setIsModalOpen(true);
   };
 
-  const handleTransactionSuccess = () => {
+  const handleTransactionSuccess = (info) => {
     setIsModalOpen(false);
     setPendingSessionOpen(false);
+    setPendingTableName(null);
+    // Si fue apertura de mesa nueva, entrar a esa mesa directamente
+    if (info && info.newSessionId) {
+      setCurrentTableId(info.newSessionId);
+      setViewMode("cash");
+    }
     refresh();
   };
 
@@ -489,8 +490,14 @@ const handleCreateTournament = async (formData) => {
                        <div className="flex items-center gap-3">
                          <div className="bg-white/20 p-2 rounded-lg shrink-0"><TableCellsIcon className="w-5 h-5 text-white" /></div>
                          <div className="text-left">
-                           <span className="block text-[10px] text-emerald-100 font-medium tracking-widest">Mesa #{t.id}</span>
-                           <span className="block leading-none text-base">{t.name || 'Sin nombre'}</span>
+                           {t.name ? (
+                             <>
+                               <span className="block text-[10px] text-emerald-100 font-medium tracking-widest">Mesa #{t.id}</span>
+                               <span className="block leading-none text-base">{t.name}</span>
+                             </>
+                           ) : (
+                             <span className="block leading-none text-base">Mesa #{t.id}</span>
+                           )}
                          </div>
                        </div>
                        <ArrowRightIcon className="w-5 h-5 text-white/70 group-hover:text-white" />
@@ -548,7 +555,7 @@ const handleCreateTournament = async (formData) => {
       )}
 
       {/* MODALES */}
-      <Modal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setPendingSessionOpen(false); }} title={modalTitle}>
+      <Modal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setPendingSessionOpen(false); setPendingTableName(null); }} title={modalTitle}>
         {modalType === "close" ? (
           <CloseSessionForm sessionId={activeSession?.id} onSuccess={handleTransactionSuccess} />
         ) : modalType === "create-tournament" ? (
@@ -557,8 +564,9 @@ const handleCreateTournament = async (formData) => {
           <TransactionForm
             type={modalType}
             onSuccess={handleTransactionSuccess}
-            sessionId={activeSession?.id}
+            sessionId={pendingSessionOpen ? null : activeSession?.id}
             createSessionFirst={pendingSessionOpen}
+            pendingTableName={pendingTableName}
           />
         )}
       </Modal>
@@ -589,13 +597,13 @@ const handleCreateTournament = async (formData) => {
                   type="text"
                   value={newTableName}
                   onChange={(e) => setNewTableName(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && !creatingTable) handleCreateNewTable(); }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleConfirmTableName(); }}
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/30 focus:outline-none"
                   placeholder="Mesa VIP, Mesa Principal, ..."
                   maxLength={100}
                   autoFocus
                 />
-                <p className="text-xs text-gray-500 mt-2">Si lo dejas vacio se mostrara como "Mesa #ID".</p>
+                <p className="text-xs text-gray-500 mt-2">Si lo dejas vacio se mostrara como "Mesa #ID". El siguiente paso registra el primer jugador.</p>
               </div>
               <div className="flex gap-2 pt-2">
                 <button
@@ -605,11 +613,10 @@ const handleCreateTournament = async (formData) => {
                   Cancelar
                 </button>
                 <button
-                  onClick={handleCreateNewTable}
-                  disabled={creatingTable}
-                  className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-sm uppercase tracking-wider shadow-lg shadow-emerald-900/30 disabled:opacity-60"
+                  onClick={handleConfirmTableName}
+                  className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-sm uppercase tracking-wider shadow-lg shadow-emerald-900/30"
                 >
-                  {creatingTable ? 'Creando...' : 'Crear mesa'}
+                  Continuar →
                 </button>
               </div>
             </div>

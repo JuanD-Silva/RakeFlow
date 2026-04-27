@@ -13,7 +13,7 @@ import {
   CheckBadgeIcon
 } from '@heroicons/react/24/outline';
 
-export default function TransactionForm({ type, onSuccess, sessionId, createSessionFirst = false }) {
+export default function TransactionForm({ type, onSuccess, sessionId, createSessionFirst = false, pendingTableName = null }) {
   // --- ESTADOS DE DATOS ---
   const [players, setPlayers] = useState([]);
   const [playerId, setPlayerId] = useState("");
@@ -138,10 +138,12 @@ export default function TransactionForm({ type, onSuccess, sessionId, createSess
       const amt = parseFloat(amount);
       let activeSessionId = sessionId;
 
-      // Si es apertura de mesa, crear la sesión primero
+      // Si es apertura de mesa, crear la sesión primero (con nombre opcional)
+      let createdSessionId = null;
       if (createSessionFirst && !sessionId) {
-        const newSession = await sessionService.createSession();
+        const newSession = await sessionService.createSession(pendingTableName || null);
         activeSessionId = newSession.id;
+        createdSessionId = newSession.id;
       }
 
       if (isCreatingNew && type === 'buyin') {
@@ -177,7 +179,7 @@ export default function TransactionForm({ type, onSuccess, sessionId, createSess
             break;
         default: throw new Error("Tipo desconocido");
       }
-      onSuccess(); 
+      onSuccess(createdSessionId ? { newSessionId: createdSessionId } : undefined);
 
     } catch (err) {
       console.error(err);
