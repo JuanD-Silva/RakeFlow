@@ -29,7 +29,7 @@ def _is_test() -> bool:
 
 def _api_base() -> str:
     if _is_test():
-        return "https://api-sandbox.co.uat.wompi.dev/v1"
+        return "https://sandbox.wompi.co/v1"
     return "https://production.wompi.co/v1"
 
 
