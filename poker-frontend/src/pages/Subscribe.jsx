@@ -34,7 +34,16 @@ export default function Subscribe() {
       try {
         const statusRes = await api.get('/payments/status');
         setStatus(statusRes.data);
-        if (statusRes.data.subscription_active && !statusRes.data.in_trial) {
+        // Solo redirigir al dashboard si ya tiene tarjeta tokenizada
+        // (sino dejarlo entrar a tokenizar). El query param ?force evita
+        // cualquier redirect (util para "actualizar tarjeta").
+        const force = new URLSearchParams(window.location.search).get('force');
+        if (
+          !force &&
+          statusRes.data.subscription_active &&
+          !statusRes.data.in_trial &&
+          statusRes.data.has_payment_method
+        ) {
           navigate('/dashboard');
         }
       } catch (err) {
