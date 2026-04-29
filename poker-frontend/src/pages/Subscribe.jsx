@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '../api/axios';
+import { wompiService } from '../api/services';
 import WompiCardForm from '../components/WompiCardForm';
 import {
   CheckIcon,
@@ -22,6 +23,7 @@ const PLAN_FEATURES = [
 
 export default function Subscribe() {
   const [status, setStatus] = useState(null);
+  const [planPrice, setPlanPrice] = useState(49900);
   const [loading, setLoading] = useState(true);
   const [startingTrial, setStartingTrial] = useState(false);
   const [showCardModal, setShowCardModal] = useState(false);
@@ -30,8 +32,12 @@ export default function Subscribe() {
   useEffect(() => {
     async function load() {
       try {
-        const statusRes = await api.get('/payments/status');
+        const [statusRes, cfg] = await Promise.all([
+          api.get('/payments/status'),
+          wompiService.getConfig().catch(() => null),
+        ]);
         setStatus(statusRes.data);
+        if (cfg?.amount_cop) setPlanPrice(cfg.amount_cop);
         // Solo redirigir al dashboard si ya tiene tarjeta tokenizada
         // (sino dejarlo entrar a tokenizar). El query param ?force evita
         // cualquier redirect (util para "actualizar tarjeta").
@@ -124,10 +130,13 @@ export default function Subscribe() {
               <span className="text-emerald-400 text-xs font-bold uppercase tracking-wider">Plan Pro</span>
             </div>
             <div className="flex items-baseline justify-center gap-1">
-              <span className="text-5xl font-black text-white font-mono">$49.900</span>
+              <span className="text-5xl font-black text-white font-mono">${planPrice.toLocaleString('es-CO')}</span>
               <span className="text-gray-500 text-sm">/mes</span>
             </div>
             <p className="text-gray-400 text-sm mt-2">Todo lo que necesitas para gestionar tu club</p>
+            {planPrice !== 49900 && (
+              <p className="text-amber-400 text-xs mt-2 font-bold">⚠️ Precio de prueba — el plan real es $49.900/mes</p>
+            )}
           </div>
 
           <div className="p-8">
@@ -197,7 +206,7 @@ export default function Subscribe() {
             </div>
             <div className="p-5">
               <WompiCardForm
-                amountCop={2000}
+                amountCop={planPrice}
                 onSuccess={handleCardSuccess}
                 onCancel={() => setShowCardModal(false)}
               />
