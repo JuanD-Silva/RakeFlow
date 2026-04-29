@@ -21,7 +21,7 @@ router = APIRouter(
     tags=["Payments"]
 )
 
-PLAN_PRICE = 49900  # COP
+PLAN_PRICE = 2000  # COP — TEMPORAL para test E2E. Volver a 49900 antes de prod real.
 PLAN_NAME = "RakeFlow Pro"
 TRIAL_DAYS = 7
 

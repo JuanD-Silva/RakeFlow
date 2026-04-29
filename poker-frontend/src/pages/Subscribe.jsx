@@ -224,7 +224,7 @@ export default function Subscribe() {
             </div>
             <div className="p-5">
               <WompiCardForm
-                amountCop={49900}
+                amountCop={2000}
                 onSuccess={handleCardSuccess}
                 onCancel={() => setShowCardModal(false)}
               />
