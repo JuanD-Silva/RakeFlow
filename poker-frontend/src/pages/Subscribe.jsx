@@ -67,9 +67,9 @@ export default function Subscribe() {
     }
   };
 
-  // Wompi Hosted Checkout: redirect a checkout.wompi.co con los params firmados.
-  // El usuario paga ahi, luego Wompi redirige a redirect-url?id=<tx_id>&env=test
-  // El PaymentCallback se encarga de confirmar con el backend.
+  // Wompi Hosted Checkout filtrado a tarjeta (CARD) — unico metodo que
+  // soporta cobro recurrente automatico via tokenizacion. Para Nequi/PSE
+  // se usaria un boton secundario "pago unico" si lo agregamos despues.
   const handleSubscribeWompi = async () => {
     setRedirecting(true);
     try {
@@ -78,7 +78,6 @@ export default function Subscribe() {
       const reference = `${cfg.reference_prefix}${Date.now()}`;
       const currency = cfg.currency || 'COP';
 
-      // Signature de integridad: SHA-256(reference + amount_in_cents + currency + integrity_key)
       const signature = await sha256Hex(
         `${reference}${amountInCents}${currency}${cfg.integrity_key}`
       );
@@ -93,6 +92,9 @@ export default function Subscribe() {
         'signature:integrity': signature,
         'redirect-url': redirectUrl,
         'customer-data:email': cfg.club_email || '',
+        // Forzar solo tarjeta: el cobro recurrente automatico requiere
+        // tokenizacion, que solo funciona con CARD.
+        'payment-methods': 'CARD',
       });
 
       window.location.href = `https://checkout.wompi.co/p/?${params.toString()}`;
@@ -211,8 +213,9 @@ export default function Subscribe() {
                 onClick={handleSubscribeWompi}
                 className="w-full py-4 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-lg shadow-emerald-900/20 hover:shadow-[0_0_30px_rgba(16,185,129,0.3)]"
               >
-                <CreditCardIcon className="w-5 h-5" /> Suscribirme con tarjeta / PSE / Nequi
+                <CreditCardIcon className="w-5 h-5" /> Suscribirme con tarjeta
               </button>
+              <p className="text-[10px] text-gray-500 text-center -mt-1">Renovación automática mensual. Cancela cuando quieras.</p>
 
               {isTestMode && (
                 <button

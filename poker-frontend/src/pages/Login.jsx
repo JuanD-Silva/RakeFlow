@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { authService } from '../api/services';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -18,6 +18,7 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { login } = useAuth();
 
   const handleLogin = async (e) => {
@@ -27,7 +28,12 @@ export default function Login() {
     try {
       const data = await authService.login(email, password);
       login(data.access_token);
-      navigate(data.setup_completed ? '/dashboard' : '/setup');
+      const next = searchParams.get('next');
+      if (next && next.startsWith('/')) {
+        navigate(next);
+      } else {
+        navigate(data.setup_completed ? '/dashboard' : '/setup');
+      }
     } catch (err) {
       console.error(err);
       setError('Credenciales invalidas. Verifica tu email y contrasena.');
