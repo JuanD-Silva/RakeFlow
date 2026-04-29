@@ -1,6 +1,9 @@
 # app/routers/payments.py
 import os
+import asyncio
 import logging
+import time
+import httpx
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -278,3 +281,137 @@ async def wompi_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     )
     await db.commit()
     return {"status": "ok"}
+
+
+# ===========================================================
+# WOMPI: Suscripcion con tarjeta tokenizada (cobro recurrente)
+# ===========================================================
+class WompiSubscribeRequest(BaseModel):
+    card_token: str          # cc_token devuelto por POST /v1/tokens/cards
+    acceptance_token: str
+    accept_personal_auth: str
+    customer_email: str | None = None  # default: email del club
+
+
+@router.post("/wompi/subscribe")
+async def wompi_subscribe(
+    data: WompiSubscribeRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+    _: models.User = Depends(require_role([models.UserRole.OWNER])),
+):
+    """
+    Flow completo de suscripcion con cobro recurrente:
+    1. Frontend ya tokenizo la tarjeta -> nos pasa cc_token
+    2. Backend crea payment_source (la tarjeta queda tokenizada permanente)
+    3. Backend cobra el primer mes
+    4. Si APPROVED, activa suscripcion 30 dias y guarda payment_source_id
+    """
+    customer_email = (data.customer_email or current_club.email).strip()
+
+    # 1. Crear payment_source
+    try:
+        ps = await payments_wompi.create_payment_source(
+            card_token=data.card_token,
+            customer_email=customer_email,
+            acceptance_token=data.acceptance_token,
+            accept_personal_auth=data.accept_personal_auth,
+        )
+    except httpx.HTTPStatusError as e:
+        logger.error("wompi_subscribe_payment_source_failed: %s", e.response.text)
+        raise HTTPException(status_code=400, detail="No se pudo registrar la tarjeta. Verifica los datos e intenta de nuevo.")
+
+    payment_source_id = ps.get("id")
+    if not payment_source_id:
+        raise HTTPException(status_code=500, detail="Wompi no devolvio un payment_source_id valido")
+
+    # 2. Cobrar primer mes
+    reference = f"rakeflow-club-{current_club.id}-sub-{int(time.time())}"
+    try:
+        tx = await payments_wompi.charge_payment_source(
+            payment_source_id=payment_source_id,
+            customer_email=customer_email,
+            amount_cop=PLAN_PRICE,
+            reference=reference,
+        )
+    except httpx.HTTPStatusError as e:
+        logger.error("wompi_subscribe_charge_failed: %s", e.response.text)
+        raise HTTPException(status_code=400, detail="No se pudo procesar el cobro. La tarjeta quedo registrada pero el primer pago fallo.")
+
+    transaction_id = tx.get("id")
+
+    # 3. Polling rapido (max 10s) para ver si APPROVED inmediato
+    for _ in range(5):
+        await asyncio.sleep(2)
+        latest = await payments_wompi.get_transaction(transaction_id)
+        if latest.get("status") in ("APPROVED", "DECLINED", "ERROR", "VOIDED"):
+            tx = latest
+            break
+
+    status = tx.get("status", "PENDING")
+    pm = tx.get("payment_method", {}) or {}
+    extra = pm.get("extra", {}) or {}
+    card_brand = extra.get("brand")
+    card_last4 = extra.get("last_four")
+
+    if status == "APPROVED":
+        period_end = datetime.utcnow() + timedelta(days=30)
+        current_club.subscription_active = True
+        current_club.plan_type = "PRO"
+        current_club.subscription_period_end = period_end
+        current_club.wompi_payment_source_id = payment_source_id
+        current_club.wompi_customer_email = customer_email
+        if card_brand:
+            current_club.wompi_card_brand = card_brand
+        if card_last4:
+            current_club.wompi_card_last4 = card_last4
+
+        await log_action(
+            db, request=request, club=current_club,
+            action="SUBSCRIPTION_PAID",
+            entity_type="Subscription",
+            meta={
+                "provider": "wompi",
+                "via": "subscribe_endpoint",
+                "transaction_id": transaction_id,
+                "payment_source_id": payment_source_id,
+                "amount_cop": PLAN_PRICE,
+                "card_brand": card_brand,
+                "card_last4": card_last4,
+                "period_end": period_end.isoformat(),
+            },
+        )
+        await db.commit()
+        return {
+            "subscription_active": True,
+            "transaction_id": transaction_id,
+            "wompi_status": status,
+            "card_brand": card_brand,
+            "card_last4": card_last4,
+            "period_end": period_end.isoformat(),
+        }
+
+    if status == "PENDING":
+        # Webhook eventualmente cerrara la operacion. Guardamos payment_source_id
+        # para que el cron pueda cobrar en el futuro aunque este no haya cerrado.
+        current_club.wompi_payment_source_id = payment_source_id
+        current_club.wompi_customer_email = customer_email
+        if card_brand:
+            current_club.wompi_card_brand = card_brand
+        if card_last4:
+            current_club.wompi_card_last4 = card_last4
+        await db.commit()
+        return {
+            "subscription_active": False,
+            "transaction_id": transaction_id,
+            "wompi_status": status,
+            "message": "Pago en proceso. Te avisaremos cuando se acredite.",
+        }
+
+    return {
+        "subscription_active": False,
+        "transaction_id": transaction_id,
+        "wompi_status": status,
+        "message": tx.get("status_message") or "Pago rechazado. Verifica los datos de tu tarjeta o intenta con otra.",
+    }

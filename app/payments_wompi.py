@@ -64,6 +64,37 @@ async def get_acceptance_tokens() -> dict:
         }
 
 
+async def create_payment_source(
+    *,
+    card_token: str,
+    customer_email: str,
+    acceptance_token: str,
+    accept_personal_auth: str,
+) -> dict:
+    """
+    Crea un payment_source de tipo CARD a partir de un cc_token (tokenizado
+    desde el frontend con la public key). El payment_source.id resultante
+    es lo que guardamos para cobrar mensualmente sin intervencion.
+    """
+    private_key = os.getenv("WOMPI_PRIVATE_KEY", "")
+    if not private_key:
+        raise RuntimeError("WOMPI_PRIVATE_KEY no configurada")
+    payload = {
+        "type": "CARD",
+        "token": card_token,
+        "customer_email": customer_email,
+        "acceptance_token": acceptance_token,
+        "accept_personal_auth": accept_personal_auth,
+    }
+    headers = {"Authorization": f"Bearer {private_key}"}
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.post(f"{_api_base()}/payment_sources", json=payload, headers=headers)
+        if r.status_code >= 400:
+            logger.error("wompi_create_payment_source_failed status=%s body=%s", r.status_code, r.text)
+            r.raise_for_status()
+        return r.json().get("data", {})
+
+
 async def get_transaction(transaction_id: str) -> dict:
     """Consulta el estado de una transaccion. Backend la usa para confirmar despues del checkout."""
     async with httpx.AsyncClient(timeout=10) as client:
@@ -72,7 +103,7 @@ async def get_transaction(transaction_id: str) -> dict:
         return r.json().get("data", {})
 
 
-async def charge_payment_source(*, payment_source_id: int, customer_email: str, amount_cop: int, reference: str) -> dict:
+async def charge_payment_source(*, payment_source_id: int, customer_email: str, amount_cop: int, reference: str, recurrent: bool = True) -> dict:
     """
     Cobra un payment_source ya tokenizado (cobro recurrente real).
     amount_cop en pesos enteros (no centavos).
@@ -94,6 +125,7 @@ async def charge_payment_source(*, payment_source_id: int, customer_email: str, 
         "reference": reference,
         "signature": signature,
         "payment_method": {"installments": 1},
+        "recurrent": recurrent,
     }
     headers = {"Authorization": f"Bearer {private_key}"}
     async with httpx.AsyncClient(timeout=15) as client:

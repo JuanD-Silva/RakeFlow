@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '../api/axios';
-import { wompiService } from '../api/services';
+import WompiCardForm from '../components/WompiCardForm';
 import {
   CheckIcon,
   CreditCardIcon,
@@ -9,6 +9,7 @@ import {
   ClockIcon,
   SparklesIcon,
   BeakerIcon,
+  XMarkIcon,
 } from '@heroicons/react/24/outline';
 
 const PLAN_FEATURES = [
@@ -20,20 +21,11 @@ const PLAN_FEATURES = [
   'Multi-usuario (cajeros)',
 ];
 
-// Calcula SHA-256 hex del string usando WebCrypto (browser nativo)
-async function sha256Hex(text) {
-  const buf = new TextEncoder().encode(text);
-  const hash = await crypto.subtle.digest('SHA-256', buf);
-  return Array.from(new Uint8Array(hash))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-}
-
 export default function Subscribe() {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [startingTrial, setStartingTrial] = useState(false);
-  const [redirecting, setRedirecting] = useState(false);
+  const [showCardModal, setShowCardModal] = useState(false);
   const [activating, setActivating] = useState(false);
   const navigate = useNavigate();
 
@@ -67,41 +59,16 @@ export default function Subscribe() {
     }
   };
 
-  // Wompi Hosted Checkout filtrado a tarjeta (CARD) — unico metodo que
-  // soporta cobro recurrente automatico via tokenizacion. Para Nequi/PSE
-  // se usaria un boton secundario "pago unico" si lo agregamos despues.
-  const handleSubscribeWompi = async () => {
-    setRedirecting(true);
-    try {
-      const cfg = await wompiService.getConfig();
-      const amountInCents = cfg.amount_cop * 100;
-      const reference = `${cfg.reference_prefix}${Date.now()}`;
-      const currency = cfg.currency || 'COP';
+  const handleSubscribeWompi = () => setShowCardModal(true);
 
-      const signature = await sha256Hex(
-        `${reference}${amountInCents}${currency}${cfg.integrity_key}`
-      );
-
-      const redirectUrl = `${window.location.origin}/payment-callback`;
-
-      const params = new URLSearchParams({
-        'public-key': cfg.public_key,
-        currency,
-        'amount-in-cents': String(amountInCents),
-        reference,
-        'signature:integrity': signature,
-        'redirect-url': redirectUrl,
-        'customer-data:email': cfg.club_email || '',
-        // Forzar solo tarjeta: el cobro recurrente automatico requiere
-        // tokenizacion, que solo funciona con CARD.
-        'payment-methods': 'CARD',
-      });
-
-      window.location.href = `https://checkout.wompi.co/p/?${params.toString()}`;
-    } catch (err) {
-      console.error(err);
-      alert('No se pudo iniciar el pago. Intenta de nuevo.');
-      setRedirecting(false);
+  const handleCardSuccess = (data) => {
+    setShowCardModal(false);
+    if (data.subscription_active) {
+      localStorage.removeItem('rakeflow_wizard_done');
+      navigate(`/payment-success?id=${encodeURIComponent(data.transaction_id || '')}`);
+    } else {
+      // PENDING: webhook cerrara la operacion
+      navigate(`/payment-success?id=${encodeURIComponent(data.transaction_id || '')}`);
     }
   };
 
@@ -121,13 +88,12 @@ export default function Subscribe() {
     }
   };
 
-  if (loading || activating || redirecting) {
+  if (loading || activating) {
     return (
       <div className="min-h-screen bg-[#0a0f1a] flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-emerald-500 mx-auto mb-4"></div>
           {activating && <p className="text-gray-400 text-sm">Activando suscripción...</p>}
-          {redirecting && <p className="text-gray-400 text-sm">Redirigiendo a Wompi...</p>}
         </div>
       </div>
     );
@@ -242,6 +208,30 @@ export default function Subscribe() {
           </div>
         )}
       </div>
+
+      {/* MODAL: Form de tarjeta */}
+      {showCardModal && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-[60] flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-gray-900 rounded-2xl border border-emerald-500/30 shadow-2xl w-full max-w-md overflow-hidden max-h-[90vh] overflow-y-auto">
+            <div className="bg-gray-800 px-5 py-4 border-b border-gray-700 flex items-center justify-between sticky top-0 z-10">
+              <div className="flex items-center gap-2">
+                <CreditCardIcon className="w-5 h-5 text-emerald-400" />
+                <h3 className="text-white font-bold">Suscripción mensual</h3>
+              </div>
+              <button onClick={() => setShowCardModal(false)} className="p-1.5 rounded-lg hover:bg-gray-700 text-gray-400 hover:text-white">
+                <XMarkIcon className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-5">
+              <WompiCardForm
+                amountCop={49900}
+                onSuccess={handleCardSuccess}
+                onCancel={() => setShowCardModal(false)}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
