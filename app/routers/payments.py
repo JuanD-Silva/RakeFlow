@@ -13,6 +13,7 @@ from .. import models
 from ..dependencies import get_db, get_current_club, require_role
 from ..audit import log_action, AuditAction
 from .. import payments_wompi
+from .. import subscription_renewals
 
 logger = logging.getLogger(__name__)
 
@@ -415,3 +416,38 @@ async def wompi_subscribe(
         "wompi_status": status,
         "message": tx.get("status_message") or "Pago rechazado. Verifica los datos de tu tarjeta o intenta con otra.",
     }
+
+
+# ===========================================================
+# CRON DE RENOVACIONES (interno)
+# ===========================================================
+def _verify_internal_token(request: Request) -> None:
+    """Auth simple por token compartido para el endpoint de cron."""
+    expected = os.getenv("INTERNAL_CRON_TOKEN", "")
+    received = request.headers.get("x-internal-token", "")
+    if not expected or received != expected:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+@router.post("/wompi/charge-renewals")
+async def wompi_charge_renewals(
+    request: Request,
+    dry_run: bool = False,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Endpoint llamado por el cron diario (GitHub Actions).
+    Cobra suscripciones a punto de vencer.
+
+    Auth: header X-Internal-Token == env INTERNAL_CRON_TOKEN.
+    Idempotente: si una corrida se duplica el mismo dia, no cobra dos veces.
+
+    Query params:
+    - dry_run=true → no cobra, solo lista a quien cobraria.
+    """
+    _verify_internal_token(request)
+    summary = await subscription_renewals.run_renewals(
+        db, plan_price_cop=PLAN_PRICE, dry_run=dry_run,
+    )
+    logger.info("renewals_run summary=%s", {k: v for k, v in summary.items() if k != "details"})
+    return summary

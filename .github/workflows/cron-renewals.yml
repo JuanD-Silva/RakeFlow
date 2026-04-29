@@ -1,0 +1,42 @@
+name: Wompi - Cobrar renovaciones diarias
+
+on:
+  schedule:
+    # Diario a las 13:00 UTC (8am hora Colombia, banco abierto, mejor ratio
+    # de aprobacion antes de cierre fin de mes)
+    - cron: '0 13 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Solo simular (no cobra)'
+        required: false
+        default: 'false'
+
+jobs:
+  charge-renewals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Invocar /payments/wompi/charge-renewals
+        env:
+          API_URL: ${{ secrets.RAKEFLOW_API_URL }}
+          TOKEN: ${{ secrets.INTERNAL_CRON_TOKEN }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+        run: |
+          if [ -z "$API_URL" ] || [ -z "$TOKEN" ]; then
+            echo "::error::Missing RAKEFLOW_API_URL or INTERNAL_CRON_TOKEN secret"
+            exit 1
+          fi
+          QS=""
+          if [ "$DRY_RUN" = "true" ]; then QS="?dry_run=true"; fi
+          set -e
+          RESP=$(curl -fsS -X POST \
+            -H "X-Internal-Token: $TOKEN" \
+            -H "Content-Type: application/json" \
+            "$API_URL/payments/wompi/charge-renewals$QS")
+          echo "$RESP" | python3 -m json.tool
+          # Falla el job si hubo errores no esperados
+          ERR=$(echo "$RESP" | python3 -c "import json,sys; print(json.load(sys.stdin).get('errors',0))")
+          if [ "$ERR" != "0" ]; then
+            echo "::warning::$ERR errores durante la corrida"
+          fi
