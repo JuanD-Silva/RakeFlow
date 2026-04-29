@@ -8,7 +8,6 @@ import {
   ShieldCheckIcon,
   ClockIcon,
   SparklesIcon,
-  BeakerIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline';
 
@@ -26,7 +25,6 @@ export default function Subscribe() {
   const [loading, setLoading] = useState(true);
   const [startingTrial, setStartingTrial] = useState(false);
   const [showCardModal, setShowCardModal] = useState(false);
-  const [activating, setActivating] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -72,45 +70,20 @@ export default function Subscribe() {
 
   const handleCardSuccess = (data) => {
     setShowCardModal(false);
-    if (data.subscription_active) {
-      localStorage.removeItem('rakeflow_wizard_done');
-      navigate(`/payment-success?id=${encodeURIComponent(data.transaction_id || '')}`);
-    } else {
-      // PENDING: webhook cerrara la operacion
-      navigate(`/payment-success?id=${encodeURIComponent(data.transaction_id || '')}`);
-    }
+    localStorage.removeItem('rakeflow_wizard_done');
+    navigate(`/payment-success?id=${encodeURIComponent(data.transaction_id || '')}`);
   };
 
-  const handleTestActivate = async () => {
-    setActivating(true);
-    try {
-      const res = await api.post('/payments/activate-test');
-      if (res.data.subscription_active) {
-        localStorage.removeItem('rakeflow_wizard_done');
-        navigate('/payment-success?id=test');
-      }
-    } catch (err) {
-      console.error(err);
-      alert('Error activando modo test');
-    } finally {
-      setActivating(false);
-    }
-  };
-
-  if (loading || activating) {
+  if (loading) {
     return (
       <div className="min-h-screen bg-[#0a0f1a] flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-emerald-500 mx-auto mb-4"></div>
-          {activating && <p className="text-gray-400 text-sm">Activando suscripción...</p>}
-        </div>
+        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-emerald-500 mx-auto"></div>
       </div>
     );
   }
 
   const canTrial = status && !status.subscription_active && !status.trial_end;
   const inTrial = status?.in_trial;
-  const isTestMode = true; // Sandbox visible siempre que no esten en prod (lo decide el backend mismo)
 
   return (
     <div className="min-h-screen bg-[#0a0f1a] px-4 py-10 font-sans relative noise-bg">
@@ -191,15 +164,6 @@ export default function Subscribe() {
                 <CreditCardIcon className="w-5 h-5" /> Suscribirme con tarjeta
               </button>
               <p className="text-[10px] text-gray-500 text-center -mt-1">Renovación automática mensual. Cancela cuando quieras.</p>
-
-              {isTestMode && (
-                <button
-                  onClick={handleTestActivate}
-                  className="w-full py-3 rounded-xl bg-violet-900/30 hover:bg-violet-800/40 text-violet-300 font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all border border-violet-500/20"
-                >
-                  <BeakerIcon className="w-4 h-4" /> Activar sin pago (modo test)
-                </button>
-              )}
             </div>
 
             <div className="flex items-center justify-center gap-2 mt-6 text-gray-600 text-xs">
