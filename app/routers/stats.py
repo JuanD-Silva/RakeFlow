@@ -255,14 +255,33 @@ async def get_monthly_debt_quota(
 # ---------------------------------------------------------
 @router.get("/rankings")
 async def get_rankings(
+    year: int | None = None,
+    month: int | None = None,
     db: AsyncSession = Depends(get_db),
     current_club: models.Club = Depends(get_current_club),
     _: models.User = Depends(require_role(_REPORT_ROLES)),
 ):
+    """
+    Rankings mensuales. Por default mes en curso.
+    Si se pasan year y month, devuelve los rankings de ese mes especifico.
+    """
     try:
-        start_date = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        if current_club.rankings_reset_at and current_club.rankings_reset_at > start_date:
-            start_date = current_club.rankings_reset_at
+        now = datetime.utcnow()
+        if year and month:
+            # Mes historico explicito
+            start_date = datetime(year, month, 1)
+            if month == 12:
+                end_date = datetime(year + 1, 1, 1)
+            else:
+                end_date = datetime(year, month + 1, 1)
+            is_current_month = (year == now.year and month == now.month)
+        else:
+            # Mes en curso (default): respeta rankings_reset_at del club
+            start_date = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            if current_club.rankings_reset_at and current_club.rankings_reset_at > start_date:
+                start_date = current_club.rankings_reset_at
+            end_date = now
+            is_current_month = True
 
         # Mapas para acumular valores por ID de jugador
         winners_map = {}
@@ -286,14 +305,17 @@ async def get_rankings(
                     WHEN t.type IN ('SPEND', 'TIP') THEN t.amount 
                     ELSE 0 
                 END) as spend
-            FROM players p 
-            JOIN transactions t ON p.id = t.player_id 
+            FROM players p
+            JOIN transactions t ON p.id = t.player_id
             JOIN sessions s ON t.session_id = s.id
-            WHERE p.club_id = :cid AND s.end_time >= :start_date AND s.status = 'CLOSED'
+            WHERE p.club_id = :cid
+              AND s.end_time >= :start_date
+              AND s.end_time < :end_date
+              AND s.status = 'CLOSED'
             GROUP BY p.id, p.name
         """)
-        
-        rows_stats = (await db.execute(sql_cash_stats, {"cid": current_club.id, "start_date": start_date})).all()
+
+        rows_stats = (await db.execute(sql_cash_stats, {"cid": current_club.id, "start_date": start_date, "end_date": end_date})).all()
         
         for r in rows_stats:
             names_map[r.id] = r.name
@@ -317,13 +339,14 @@ async def get_rankings(
             JOIN sessions s ON t.session_id = s.id
             WHERE s.club_id = :cid
               AND s.end_time >= :start_date
+              AND s.end_time < :end_date
               AND s.status = 'CLOSED'
               AND t.player_id IS NOT NULL
             GROUP BY t.player_id, s.id, s.end_time
             HAVING MIN(CASE WHEN CAST(t.type AS TEXT) IN ('BUYIN', 'REBUY') THEN t.timestamp END) IS NOT NULL
         """)
 
-        rows_time = (await db.execute(sql_cash_time, {"cid": current_club.id, "start_date": start_date})).all()
+        rows_time = (await db.execute(sql_cash_time, {"cid": current_club.id, "start_date": start_date, "end_date": end_date})).all()
 
         for r in rows_time:
             pid = r[0]
@@ -339,9 +362,10 @@ async def get_rankings(
             select(models.Tournament)
             .options(selectinload(models.Tournament.players))
             .where(
-                models.Tournament.club_id == current_club.id, 
-                models.Tournament.status == "COMPLETED", 
-                models.Tournament.end_time >= start_date
+                models.Tournament.club_id == current_club.id,
+                models.Tournament.status == "COMPLETED",
+                models.Tournament.end_time >= start_date,
+                models.Tournament.end_time < end_date,
             )
         )
         tournaments = q_tourneys.scalars().all()
@@ -399,13 +423,20 @@ async def get_rankings(
         return {
             "winners": get_top_3(winners_map),
             "spenders": get_top_3(spenders_map),
-            "active": get_top_3(active_map) # Ahora sí enviamos datos reales
+            "active": get_top_3(active_map),
+            "period": {
+                "year": start_date.year,
+                "month": start_date.month,
+                "is_current_month": is_current_month,
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+            }
         }
 
     except Exception as e:
         logger.error("Error rankings: %s", e)
         # En caso de error devolvemos listas vacías para que el front no explote
-        return {"winners": [], "spenders": [], "active": []}
+        return {"winners": [], "spenders": [], "active": [], "period": None}
 
 @router.get("/jackpot-global")
 async def get_global_jackpot(db: AsyncSession = Depends(get_db), current_club: models.Club = Depends(get_current_club)):

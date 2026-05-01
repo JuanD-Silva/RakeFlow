@@ -1,19 +1,46 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import api from '../api/axios';
 import { TrophyIcon, StarIcon, FireIcon, ArrowPathIcon } from '@heroicons/react/24/solid';
+
+const MONTH_NAMES = [
+  'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'
+];
+
+// Genera lista de los ultimos N meses (mes actual incluido)
+function getRecentMonths(n = 6) {
+  const result = [];
+  const now = new Date();
+  for (let i = 0; i < n; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    result.push({
+      year: d.getFullYear(),
+      month: d.getMonth() + 1,
+      label: `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`,
+      isCurrent: i === 0,
+    });
+  }
+  return result;
+}
 
 export default function PlayerLeaderboard() {
   const [rankings, setRankings] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  useEffect(() => { fetchRankings(); }, []);
+  const monthOptions = useMemo(() => getRecentMonths(12), []);
+  const [selected, setSelected] = useState(monthOptions[0]); // mes actual por default
 
-  const fetchRankings = async () => {
+  useEffect(() => { fetchRankings(selected); }, [selected]);
+
+  const fetchRankings = async (period) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.get('/stats/rankings');
+      const params = period?.isCurrent
+        ? {}
+        : { params: { year: period.year, month: period.month } };
+      const res = await api.get('/stats/rankings', params);
       setRankings(res.data);
     } catch (err) {
       console.error("Error cargando rankings", err);
@@ -23,16 +50,9 @@ export default function PlayerLeaderboard() {
     }
   };
 
-  if (loading) return (
-    <div className="flex flex-col items-center justify-center py-20 space-y-4">
-      <ArrowPathIcon className="w-10 h-10 text-blue-500 animate-spin" />
-      <p className="text-gray-500 font-black uppercase tracking-widest text-xs">Consultando el Hall de la Fama...</p>
-    </div>
-  );
-  const currentMonthName = new Date().toLocaleString('es-ES', { month: 'long' });
+  const currentMonthName = selected.label;
 
   if (error) return <div className="text-red-400 text-center py-10 bg-red-900/10 rounded-xl border border-red-500/20">{error}</div>;
-  if (!rankings) return null;
 
   const RankingCard = ({ title, icon, data, accentColor, valueLabel, formatValue }) => {
     const topThree = data.slice(0, 3);
@@ -123,48 +143,72 @@ export default function PlayerLeaderboard() {
 
   return (
     <div className="max-w-6xl mx-auto p-6 space-y-10 animate-fade-in">
-      <div className="flex justify-between items-end">
+      <div className="flex flex-col md:flex-row justify-between md:items-end gap-4">
         <div>
           <h2 className="text-4xl font-black text-white tracking-tighter uppercase italic">
-  Hall de la Fama <span className="text-emerald-500 text-2xl not-italic capitalize">| {currentMonthName}</span>
-</h2>
+            Hall de la Fama <span className="text-emerald-500 text-2xl not-italic capitalize">| {currentMonthName}</span>
+          </h2>
           <p className="text-blue-500 text-xs font-bold uppercase tracking-[0.3em] mt-1">Reconocimiento a la excelencia del club</p>
         </div>
-        <button onClick={fetchRankings} className="p-2 text-gray-500 hover:text-white transition-colors">
-          <ArrowPathIcon className="w-6 h-6" />
-        </button>
+        <div className="flex items-center gap-2">
+          <select
+            value={`${selected.year}-${selected.month}`}
+            onChange={(e) => {
+              const [y, m] = e.target.value.split('-').map(Number);
+              const found = monthOptions.find(o => o.year === y && o.month === m);
+              if (found) setSelected(found);
+            }}
+            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-bold focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/30 focus:outline-none capitalize"
+          >
+            {monthOptions.map(o => (
+              <option key={`${o.year}-${o.month}`} value={`${o.year}-${o.month}`}>
+                {o.label}{o.isCurrent ? ' (actual)' : ''}
+              </option>
+            ))}
+          </select>
+          <button onClick={() => fetchRankings(selected)} className="p-2 text-gray-500 hover:text-white transition-colors" title="Refrescar">
+            <ArrowPathIcon className={`w-6 h-6 ${loading ? 'animate-spin text-blue-400' : ''}`} />
+          </button>
+        </div>
       </div>
+
+      {loading && (
+        <div className="flex flex-col items-center justify-center py-10 space-y-3">
+          <ArrowPathIcon className="w-8 h-8 text-blue-500 animate-spin" />
+          <p className="text-gray-500 font-bold uppercase tracking-widest text-[10px]">Consultando...</p>
+        </div>
+      )}
       
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-        <RankingCard 
-          title="Tiburones" 
-          icon={<TrophyIcon className="w-6 h-6 text-green-500" />} 
-          data={rankings.winners}
-          accentColor="from-green-500/20"
-          valueLabel="Utilidad"
-          formatValue={(val) => `+$${val.toLocaleString()}`}
-        />
+      {!loading && rankings && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <RankingCard
+            title="Tiburones"
+            icon={<TrophyIcon className="w-6 h-6 text-green-500" />}
+            data={rankings.winners}
+            accentColor="from-green-500/20"
+            valueLabel="Utilidad"
+            formatValue={(val) => `+$${val.toLocaleString()}`}
+          />
 
-        <RankingCard 
-          title="Consumo VIP" 
-          icon={<StarIcon className="w-6 h-6 text-purple-500" />} 
-          data={rankings.spenders}
-          accentColor="from-purple-500/20"
-          valueLabel="Gastado"
-          formatValue={(val) => `$${val.toLocaleString()}`}
-        />
+          <RankingCard
+            title="Consumo VIP"
+            icon={<StarIcon className="w-6 h-6 text-purple-500" />}
+            data={rankings.spenders}
+            accentColor="from-purple-500/20"
+            valueLabel="Gastado"
+            formatValue={(val) => `$${val.toLocaleString()}`}
+          />
 
-        <RankingCard 
-          title="Los Fieles" 
-          icon={<FireIcon className="w-6 h-6 text-blue-500" />} 
-          data={rankings.active}
-          accentColor="from-blue-500/20"
-          valueLabel="Sesiones"
-          formatValue={(val) => `${Number(val).toFixed(1)}h`}
-        />
-
-      </div>
+          <RankingCard
+            title="Los Fieles"
+            icon={<FireIcon className="w-6 h-6 text-blue-500" />}
+            data={rankings.active}
+            accentColor="from-blue-500/20"
+            valueLabel="Sesiones"
+            formatValue={(val) => `${Number(val).toFixed(1)}h`}
+          />
+        </div>
+      )}
 
       <div className="text-center pt-10">
         <p className="text-[10px] text-gray-600 font-bold uppercase tracking-widest border-t border-gray-800 pt-6">
