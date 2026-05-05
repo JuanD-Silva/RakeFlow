@@ -49,7 +49,11 @@ async def _had_recent_attempt(db: AsyncSession, club_id: int, hours: int = 24) -
 
 
 async def run_renewals(db: AsyncSession, plan_price_cop: int, *, dry_run: bool = False) -> dict[str, Any]:
-    """Procesa renovaciones. Retorna resumen para el response del endpoint."""
+    """
+    Procesa renovaciones. Retorna resumen para el response del endpoint.
+    plan_price_cop = default global; cada club puede tener subscription_price_cop
+    propio (grandfather), que tiene prioridad.
+    """
     now = datetime.utcnow()
     cutoff = now + timedelta(days=RENEW_WINDOW_DAYS)
 
@@ -95,12 +99,13 @@ async def run_renewals(db: AsyncSession, plan_price_cop: int, *, dry_run: bool =
 
             reference = f"rakeflow-club-{club.id}-renew-{int(time.time())}"
             customer_email = club.wompi_customer_email or club.email
+            club_price = int(club.subscription_price_cop) if club.subscription_price_cop else plan_price_cop
 
             try:
                 tx = await payments_wompi.charge_payment_source(
                     payment_source_id=club.wompi_payment_source_id,
                     customer_email=customer_email,
-                    amount_cop=plan_price_cop,
+                    amount_cop=club_price,
                     reference=reference,
                     recurrent=True,
                 )
@@ -130,7 +135,7 @@ async def run_renewals(db: AsyncSession, plan_price_cop: int, *, dry_run: bool =
                         "provider": "wompi",
                         "via": "cron",
                         "transaction_id": transaction_id,
-                        "amount_cop": plan_price_cop,
+                        "amount_cop": club_price,
                         "period_end": period_end.isoformat(),
                     },
                 )
@@ -140,7 +145,7 @@ async def run_renewals(db: AsyncSession, plan_price_cop: int, *, dry_run: bool =
                     email_service.send_payment_succeeded_email(
                         to_email=club.email,
                         club_name=club.name,
-                        amount=plan_price_cop,
+                        amount=club_price,
                         period_end=period_end,
                         card_brand=club.wompi_card_brand,
                         card_last4=club.wompi_card_last4,
@@ -181,7 +186,7 @@ async def run_renewals(db: AsyncSession, plan_price_cop: int, *, dry_run: bool =
                     email_service.send_payment_failed_email(
                         to_email=club.email,
                         club_name=club.name,
-                        amount=plan_price_cop,
+                        amount=club_price,
                         reason=status_msg,
                         card_brand=club.wompi_card_brand,
                         card_last4=club.wompi_card_last4,

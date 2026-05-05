@@ -42,7 +42,7 @@ function formatCardNumber(value) {
   return digits.replace(/(.{4})/g, '$1 ').trim();
 }
 
-export default function WompiCardForm({ onSuccess, onCancel, amountCop = 49900 }) {
+export default function WompiCardForm({ onSuccess, onCancel, amountCop = 149000 }) {
   const [cfg, setCfg] = useState(null);
   const [loadingCfg, setLoadingCfg] = useState(true);
 

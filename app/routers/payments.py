@@ -22,9 +22,16 @@ router = APIRouter(
     tags=["Payments"]
 )
 
-PLAN_PRICE = 2000  # COP — TEMPORAL para test E2E. Volver a 49900 antes de prod real.
+# Precio default del Plan Pro. Clubes "fundadores" (grandfathered) tienen
+# su propio precio en clubs.subscription_price_cop.
+PLAN_PRICE = 149000  # COP
 PLAN_NAME = "RakeFlow Pro"
-TRIAL_DAYS = 7
+TRIAL_DAYS = 14
+
+
+def _price_for(club: models.Club) -> int:
+    """Precio aplicable a un club: el grandfathered si lo tiene, sino el default."""
+    return int(club.subscription_price_cop) if club.subscription_price_cop else PLAN_PRICE
 
 
 @router.get("/status")
@@ -126,7 +133,7 @@ async def wompi_config(
     return {
         **cfg,
         **tokens,
-        "amount_cop": PLAN_PRICE,
+        "amount_cop": _price_for(current_club),
         "club_id": current_club.id,
         "club_email": current_club.email,
         "reference_prefix": f"rakeflow-club-{current_club.id}-",
@@ -327,13 +334,14 @@ async def wompi_subscribe(
     if not payment_source_id:
         raise HTTPException(status_code=500, detail="Wompi no devolvio un payment_source_id valido")
 
-    # 2. Cobrar primer mes
+    # 2. Cobrar primer mes (con grandfather pricing si aplica)
+    monthly_price = _price_for(current_club)
     reference = f"rakeflow-club-{current_club.id}-sub-{int(time.time())}"
     try:
         tx = await payments_wompi.charge_payment_source(
             payment_source_id=payment_source_id,
             customer_email=customer_email,
-            amount_cop=PLAN_PRICE,
+            amount_cop=monthly_price,
             reference=reference,
         )
     except httpx.HTTPStatusError as e:
@@ -377,7 +385,7 @@ async def wompi_subscribe(
                 "via": "subscribe_endpoint",
                 "transaction_id": transaction_id,
                 "payment_source_id": payment_source_id,
-                "amount_cop": PLAN_PRICE,
+                "amount_cop": monthly_price,
                 "card_brand": card_brand,
                 "card_last4": card_last4,
                 "period_end": period_end.isoformat(),

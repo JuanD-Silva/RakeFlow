@@ -68,6 +68,8 @@ class Club(Base):
     wompi_card_brand = Column(String, nullable=True)   # VISA, MC, AMEX
     wompi_card_last4 = Column(String, nullable=True)
     subscription_period_end = Column(DateTime, nullable=True)  # cuando expira el periodo actual
+    # Precio personalizado para grandfathered customers; si null usa el default global
+    subscription_price_cop = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relaciones
