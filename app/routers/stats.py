@@ -395,6 +395,7 @@ async def get_rankings(
 
                 # 1. Calcular Profit (Premio - Inversión)
                 inv = t.buyin_amount + \
+                      ((p.tips_count or 0) * (t.dealer_tip_amount or 0)) + \
                       ((p.rebuys_count + p.double_rebuys_count) * t.rebuy_price) + \
                       ((p.addons_count + p.double_addons_count) * t.addon_price)
 

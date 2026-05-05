@@ -63,11 +63,16 @@ export default function TournamentPlayerTable({ tournament, onUpdate }) {
         const doubleAddons = Number(p.double_addons_count) || 0;
         const singleAddons = totalAddons - doubleAddons;
 
-        const moneyInvested = prices.buyin 
+        // Lo que va al pozo (sin tips: el tip va al dealer, no al pozo)
+        const moneyInvested = prices.buyin
             + (singleRebuys * prices.rebuyS) + (doubleRebuys * prices.rebuyD)
             + (singleAddons * prices.addonS) + (doubleAddons * prices.addonD);
 
-        return { ...p, singleRebuys, doubleRebuys, singleAddons, doubleAddons, moneyInvested };
+        // Lo que el jugador pago del bolsillo (incluye tips)
+        const tipsCost = (Number(p.tips_count) || 0) * prices.tip;
+        const totalPaid = moneyInvested + tipsCost;
+
+        return { ...p, singleRebuys, doubleRebuys, singleAddons, doubleAddons, moneyInvested, tipsCost, totalPaid };
     });
 
     const activePlayersCount = playersWithStats.filter(p => p.status === 'ACTIVE').length;
@@ -283,7 +288,7 @@ export default function TournamentPlayerTable({ tournament, onUpdate }) {
                                             <span className="text-gray-700 text-xs">-</span>
                                         )}
                                     </td>
-                                    <td className="px-4 py-3 text-right font-mono font-bold text-green-400">{formatCurrency(p.moneyInvested)}</td>
+                                    <td className="px-4 py-3 text-right font-mono font-bold text-green-400">{formatCurrency(p.totalPaid)}</td>
                                     <td className="px-4 py-3 text-center">
                                         {p.status === 'ACTIVE' && tournament.status !== 'COMPLETED' && (
                                             <button onClick={() => setActionPlayer(p)} className="bg-violet-600 hover:bg-violet-500 text-white px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 mx-auto transition-colors active:scale-95">

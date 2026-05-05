@@ -154,31 +154,32 @@ async def register_player(
     if existing.scalars().first():
         raise HTTPException(status_code=400, detail="El jugador ya está en el torneo")
 
-    # C. Calcular Costos
-    total_cost = 0
-    desc_parts = [f"Inscripción Torneo #{tournament.id}"]
-
-    if registration.pay_buyin:
-        total_cost += tournament.buyin_amount
-    
-    if registration.pay_tip:
-        total_cost += tournament.dealer_tip_amount
-        desc_parts.append("Staff Bonus")
-
-    # D. Cobrar (Crear Transacción)
-    if total_cost > 0:
-        new_transaction = models.Transaction(
+    # C. Cobrar buy-in (Transaccion TOURNAMENT_ENTRY)
+    if registration.pay_buyin and tournament.buyin_amount > 0:
+        db.add(models.Transaction(
             tournament_id=tournament.id,
-            session_id=None, # No hay sesión de cash
+            session_id=None,
             player_id=registration.player_id,
-            
-            # ✅ USO CORRECTO DEL ENUM Y TIMESTAMP
-            type=models.TransactionType.TOURNAMENT_ENTRY, 
-            amount=total_cost,
-            description=" + ".join(desc_parts),
-            timestamp=datetime.utcnow() 
-        )
-        db.add(new_transaction)
+            type=models.TransactionType.TOURNAMENT_ENTRY,
+            amount=tournament.buyin_amount,
+            description=f"Inscripcion Torneo #{tournament.id}",
+            timestamp=datetime.utcnow(),
+        ))
+
+    # D. Cobrar dealer tip si aplica (Transaccion TOURNAMENT_TIP separada,
+    # consistente con pay_late_dealer_tip)
+    tips_count = 0
+    if registration.pay_tip and tournament.dealer_tip_amount > 0:
+        db.add(models.Transaction(
+            tournament_id=tournament.id,
+            session_id=None,
+            player_id=registration.player_id,
+            type=models.TransactionType.TOURNAMENT_TIP,
+            amount=tournament.dealer_tip_amount,
+            description=f"Staff Bonus - Torneo #{tournament.id}",
+            timestamp=datetime.utcnow(),
+        ))
+        tips_count = 1
 
     # E. Crear Jugador en Torneo
     new_player = models.TournamentPlayer(
@@ -187,13 +188,14 @@ async def register_player(
         status="ACTIVE",
         rebuys_count=0,
         addons_count=0,
-        is_tip_paid=registration.pay_tip 
+        is_tip_paid=registration.pay_tip,
+        tips_count=tips_count,
     )
     db.add(new_player)
-    
+
     await db.commit()
     await db.refresh(new_player)
-    
+
     return new_player
 
 # 5. PAGAR DEALER TIP TARDE
@@ -592,10 +594,11 @@ async def get_tournament_details(
         p_name_res = await db.execute(select(models.Player.name).where(models.Player.id == p.player_id))
         p_name = p_name_res.scalar() or "Desconocido"
 
-        # Calcular gastos de este jugador
+        # Calcular gastos de este jugador (incluye tips en lo que el jugador pago)
         p_rebuys_cost = (p.rebuys_count * t.rebuy_price) + (p.double_rebuys_count * t.double_rebuy_price)
         p_addons_cost = (p.addons_count * t.addon_price) + (p.double_addons_count * t.double_addon_price)
-        p_invested = t.buyin_amount + p_rebuys_cost + p_addons_cost
+        p_tips_cost = (p.tips_count or 0) * (t.dealer_tip_amount or 0)
+        p_invested = t.buyin_amount + p_rebuys_cost + p_addons_cost + p_tips_cost
         
         # Sumar a totales del torneo
         total_buyins += t.buyin_amount
