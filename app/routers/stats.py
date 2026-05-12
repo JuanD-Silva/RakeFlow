@@ -393,11 +393,17 @@ async def get_rankings(
             for p in t.players:
                 pid = p.player_id
 
-                # 1. Calcular Profit (Premio - Inversión)
+                # 1. Calcular Profit (Premio - Inversión).
+                # rebuys_count/addons_count son TOTALES (singles + dobles):
+                # singles = total - dobles, valuados a precio single; dobles a precio double.
+                single_rebuys = max(0, (p.rebuys_count or 0) - (p.double_rebuys_count or 0))
+                single_addons = max(0, (p.addons_count or 0) - (p.double_addons_count or 0))
                 inv = t.buyin_amount + \
                       ((p.tips_count or 0) * (t.dealer_tip_amount or 0)) + \
-                      ((p.rebuys_count + p.double_rebuys_count) * t.rebuy_price) + \
-                      ((p.addons_count + p.double_addons_count) * t.addon_price)
+                      single_rebuys * t.rebuy_price + \
+                      (p.double_rebuys_count or 0) * t.double_rebuy_price + \
+                      single_addons * t.addon_price + \
+                      (p.double_addons_count or 0) * t.double_addon_price
 
                 net = (p.prize_collected or 0) - inv
                 if net > 0:

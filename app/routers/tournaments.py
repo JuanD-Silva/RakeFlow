@@ -594,12 +594,16 @@ async def get_tournament_details(
         p_name_res = await db.execute(select(models.Player.name).where(models.Player.id == p.player_id))
         p_name = p_name_res.scalar() or "Desconocido"
 
-        # Calcular gastos de este jugador (incluye tips en lo que el jugador pago)
-        p_rebuys_cost = (p.rebuys_count * t.rebuy_price) + (p.double_rebuys_count * t.double_rebuy_price)
-        p_addons_cost = (p.addons_count * t.addon_price) + (p.double_addons_count * t.double_addon_price)
+        # rebuys_count y addons_count son TOTALES (singles + doubles).
+        # Para calcular costo: singles = total - dobles, dobles = como esten.
+        single_rebuys = max(0, (p.rebuys_count or 0) - (p.double_rebuys_count or 0))
+        single_addons = max(0, (p.addons_count or 0) - (p.double_addons_count or 0))
+
+        p_rebuys_cost = single_rebuys * t.rebuy_price + (p.double_rebuys_count or 0) * t.double_rebuy_price
+        p_addons_cost = single_addons * t.addon_price + (p.double_addons_count or 0) * t.double_addon_price
         p_tips_cost = (p.tips_count or 0) * (t.dealer_tip_amount or 0)
         p_invested = t.buyin_amount + p_rebuys_cost + p_addons_cost + p_tips_cost
-        
+
         # Sumar a totales del torneo
         total_buyins += t.buyin_amount
         total_rebuys_money += p_rebuys_cost
@@ -610,8 +614,8 @@ async def get_tournament_details(
             "player_id": p.player_id,
             "name": p_name,
             "rank": p.rank if p.rank else 999,
-            "rebuys_count": p.rebuys_count + p.double_rebuys_count,
-            "addons_count": p.addons_count + p.double_addons_count,
+            "rebuys_count": p.rebuys_count or 0,  # ya es el total (singles + dobles)
+            "addons_count": p.addons_count or 0,
             "invested": p_invested,
             "prize": p.prize_collected or 0,
             "net_profit": (p.prize_collected or 0) - p_invested
