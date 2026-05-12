@@ -316,12 +316,18 @@ const handleCreateTournament = async (formData) => {
                    <h1 className="text-white font-black text-xl tracking-tight uppercase leading-none">
                      {activeTournament.name}
                    </h1>
-                   <div className="flex items-center gap-2 mt-1.5">
-                       <span className="relative flex h-2.5 w-2.5">
-                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75"></span>
-                         <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-violet-500"></span>
+                   <div className="flex items-center gap-3 mt-1.5">
+                       <div className="flex items-center gap-2">
+                         <span className="relative flex h-2.5 w-2.5">
+                           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75"></span>
+                           <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-violet-500"></span>
+                         </span>
+                         <span className="text-violet-500 text-xs font-bold uppercase tracking-[0.15em]">Torneo en Curso</span>
+                       </div>
+                       <span className="text-gray-600">·</span>
+                       <span className="text-violet-300 text-xs font-bold tracking-wider">
+                         {activeTournament.players?.length || 0} jugador{(activeTournament.players?.length || 0) === 1 ? '' : 'es'}
                        </span>
-                       <span className="text-violet-500 text-xs font-bold uppercase tracking-[0.15em]">Torneo en Curso</span>
                    </div>
                 </div>
              </div>
@@ -559,14 +565,20 @@ const handleCreateTournament = async (formData) => {
                {/* Opción TORNEO */}
 {activeTournament ? (
                    // CASO A: YA HAY TORNEO -> Botón "CONTINUAR"
-                   <button 
-                     onClick={() => setViewMode("tournament")} 
-                     className="group relative overflow-hidden w-full bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white font-bold text-lg py-4 px-8 rounded-xl shadow-[0_0_20px_rgba(124,58,237,0.4)] border-b-4 border-violet-900 active:border-b-0 active:translate-y-1 transition-all duration-150 flex items-center justify-center gap-4 uppercase tracking-wider animate-pulse-slow"
+                   <button
+                     onClick={() => setViewMode("tournament")}
+                     className="group relative overflow-hidden w-full bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white font-bold text-lg py-4 px-8 rounded-xl shadow-[0_0_20px_rgba(124,58,237,0.4)] border-b-4 border-violet-900 active:border-b-0 active:translate-y-1 transition-all duration-150 flex items-center justify-between gap-4 uppercase tracking-wider animate-pulse-slow"
                    >
-                     <div className="bg-white/20 p-2 rounded-lg"><TrophyIcon className="w-6 h-6 text-white" /></div>
-                     <div className="text-left">
-                        <span className="block text-xs text-violet-200 font-medium">Torneo en Curso</span>
-                        <span className="block leading-none">Continuar Torneo</span>
+                     <div className="flex items-center gap-4">
+                       <div className="bg-white/20 p-2 rounded-lg shrink-0"><TrophyIcon className="w-6 h-6 text-white" /></div>
+                       <div className="text-left">
+                          <span className="block text-xs text-violet-200 font-medium">{activeTournament.name}</span>
+                          <span className="block leading-none">Continuar Torneo</span>
+                       </div>
+                     </div>
+                     <div className="flex items-center gap-1.5 bg-white/10 px-3 py-1.5 rounded-lg border border-white/20">
+                       <UserGroupIcon className="w-4 h-4 text-white shrink-0" />
+                       <span className="text-sm font-black font-mono">{activeTournament.players?.length || 0}</span>
                      </div>
                    </button>
                ) : (
