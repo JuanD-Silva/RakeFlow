@@ -170,7 +170,7 @@ export default function TournamentPlayerTable({ tournament, onUpdate }) {
 
             {/* NOTIFICACIONES (TOASTS) */}
             {notification.show && (
-                <div className={`fixed top-5 right-5 z-[100] px-6 py-4 rounded-xl shadow-2xl border flex items-center gap-3 animate-fade-in-up ${notification.type === 'error' ? 'bg-red-900/90 border-red-500 text-white' : 'bg-emerald-900/90 border-emerald-500 text-white'}`}>
+                <div className={`fixed top-4 left-4 right-4 sm:left-auto sm:right-5 sm:top-5 z-[100] px-6 py-4 rounded-xl shadow-2xl border flex items-center gap-3 animate-fade-in-up ${notification.type === 'error' ? 'bg-red-900/90 border-red-500 text-white' : 'bg-emerald-900/90 border-emerald-500 text-white'}`}>
                     {notification.type === 'error' ? <XCircleIcon className="w-6 h-6"/> : <CheckCircleIcon className="w-6 h-6"/>}
                     <span className="font-bold">{notification.message}</span>
                 </div>

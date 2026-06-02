@@ -302,8 +302,8 @@ const handleCreateTournament = async (formData) => {
         </div>
       )}
 
-      {/* HEADER: BARRA DE ESTADO PRO (Dinámica según el modo) */}
-      <header className={`border-b-4 rounded-t-lg shadow-xl p-5 flex flex-col md:flex-row justify-between items-center mb-8 gap-4 ${viewMode === 'tournament' ? 'bg-gray-900 border-violet-600' : 'bg-gray-800 border-emerald-600'}`}>
+      {/* HEADER: BARRA DE ESTADO PRO (Dinámica según el modo) — compacto en movil */}
+      <header className={`border-b-4 rounded-t-lg shadow-xl p-3 md:p-5 flex flex-col md:flex-row justify-between items-start md:items-center mb-4 md:mb-8 gap-3 md:gap-4 ${viewMode === 'tournament' ? 'bg-gray-900 border-violet-600' : 'bg-gray-800 border-emerald-600'}`}>
         
         <div className="flex items-center gap-4 w-full md:w-auto">
           {/* CASO 1: TORNEO ACTIVO */}
@@ -653,7 +653,7 @@ const handleCreateTournament = async (formData) => {
       {/* MODAL NUEVA MESA */}
       {showNewTableModal && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[60] backdrop-blur-md p-4 animate-fade-in">
-          <div className="bg-gray-900 rounded-2xl border border-emerald-500/30 shadow-2xl w-full max-w-sm overflow-hidden">
+          <div className="bg-gray-900 rounded-2xl border border-emerald-500/30 shadow-2xl w-full max-w-sm max-h-[90vh] overflow-y-auto">
             <div className="bg-gray-800 p-4 border-b border-gray-700 flex items-center gap-3">
               <TableCellsIcon className="w-6 h-6 text-emerald-400" />
               <h3 className="text-lg font-bold text-white">Nueva mesa</h3>
@@ -698,7 +698,7 @@ const handleCreateTournament = async (formData) => {
       {showAuditModal && auditData && (
         <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[60] p-4 backdrop-blur-md animate-fade-in">
            {/* ... Contenido igual al que ya tenías ... */}
-           <div className="bg-gray-900 rounded-xl max-w-sm w-full border border-gray-700 shadow-2xl overflow-hidden">
+           <div className="bg-gray-900 rounded-xl max-w-sm w-full max-h-[90vh] overflow-y-auto border border-gray-700 shadow-2xl">
              <div className="bg-gray-800 p-4 border-b border-gray-700 flex justify-between items-center">
                <h3 className="text-lg font-bold text-white flex items-center gap-2">📑 Auditoría Rápida</h3>
                <button onClick={() => setShowAuditModal(false)} className="text-gray-400 hover:text-white">&times;</button>
@@ -723,7 +723,7 @@ const handleCreateTournament = async (formData) => {
       )}
       {showEndTournamentModal && (
     <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[70] backdrop-blur-sm p-4 animate-fade-in">
-         <div className="bg-gray-800 rounded-2xl border border-red-500/50 shadow-2xl w-full max-w-sm p-6 text-center">
+         <div className="bg-gray-800 rounded-2xl border border-red-500/50 shadow-2xl w-full max-w-sm max-h-[90vh] overflow-y-auto p-6 text-center">
              <div className="bg-red-500/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
                  <ExclamationTriangleIcon className="w-8 h-8 text-red-500" />
              </div>
