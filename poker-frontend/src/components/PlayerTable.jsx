@@ -134,7 +134,189 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
 
   return (
     <div className="bg-gray-800 rounded-xl shadow-2xl border border-gray-700 overflow-hidden mt-6 animate-fade-in">
-      <div className="overflow-x-auto">
+      {/* MOVIL: cards apiladas */}
+      <div className="md:hidden divide-y divide-gray-700">
+        {players.map((p) => {
+          const isExpanded = expandedPlayerId === p.player_id;
+          const transactions = p.transactions || [];
+          const buyins = transactions.filter(t => t.type === 'BUYIN' || t.type === 'REBUY');
+          const totalCount = p.buyins_count || 0;
+          const paidCount = p.paid_buyins_count || 0;
+          const allPaid = totalCount > 0 && paidCount === totalCount;
+          const mixed = paidCount > 0 && paidCount < totalCount;
+          const payStyle = allPaid
+            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+            : mixed
+            ? 'bg-amber-500/10 border-amber-500/40 text-amber-400'
+            : 'bg-red-500/10 border-red-500/40 text-red-400';
+          const payLabel = allPaid ? '✓ Pago' : mixed ? `${paidCount}/${totalCount} pagas` : '⏳ Debe';
+          return (
+            <div key={`m-${p.player_id}`} className="p-4">
+              {/* HEADER: nombre + balance */}
+              <div className="flex items-start justify-between gap-3 mb-3">
+                <div className="min-w-0 flex-1">
+                  <button
+                    onClick={() => onPlayerSelect(p)}
+                    className="font-bold text-white text-base flex items-center gap-1 hover:text-blue-400 max-w-full"
+                    title="Editar movimientos"
+                  >
+                    <span className="truncate">{p.name}</span>
+                    <span className="text-xs shrink-0">✏️</span>
+                  </button>
+                  <div className="flex flex-wrap gap-2 text-[10px] mt-1 items-center">
+                    {buyins.length > 1 && <span className="text-emerald-400 font-mono">{buyins.length} entradas</span>}
+                    {p.has_digital_payments && <span className="text-blue-300">📱 Digital</span>}
+                    {p.is_busted && (
+                      <span className="bg-red-500/15 border border-red-500/40 text-red-400 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">
+                        💀 Quebro {p.busted_at ? `· ${formatTime(p.busted_at)}` : ''}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <span className={`font-mono font-bold px-3 py-1.5 rounded-lg text-base shrink-0 ${
+                  p.current_balance >= 0
+                    ? 'bg-green-900/30 text-green-400 border border-green-500/30'
+                    : 'bg-red-900/30 text-red-400 border border-red-500/30'
+                }`}>
+                  {formatMoney(p.current_balance)}
+                </span>
+              </div>
+
+              {/* MINI GRID DE MONTOS */}
+              <div className="grid grid-cols-2 gap-2 text-xs mb-3">
+                <div className="bg-gray-900/40 p-2 rounded border border-gray-700">
+                  <div className="text-emerald-500 text-[10px] uppercase tracking-wider">Buy-ins</div>
+                  <div className="font-mono text-gray-200 text-sm">{formatMoney(p.total_buyin)}</div>
+                </div>
+                <div className="bg-gray-900/40 p-2 rounded border border-gray-700">
+                  <div className="text-red-500 text-[10px] uppercase tracking-wider">Cashouts</div>
+                  <div className="font-mono text-gray-200 text-sm">{p.total_cashout > 0 ? formatMoney(p.total_cashout) : '-'}</div>
+                </div>
+                {p.total_spend > 0 && (
+                  <div className="bg-gray-900/40 p-2 rounded border border-gray-700">
+                    <div className="text-amber-500 text-[10px] uppercase tracking-wider">Gastos</div>
+                    <div className="font-mono text-red-300 text-sm">-{formatMoney(p.total_spend)}</div>
+                  </div>
+                )}
+                {p.total_jackpot > 0 && (
+                  <div className="bg-gray-900/40 p-2 rounded border border-gray-700">
+                    <div className="text-purple-400 text-[10px] uppercase tracking-wider">Jackpot</div>
+                    <div className="font-mono text-purple-300 text-sm">+{formatMoney(p.total_jackpot)}</div>
+                  </div>
+                )}
+                {p.total_bonus > 0 && (
+                  <div className="bg-gray-900/40 p-2 rounded border border-gray-700">
+                    <div className="text-orange-400 text-[10px] uppercase tracking-wider">Bono</div>
+                    <div className="font-mono text-orange-300 text-sm">+{formatMoney(p.total_bonus)}</div>
+                  </div>
+                )}
+              </div>
+
+              {/* ACCIONES: toggle pago + ver detalles */}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => togglePaid(p)}
+                  className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider border transition-all active:scale-95 ${payStyle}`}
+                >
+                  {payLabel}
+                </button>
+                <button
+                  onClick={() => toggleRow(p.player_id)}
+                  className="flex-1 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider border border-gray-600 text-gray-300 bg-gray-800 hover:bg-gray-700 transition-all active:scale-95 flex items-center justify-center gap-1"
+                >
+                  {isExpanded ? <ChevronUpIcon className="w-3 h-3" /> : <ChevronDownIcon className="w-3 h-3" />}
+                  {isExpanded ? 'Cerrar' : 'Detalles'}
+                </button>
+              </div>
+
+              {/* DETALLES EXPANDIDOS */}
+              {isExpanded && (
+                <div className="mt-3 bg-gray-900/50 rounded-lg p-3 space-y-3 animate-fade-in">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-emerald-400 text-[10px] font-bold uppercase tracking-widest flex items-center gap-1">
+                      <ClockIcon className="w-3 h-3" /> Entradas
+                    </h4>
+                    <button
+                      onClick={() => toggleBust(p)}
+                      className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded border transition-all active:scale-95 ${
+                        p.is_busted
+                          ? 'bg-red-500/20 border-red-500/50 text-red-300'
+                          : 'bg-gray-800 border-gray-600 text-gray-400'
+                      }`}
+                    >
+                      {p.is_busted ? '💀 Quebro (deshacer)' : '💀 Quebro'}
+                    </button>
+                  </div>
+                  {buyins.length > 0 ? (
+                    <ul className="space-y-1.5">
+                      {buyins.map((tx) => (
+                        <li key={tx.id} className="flex justify-between items-center text-xs p-2 bg-gray-800/50 rounded border border-gray-700">
+                          <div className="flex flex-col min-w-0">
+                            <span className="text-white font-bold">{formatMoney(tx.amount)}</span>
+                            <span className="text-[9px] text-gray-500 uppercase truncate">{tx.type} · {tx.method || 'CASH'} · {formatTime(tx.created_at)}</span>
+                          </div>
+                          <button
+                            onClick={() => toggleTxPaid(p, tx)}
+                            className={`text-[10px] font-bold uppercase px-2 py-1 rounded border transition-all active:scale-95 shrink-0 ml-2 ${
+                              tx.is_paid
+                                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                                : 'bg-red-500/10 border-red-500/40 text-red-400'
+                            }`}
+                          >
+                            {tx.is_paid ? '✓ Pago' : '⏳ Debe'}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-gray-500 text-xs italic">Sin entradas.</p>
+                  )}
+                  {(p.total_jackpot > 0 || p.total_bonus > 0) && (
+                    <div>
+                      <h4 className="text-purple-400 text-[10px] font-bold uppercase tracking-widest mb-1.5">Premios y Bonos</h4>
+                      <ul className="space-y-1.5">
+                        {transactions.filter(t => t.type === 'JACKPOT_PAYOUT' || t.type === 'BONUS').map((tx, idx) => (
+                          <li key={`${p.player_id}-pb-${idx}`} className={`flex justify-between items-center text-xs p-2 rounded border ${
+                            tx.type === 'BONUS' ? 'bg-orange-900/10 border-orange-500/20' : 'bg-purple-900/10 border-purple-500/20'
+                          }`}>
+                            <span className={`font-bold ${tx.type === 'BONUS' ? 'text-orange-300' : 'text-purple-300'}`}>+{formatMoney(tx.amount)}</span>
+                            <span className="text-gray-400 text-[10px]">{tx.type === 'BONUS' ? 'Bono' : 'Jackpot'} · {formatTime(tx.created_at)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* MOVIL: totales mesa */}
+      {players.length > 0 && (
+        <div className="md:hidden bg-gray-900 border-t-2 border-gray-600 p-4 flex flex-col gap-2">
+          <div className="flex justify-between items-center text-xs uppercase tracking-wider">
+            <span className="text-gray-500 font-bold">Totales mesa</span>
+            {players.filter(p => p.has_pending_payment).length > 0 && (
+              <span className="bg-red-500/10 border border-red-500/30 text-red-400 text-[10px] font-bold uppercase px-2 py-0.5 rounded">
+                {players.filter(p => p.has_pending_payment).length} deben
+              </span>
+            )}
+          </div>
+          <div className="flex justify-between text-sm font-mono">
+            <span className="text-emerald-500">Buy-ins: {formatMoney(totals.buyin)}</span>
+            <span className="text-red-500">Out: {formatMoney(totals.cashout)}</span>
+          </div>
+          <div className="flex justify-between items-center pt-1 border-t border-gray-700">
+            <span className="text-gray-400 text-xs uppercase tracking-wider">Balance neto</span>
+            <span className="font-mono font-bold text-white text-lg">{formatMoney(totals.balance)}</span>
+          </div>
+        </div>
+      )}
+
+      {/* DESKTOP: tabla horizontal */}
+      <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="bg-gray-900 text-gray-400 text-xs uppercase tracking-wider border-b border-gray-700">

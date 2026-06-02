@@ -226,7 +226,93 @@ export default function TournamentPlayerTable({ tournament, onUpdate }) {
                         <button onClick={() => setIsRegisterOpen(true)} className="bg-violet-600 hover:bg-violet-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 shadow-lg"><UserPlusIcon className="w-3 h-3" /> Inscribir</button>
                     )}
                 </div>
-                <div className="overflow-x-auto">
+                {/* MOVIL: cards apiladas (la tabla en horizontal es ilegible en pantallas chicas) */}
+                <div className="md:hidden divide-y divide-gray-700">
+                    {playersWithStats.length === 0 && (
+                        <div className="p-6 text-center text-gray-500 text-sm italic">Aun no hay jugadores inscritos.</div>
+                    )}
+                    {playersWithStats.map((p) => (
+                        <div
+                            key={`m-${p.id}`}
+                            className={`p-4 ${p.status === 'ELIMINATED' ? 'opacity-50 grayscale' : p.status === 'WINNER' ? 'bg-yellow-900/10' : ''}`}
+                        >
+                            {/* HEADER: nombre + estado + accion eliminar */}
+                            <div className="flex items-start justify-between gap-3 mb-3">
+                                <div className="min-w-0 flex-1">
+                                    <div className="font-bold text-white text-base flex items-center gap-2 flex-wrap">
+                                        <span className="truncate">{getPlayerName(p.player_id)}</span>
+                                        {p.status === 'WINNER' && <span className="bg-yellow-500 text-black text-[10px] font-black px-1.5 rounded">#{p.rank}</span>}
+                                        {p.status === 'ELIMINATED' && <span className="text-red-500 text-[10px] font-black">OUT</span>}
+                                    </div>
+                                    <div className="text-green-400 font-mono font-bold text-xl mt-1">{formatCurrency(p.totalPaid)}</div>
+                                    <div className="text-[10px] text-gray-500 uppercase tracking-wider">Inversion total</div>
+                                </div>
+                                {p.status === 'ACTIVE' && tournament.status !== 'COMPLETED' && (
+                                    <button
+                                        onClick={() => handleEliminate(p.player_id, getPlayerName(p.player_id))}
+                                        className="p-2 -mr-1 -mt-1 text-gray-500 hover:text-red-500 transition-colors"
+                                        aria-label="Eliminar jugador"
+                                    >
+                                        <XCircleIcon className="w-7 h-7" />
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* BADGES: pago + rebuys + addons + tip */}
+                            <div className="flex flex-wrap gap-1.5 mb-3">
+                                <button
+                                    onClick={() => handleTogglePaid(p.player_id)}
+                                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border transition-all active:scale-95 ${
+                                        p.is_buyin_paid === false
+                                            ? 'bg-red-500/10 border-red-500/40 text-red-400'
+                                            : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                                    }`}
+                                >
+                                    {p.is_buyin_paid === false ? '⏳ Debe' : '✓ Pago'}
+                                </button>
+                                {p.singleRebuys > 0 && (
+                                    <span className="px-2 py-1 rounded bg-blue-900/20 border border-blue-500/30 text-[10px] font-bold text-blue-300 uppercase tracking-wide">
+                                        Rebuy Sgl x{p.singleRebuys}
+                                    </span>
+                                )}
+                                {p.doubleRebuys > 0 && (
+                                    <span className="px-2 py-1 rounded bg-blue-600/20 border border-blue-400 text-[10px] font-black text-blue-200 uppercase tracking-wide">
+                                        Rebuy Dbl x{p.doubleRebuys}
+                                    </span>
+                                )}
+                                {p.singleAddons > 0 && (
+                                    <span className="px-2 py-1 rounded bg-orange-900/20 border border-orange-500/30 text-[10px] font-bold text-orange-300 uppercase tracking-wide">
+                                        Add Sgl x{p.singleAddons}
+                                    </span>
+                                )}
+                                {p.doubleAddons > 0 && (
+                                    <span className="px-2 py-1 rounded bg-orange-600/20 border border-orange-400 text-[10px] font-black text-orange-200 uppercase tracking-wide">
+                                        Add Dbl x{p.doubleAddons}
+                                    </span>
+                                )}
+                                {(p.tips_count || 0) > 0 && (
+                                    <span className="inline-flex items-center gap-1 bg-pink-500/10 border border-pink-500/30 text-pink-400 text-[10px] font-black px-2 py-1 rounded uppercase">
+                                        <CheckBadgeIcon className="w-3 h-3" /> Tip x{p.tips_count}
+                                    </span>
+                                )}
+                            </div>
+
+                            {/* GESTIONAR (target grande para touch) */}
+                            {p.status === 'ACTIVE' && tournament.status !== 'COMPLETED' && (
+                                <button
+                                    onClick={() => setActionPlayer(p)}
+                                    className="w-full bg-violet-600 hover:bg-violet-500 text-white py-3 rounded-lg text-sm font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-colors active:scale-[0.98]"
+                                >
+                                    <PlusCircleIcon className="w-5 h-5" />
+                                    Gestionar
+                                </button>
+                            )}
+                        </div>
+                    ))}
+                </div>
+
+                {/* DESKTOP: tabla horizontal */}
+                <div className="hidden md:block overflow-x-auto">
                     <table className="w-full text-left text-sm text-gray-400">
                         <thead className="bg-gray-700/50 text-xs uppercase font-bold text-gray-300">
                             <tr>
