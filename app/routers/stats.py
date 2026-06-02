@@ -58,27 +58,34 @@ async def _get_net_profit_in_range(db: AsyncSession, club_id: int, start: dateti
 # ---------------------------------------------------------
 @router.get("/dashboard")
 async def get_dashboard_stats(
+    start_date: str | None = None,
+    end_date: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_club: models.Club = Depends(get_current_club),
     _: models.User = Depends(require_role(_REPORT_ROLES)),
 ):
     try:
         now = datetime.utcnow()
-        # Todos los KPIs del dashboard son del MES EN CURSO (hora Colombia).
-        # El sub de cada card aclara "este mes" para que sea consistente.
-        # Para visión histórica está el modal "Ver detalle" que carga /history/.
-        start_of_month = _start_of_month_col_as_utc()
-        if current_club.rankings_reset_at and current_club.rankings_reset_at > start_of_month:
-            start_of_month = current_club.rankings_reset_at
+        # Si el frontend pasa rango (sincronizado con WeeklyReport navegando),
+        # usamos eso. Si no, default = mes en curso hora Colombia. Esto evita
+        # el desfase entre el rango que el user esta viendo y los KPIs.
+        if start_date and end_date:
+            range_start = datetime.combine(datetime.strptime(start_date, "%Y-%m-%d").date(), time.min)
+            range_end = datetime.combine(datetime.strptime(end_date, "%Y-%m-%d").date(), time.max)
+        else:
+            range_start = _start_of_month_col_as_utc()
+            range_end = now
+        if current_club.rankings_reset_at and current_club.rankings_reset_at > range_start:
+            range_start = current_club.rankings_reset_at
 
-        # A. TOTAL SESIONES Y HORAS DEL MES (Cash + Torneos)
+        # A. TOTAL SESIONES Y HORAS DEL RANGO (Cash + Torneos)
         stmt_cash = select(models.Session).where(
             models.Session.club_id == current_club.id,
             models.Session.status == "CLOSED",
-            models.Session.end_time >= start_of_month,
+            models.Session.end_time >= range_start,
+            models.Session.end_time <= range_end,
         )
         cash_sessions = (await db.execute(stmt_cash)).scalars().all()
-        # Duracion real por sesion (antes len(sessions) * 5 hardcoded).
         cash_hours = sum(
             (s.end_time - s.start_time).total_seconds() / 3600
             for s in cash_sessions if s.end_time and s.start_time
@@ -87,7 +94,8 @@ async def get_dashboard_stats(
         stmt_tourney = select(models.Tournament).where(
             models.Tournament.club_id == current_club.id,
             models.Tournament.status == "COMPLETED",
-            models.Tournament.end_time >= start_of_month,
+            models.Tournament.end_time >= range_start,
+            models.Tournament.end_time <= range_end,
         )
         tournaments = (await db.execute(stmt_tourney)).scalars().all()
         tourney_hours = sum(
@@ -98,20 +106,20 @@ async def get_dashboard_stats(
         total_sessions = len(cash_sessions) + len(tournaments)
         total_hours = cash_hours + tourney_hours
 
-        # B. RAKE DEL MES (Profit Operativo) — usado para avg_rake_hour y eficiencia
-        monthly_profit = await _get_net_profit_in_range(db, current_club.id, start_of_month, now)
+        # B. PROFIT DEL RANGO (cash + torneos)
+        range_profit = await _get_net_profit_in_range(db, current_club.id, range_start, range_end)
 
-        # C. META (Eficiencia) — mismo mes
+        # C. META (la meta es mensual por definicion, asi que efficiency siempre
+        # se calcula contra el MES del range_start, no contra el rango).
         stmt_meta = select(func.sum(models.DistributionRule.value)).where(
             models.DistributionRule.club_id == current_club.id,
             models.DistributionRule.active == True,
             or_(models.DistributionRule.rule_type == models.RuleType.MONTHLY_QUOTA, models.DistributionRule.rule_type == models.RuleType.FIXED)
         )
         # Sin reglas FIXED/QUOTA activas no hay meta: devolvemos 0 para que el
-        # frontend oculte la barra (antes default 50M hardcoded que aparecia
-        # aunque el club nunca hubiera configurado meta).
+        # frontend oculte la barra.
         monthly_goal = (await db.execute(stmt_meta)).scalar() or 0.0
-        efficiency = (monthly_profit / monthly_goal * 100) if monthly_goal > 0 else 0
+        efficiency = (range_profit / monthly_goal * 100) if monthly_goal > 0 else 0
 
         # D. JACKPOT — historico (no filtra fecha, es saldo acumulado)
         stmt_jackpot_in = select(func.sum(models.Session.declared_jackpot_cash)).where(models.Session.club_id == current_club.id, models.Session.status == "CLOSED")
@@ -120,9 +128,7 @@ async def get_dashboard_stats(
         stmt_jackpot_out = select(func.sum(models.Transaction.amount)).join(models.Session).where(models.Transaction.type == models.TransactionType.JACKPOT_PAYOUT, models.Session.club_id == current_club.id)
         jackpot_out = (await db.execute(stmt_jackpot_out)).scalar() or 0.0
 
-        # E. BUY-IN PROMEDIO DEL MES = monto total de buyins/rebuys / numero de
-        # entradas. Antes dividia por jugadores unicos lo cual daba el "gasto
-        # total por persona" (ej $700k), no el monto por entrada (~$50-100k).
+        # E. BUY-IN PROMEDIO DEL RANGO = monto total / numero de entradas.
         stmt_avg_ticket = (
             select(
                 func.coalesce(func.sum(models.Transaction.amount), 0).label("total_buyin"),
@@ -132,7 +138,8 @@ async def get_dashboard_stats(
             .where(
                 models.Session.club_id == current_club.id,
                 models.Session.status == models.SessionStatus.CLOSED,
-                models.Session.end_time >= start_of_month,
+                models.Session.end_time >= range_start,
+                models.Session.end_time <= range_end,
                 models.Transaction.type.in_([models.TransactionType.BUYIN, models.TransactionType.REBUY]),
             )
         )
@@ -140,7 +147,7 @@ async def get_dashboard_stats(
         avg_ticket = int(row.total_buyin / row.entries) if (row and row.entries) else 0
 
         return {
-            "avg_rake_hour": int(monthly_profit / total_hours) if total_hours > 0 else 0,
+            "avg_rake_hour": int(range_profit / total_hours) if total_hours > 0 else 0,
             "total_hours": round(total_hours, 1),
             "total_sessions": total_sessions,
             "avg_ticket": avg_ticket,
@@ -258,6 +265,8 @@ async def get_weekly_distribution(
 # ---------------------------------------------------------
 @router.get("/monthly-debt-quota")
 async def get_monthly_debt_quota(
+    start_date: str | None = None,
+    end_date: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_club: models.Club = Depends(get_current_club),
     _: models.User = Depends(require_role(_REPORT_ROLES)),
@@ -266,11 +275,18 @@ async def get_monthly_debt_quota(
     stmt_rules = select(func.sum(models.DistributionRule.value)).where(models.DistributionRule.club_id == current_club.id, models.DistributionRule.active == True, or_(models.DistributionRule.rule_type == models.RuleType.MONTHLY_QUOTA, models.DistributionRule.rule_type == models.RuleType.FIXED))
     target = (await db.execute(stmt_rules)).scalar() or 0.0
 
-    # Pagado (Profit Acumulado) — mes en hora Colombia para que coincida con la UI del cliente.
+    # Pagado: por defecto mes en curso (hora Colombia). Si el frontend pasa rango
+    # (sincronizado con WeeklyReport), usamos ese rango — asi la card "Rake del Mes"
+    # se sincroniza con el periodo que el user esta viendo.
     now = datetime.utcnow()
-    start_of_month = _start_of_month_col_as_utc()
+    if start_date and end_date:
+        range_start = datetime.combine(datetime.strptime(start_date, "%Y-%m-%d").date(), time.min)
+        range_end = datetime.combine(datetime.strptime(end_date, "%Y-%m-%d").date(), time.max)
+    else:
+        range_start = _start_of_month_col_as_utc()
+        range_end = now
 
-    current = await _get_net_profit_in_range(db, current_club.id, start_of_month, now)
+    current = await _get_net_profit_in_range(db, current_club.id, range_start, range_end)
     
     remaining = max(0.0, target - current)
 

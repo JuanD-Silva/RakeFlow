@@ -25,7 +25,7 @@ function formatDate(iso) {
   return d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-export default function KPIDashboard() {
+export default function KPIDashboard({ startDate, endDate } = {}) {
   const [stats, setStats] = useState(null);
   const [quota, setQuota] = useState(null);
   const [error, setError] = useState(null);
@@ -38,9 +38,22 @@ export default function KPIDashboard() {
   useEffect(() => {
     async function fetchStats() {
       try {
+        // Si recibimos rango (sincronizado con el periodo que el user navega
+        // en WeeklyReport), lo pasamos al backend para que los KPIs reflejen
+        // ese rango. Sin rango → default backend = mes en curso hora Colombia.
+        let params = '';
+        if (startDate && endDate) {
+          const fmt = (d) => {
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${y}-${m}-${day}`;
+          };
+          params = `?start_date=${fmt(startDate)}&end_date=${fmt(endDate)}`;
+        }
         const [dashRes, quotaRes] = await Promise.all([
-          api.get('/stats/dashboard'),
-          api.get('/stats/monthly-debt-quota')
+          api.get(`/stats/dashboard${params}`),
+          api.get(`/stats/monthly-debt-quota${params}`),
         ]);
         setStats(dashRes.data);
         setQuota(quotaRes.data);
@@ -50,7 +63,7 @@ export default function KPIDashboard() {
       }
     }
     fetchStats();
-  }, []);
+  }, [startDate, endDate]);
 
   const openHoursModal = async () => {
     setShowHoursModal(true);
@@ -111,7 +124,7 @@ export default function KPIDashboard() {
         <Card
           title="Rake / Hora"
           value={`$${stats.avg_rake_hour?.toLocaleString() ?? 0}`}
-          sub="Promedio este mes"
+          sub="Promedio del periodo"
           icon="⚡"
           color="border-yellow-500"
         />
@@ -119,7 +132,7 @@ export default function KPIDashboard() {
         <Card
           title="Horas Operadas"
           value={`${stats.total_hours ?? 0}h`}
-          sub={`${stats.total_sessions ?? 0} sesiones este mes`}
+          sub={`${stats.total_sessions ?? 0} sesiones del periodo`}
           icon="⏱️"
           color="border-blue-500"
           onClick={openHoursModal}
@@ -128,17 +141,17 @@ export default function KPIDashboard() {
         <Card
           title="Buy-in Promedio"
           value={`$${stats.avg_ticket?.toLocaleString() ?? 0}`}
-          sub="Por entrada (este mes)"
+          sub="Por entrada"
           icon="🎟️"
           color="border-purple-500"
         />
 
         <Card
-          title="Rake del Mes"
+          title="Rake del Periodo"
           value={quota ? formatMoney(quota.paid_so_far) : '$0'}
           sub={quota && quota.target > 0
             ? `${Math.min(100, (quota.paid_so_far / quota.target) * 100).toFixed(0)}% de la meta`
-            : "Acumulado este mes"}
+            : "Acumulado del periodo"}
           icon="💰"
           color={quota && quota.target > 0 && quota.remaining <= 0 ? "border-green-500" : "border-emerald-500"}
         />

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import api from '../api/axios';
 import KPIDashboard from '../components/KPIDashboard';
 import { formatMoney } from '../utils/formatters';
@@ -17,6 +17,34 @@ export default function WeeklyReport() {
   const [viewMode, setViewMode] = useState('week'); 
   const [referenceDate, setReferenceDate] = useState(new Date());
 
+  // Rango calculado una sola vez; lo usamos para el fetch local Y se lo pasamos
+  // al KPIDashboard para que sus 4 KPIs sigan el mismo periodo que el usuario
+  // esta viendo (antes el dashboard miraba solo "mes en curso del server" y
+  // quedaba en 0 cuando el user navegaba mayo y el server estaba en junio).
+  const range = useMemo(() => {
+    const curr = new Date(referenceDate);
+    if (viewMode === 'week') {
+      const day = curr.getDay();
+      const diff = curr.getDate() - day + (day === 0 ? -6 : 1);
+      const s = new Date(curr); s.setDate(diff);
+      const e = new Date(s); e.setDate(s.getDate() + 6);
+      return { start: s, end: e };
+    }
+    return {
+      start: new Date(curr.getFullYear(), curr.getMonth(), 1),
+      end: new Date(curr.getFullYear(), curr.getMonth() + 1, 0),
+    };
+  }, [viewMode, referenceDate]);
+
+  const formatDateISO = (d) => {
+    // YYYY-MM-DD en hora local (no toISOString que convierte a UTC y
+    // puede saltar de dia)
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
   useEffect(() => {
     fetchData();
   }, [referenceDate, viewMode]);
@@ -24,24 +52,8 @@ export default function WeeklyReport() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      let start, end;
-      const curr = new Date(referenceDate);
+      const res = await api.get(`/stats/weekly-distribution?start_date=${formatDateISO(range.start)}&end_date=${formatDateISO(range.end)}`);
 
-      if (viewMode === 'week') {
-        const day = curr.getDay();
-        const diff = curr.getDate() - day + (day === 0 ? -6 : 1);
-        start = new Date(curr);
-        start.setDate(diff);
-        end = new Date(start);
-        end.setDate(start.getDate() + 6);
-      } else {
-        start = new Date(curr.getFullYear(), curr.getMonth(), 1);
-        end = new Date(curr.getFullYear(), curr.getMonth() + 1, 0);
-      }
-
-      const formatDate = (d) => d.toISOString().split('T')[0];
-      const res = await api.get(`/stats/weekly-distribution?start_date=${formatDate(start)}&end_date=${formatDate(end)}`);
-      
       if (res.data.error) {
         console.error("Server Error:", res.data.error);
         setData({ error: res.data.error });
@@ -105,7 +117,7 @@ export default function WeeklyReport() {
 
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-8 animate-fade-in">
-      <KPIDashboard />
+      <KPIDashboard startDate={range.start} endDate={range.end} />
       
       {/* HEADER Y NAVEGACIÓN */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gray-800/40 p-4 rounded-2xl border border-gray-700/50 backdrop-blur-sm">
