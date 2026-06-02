@@ -235,6 +235,7 @@ export default function TransactionForm({ type, onSuccess, sessionId, createSess
                 <UserIcon className="absolute left-3 top-3.5 w-5 h-5 text-gray-500" />
                 <input
                   type="text"
+                  autoComplete="name"
                   value={newPlayerName}
                   onChange={(e) => setNewPlayerName(e.target.value)}
                   className="w-full bg-gray-900/50 text-white border border-gray-600 rounded-xl py-3 pl-10 pr-4 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all placeholder-gray-600"
@@ -245,7 +246,9 @@ export default function TransactionForm({ type, onSuccess, sessionId, createSess
               <div className="relative">
                 <PhoneIcon className="absolute left-3 top-3.5 w-5 h-5 text-gray-500" />
                 <input
-                  type="text"
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
                   value={newPlayerPhone}
                   onChange={(e) => setNewPlayerPhone(e.target.value)}
                   className="w-full bg-gray-900/50 text-white border border-gray-600 rounded-xl py-3 pl-10 pr-4 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all placeholder-gray-600"
@@ -351,14 +354,15 @@ export default function TransactionForm({ type, onSuccess, sessionId, createSess
         <div className="relative mb-4">
           <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 text-2xl font-light">$</span>
           <input
-            type="number"
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
             value={amount}
-            onChange={(e) => setAmount(e.target.value)}
+            onChange={(e) => setAmount(e.target.value.replace(/\D/g, ''))}
             className={`w-full bg-gray-900 text-white border border-gray-600 rounded-xl py-4 pl-10 pr-4 focus:ring-2 ${config.ring} focus:border-transparent outline-none font-mono text-3xl font-bold placeholder-gray-700 shadow-inner`}
             placeholder="0"
-            min="1"
             required
-            autoFocus={type === 'tip'} 
+            autoFocus={type === 'tip'}
           />
         </div>
 

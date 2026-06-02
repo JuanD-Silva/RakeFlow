@@ -378,8 +378,8 @@ const handleCreateTournament = async (formData) => {
           )}
         </div>
 
-        {/* Reloj Digital */}
-        <div className="flex items-center gap-3 bg-gray-900/60 px-6 py-3 rounded-lg border border-gray-700 shadow-inner w-full md:w-auto justify-center md:justify-end">
+        {/* Reloj Digital — oculto en movil (el sistema ya muestra hora y ocupa mucho viewport) */}
+        <div className="hidden md:flex items-center gap-3 bg-gray-900/60 px-6 py-3 rounded-lg border border-gray-700 shadow-inner md:w-auto md:justify-end">
           <ClockIcon className="w-5 h-5 text-gray-400" />
           <span className="text-2xl font-mono text-white font-bold tracking-widest">
             {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
