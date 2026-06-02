@@ -96,3 +96,39 @@ async def tournament_rake_in_range(
             )
         total_rake += gross_pot * (t.rake_percentage / 100)
     return total_rake
+
+
+async def tournament_gross_pot_in_range(
+    db: AsyncSession, club_id: int, start, end
+) -> float:
+    """Pozo BRUTO total recaudado por torneos COMPLETED en el rango (antes de rake).
+
+    Usado para el KPI "Total Movido" (cuanta plata entro al club).
+    Misma logica de singles/dobles que tournament_rake_in_range pero sin
+    multiplicar por rake_percentage al final.
+    """
+    stmt = (
+        select(models.Tournament)
+        .options(selectinload(models.Tournament.players))
+        .where(
+            models.Tournament.club_id == club_id,
+            models.Tournament.status == "COMPLETED",
+            models.Tournament.end_time >= start,
+            models.Tournament.end_time <= end,
+        )
+    )
+    tournaments = (await db.execute(stmt)).scalars().all()
+
+    total_gross = 0.0
+    for t in tournaments:
+        for p in t.players:
+            single_rebuys = max(0, (p.rebuys_count or 0) - (p.double_rebuys_count or 0))
+            single_addons = max(0, (p.addons_count or 0) - (p.double_addons_count or 0))
+            total_gross += (
+                t.buyin_amount
+                + single_rebuys * t.rebuy_price
+                + (p.double_rebuys_count or 0) * t.double_rebuy_price
+                + single_addons * t.addon_price
+                + (p.double_addons_count or 0) * t.double_addon_price
+            )
+    return total_gross

@@ -147,13 +147,11 @@ export default function KPIDashboard({ startDate, endDate } = {}) {
         />
 
         <Card
-          title="Rake del Periodo"
-          value={quota ? formatMoney(quota.paid_so_far) : '$0'}
-          sub={quota && quota.target > 0
-            ? `${Math.min(100, (quota.paid_so_far / quota.target) * 100).toFixed(0)}% de la meta`
-            : "Acumulado del periodo"}
-          icon="💰"
-          color={quota && quota.target > 0 && quota.remaining <= 0 ? "border-green-500" : "border-emerald-500"}
+          title="Total Movido"
+          value={formatMoney(stats.total_in || 0)}
+          sub="Buyins cash + pozos torneos"
+          icon="💸"
+          color="border-emerald-500"
         />
 
         {quota && quota.target > 0 && (

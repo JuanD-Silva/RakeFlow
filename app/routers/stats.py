@@ -144,13 +144,22 @@ async def get_dashboard_stats(
             )
         )
         row = (await db.execute(stmt_avg_ticket)).first()
-        avg_ticket = int(row.total_buyin / row.entries) if (row and row.entries) else 0
+        cash_buyin_total = float(row.total_buyin) if row else 0.0
+        avg_ticket = int(cash_buyin_total / row.entries) if (row and row.entries) else 0
+
+        # F. TOTAL MOVIDO del rango = buyins cash + pozo bruto de torneos.
+        # Mide cuanta plata entro al club (no rake, dinero total movido).
+        tourney_gross = await services.tournament_gross_pot_in_range(
+            db, current_club.id, range_start, range_end
+        )
+        total_in = int(cash_buyin_total + tourney_gross)
 
         return {
             "avg_rake_hour": int(range_profit / total_hours) if total_hours > 0 else 0,
             "total_hours": round(total_hours, 1),
             "total_sessions": total_sessions,
             "avg_ticket": avg_ticket,
+            "total_in": total_in,
             "efficiency": round(efficiency, 1),
             "jackpot": int(jackpot_in - jackpot_out),
             "weekly_profit": 0
