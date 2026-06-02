@@ -48,8 +48,14 @@ async def get_history(
         if s.end_time and s.start_time:
             duration = int((s.end_time - s.start_time).total_seconds() / 60)
         
-        # Calcular Buyins Totales (Cash In) manualmente sumando transacciones
-        total_buyin = sum(t.amount for t in s.transactions if str(t.type) in ['BUYIN', 'REBUY'])
+        # Calcular Buyins Totales (Cash In) manualmente sumando transacciones.
+        # OJO: comparar con el enum directo. str(TransactionType.BUYIN) devuelve
+        # 'TransactionType.BUYIN', no 'BUYIN', asi que comparar str(t.type) con
+        # 'BUYIN'/'REBUY' siempre da False y total_in queda en 0.
+        total_buyin = sum(
+            t.amount for t in s.transactions
+            if t.type in (models.TransactionType.BUYIN, models.TransactionType.REBUY)
+        )
 
         history.append({
             "id": s.id,

@@ -215,7 +215,13 @@ export default function SessionHistory() {
                                             <div key={i} className="bg-gray-800/80 border border-gray-700 p-4 rounded-2xl flex flex-col justify-between">
                                                 <div className="flex justify-between items-start mb-2">
                                                     <span className="text-gray-300 text-xs font-bold uppercase tracking-tighter">{dist.name}</span>
-                                                    {dist.percent > 0 && <span className="text-[10px] bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded-md font-mono">{(dist.percent * 100).toFixed(0)}%</span>}
+                                                    {dist.percent > 0 && (
+                                                      <span className="text-[10px] bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded-md font-mono">
+                                                        {/* Compat: en cierres con regla PERCENTAGE se guarda como 0-100 (porcentaje),
+                                                            pero en el fallback sin reglas como 0-1 (fraccion). Detectar por magnitud. */}
+                                                        {(dist.percent > 1 ? dist.percent : dist.percent * 100).toFixed(0)}%
+                                                      </span>
+                                                    )}
                                                 </div>
                                                 <span className="text-white font-mono font-bold text-xl">{formatMoney(dist.amount)}</span>
                                             </div>
