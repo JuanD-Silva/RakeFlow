@@ -429,13 +429,18 @@ async def undo_action(
     else:
         raise HTTPException(status_code=400, detail="Accion invalida")
 
-    # Eliminar ultima transaccion correspondiente
+    # Eliminar la ultima transaccion del MISMO tipo (sencillo/doble) que se deshizo.
+    # Las descripciones distinguen "Sencillo" vs "Doble"; sin este filtro se borraba
+    # la transaccion mas reciente sin importar el tipo, desincronizando el ledger de
+    # transacciones contra los contadores (ej: deshacer un single borraba un double).
     tx_type = models.TransactionType.TOURNAMENT_REBUY if request.action == "rebuy" else models.TransactionType.TOURNAMENT_ADDON
+    desc_keyword = "Doble" if request.type == "DOUBLE" else "Sencillo"
     last_tx = await db.execute(
         select(models.Transaction)
         .where(models.Transaction.tournament_id == tournament_id)
         .where(models.Transaction.player_id == request.player_id)
         .where(models.Transaction.type == tx_type)
+        .where(models.Transaction.description.ilike(f"%{desc_keyword}%"))
         .order_by(models.Transaction.timestamp.desc())
         .limit(1)
     )

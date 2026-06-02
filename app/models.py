@@ -244,7 +244,6 @@ class Tournament(Base):
     double_addon_price = Column(Integer, default=0)
     # EXTRAS (Pagos Adicionales Fijos)
     dealer_tip_amount = Column(Integer, default=0) # Ej: 10.000 (Va a Dealers, no al pozo)
-    addon_price = Column(Integer, default=0)       # Ej: 50.000 (Va al Pozo Bruto)
     bounty_amount = Column(Integer, default=0)     # Ej: 20.000 (Va directo al jugador que elimina)
     
     # Estado

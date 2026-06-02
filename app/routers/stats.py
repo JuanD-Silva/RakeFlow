@@ -7,7 +7,7 @@ from typing import List
 from datetime import datetime, timedelta, time
 import logging
 
-from .. import models, schemas
+from .. import models, schemas, services
 from ..dependencies import get_db, get_current_club, require_role
 
 # Reportes financieros: solo dueno y encargado, no cashier
@@ -31,28 +31,8 @@ async def _get_net_profit_in_range(db: AsyncSession, club_id: int, start: dateti
     )
     cash = (await db.execute(stmt_cash)).scalar() or 0.0
 
-    # 2. TORNEOS
-    stmt_tourney = select(models.Tournament).options(selectinload(models.Tournament.players)).where(
-        models.Tournament.club_id == club_id,
-        models.Tournament.status == "COMPLETED",
-        models.Tournament.end_time >= start,
-        models.Tournament.end_time <= end
-    )
-    tournaments = (await db.execute(stmt_tourney)).scalars().all()
-    tourney = 0.0
-    for t in tournaments:
-        t_inc = 0
-        for p in t.players:
-            # Calcular ingresos brutos del torneo
-            inv = t.buyin_amount + \
-                  ((p.rebuys_count - p.double_rebuys_count) * t.rebuy_price) + \
-                  (p.double_rebuys_count * t.double_rebuy_price) + \
-                  ((p.addons_count - p.double_addons_count) * t.addon_price) + \
-                  (p.double_addons_count * t.double_addon_price)
-            t_inc += inv
-        tourney += (t_inc * (t.rake_percentage / 100))
-
-
+    # 2. TORNEOS (misma funcion que usa el cierre de caja: una sola fuente de verdad)
+    tourney = await services.tournament_rake_in_range(db, club_id, start, end)
 
     return (cash + int(tourney))
 

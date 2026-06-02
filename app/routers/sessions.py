@@ -13,7 +13,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Importamos modelos y esquemas
-from .. import models, schemas
+from .. import models, schemas, services
 # Importamos las dependencias SaaS
 from ..dependencies import get_db, get_current_club, require_role
 from ..audit import log_action, AuditAction
@@ -413,6 +413,15 @@ async def close_session(session_id: int, input_data: schemas.SessionCloseRequest
     cash_remaining = declared_rake
     calculation_base = declared_rake
 
+    # Los torneos SI cuentan para la meta: el rake de torneos del mes cubre las
+    # obligaciones fijas antes que el cash de hoy. Se consume en orden de prioridad
+    # entre las reglas FIXED para no doble-contarlo. Es el mismo numero que muestra
+    # el dashboard (services.tournament_rake_in_range = fuente unica de verdad).
+    _month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    tourney_credit = Decimal(str(await services.tournament_rake_in_range(
+        db, current_club.id, _month_start, datetime.utcnow()
+    )))
+
     stmt_rules = (
         select(models.DistributionRule)
         .where(
@@ -431,17 +440,23 @@ async def close_session(session_id: int, input_data: schemas.SessionCloseRequest
 
             # --- LÓGICA DE REGLA FIJA (META/DEUDA) ---
             if rule.rule_type == models.RuleType.FIXED:
-                start_of_month = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-
                 paid_stmt = select(func.sum(models.FinancialDistribution.amount)).join(models.Session).where(
                     models.Session.club_id == current_club.id,
                     models.FinancialDistribution.name == rule.name,
-                    models.Session.end_time >= start_of_month,
+                    models.Session.end_time >= _month_start,
                     models.Session.status == models.SessionStatus.CLOSED
                 )
                 total_paid_already = Decimal(str((await db.execute(paid_stmt)).scalar() or 0))
 
                 remaining_gap = max(Decimal(0), Decimal(str(rule.value)) - total_paid_already)
+
+                # El rake de torneos del mes cubre el gap antes que el cash de hoy.
+                # No reduce calculation_base (la base del % de socios) porque no es
+                # cash que entra en este cierre.
+                covered_by_tourney = min(tourney_credit, remaining_gap)
+                tourney_credit -= covered_by_tourney
+                remaining_gap -= covered_by_tourney
+
                 amount_to_pay = min(remaining_gap, cash_remaining)
 
                 calculation_base -= amount_to_pay
@@ -484,6 +499,8 @@ async def close_session(session_id: int, input_data: schemas.SessionCloseRequest
             models.Session.end_time >= current_month
         )
         paid_so_far = Decimal(str((await db.execute(stmt_paid)).scalar() or 0))
+        # Los torneos tambien cuentan para la meta en el fallback sin reglas.
+        paid_so_far += tourney_credit
         remaining_debt = max(Decimal(0), MONTHLY_TARGET - paid_so_far)
 
         if declared_rake >= remaining_debt:
