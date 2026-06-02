@@ -220,12 +220,15 @@ export default function WeeklyReport() {
                 key={idx}
                 className={`group relative bg-gray-800 border border-gray-700 rounded-2xl p-4 sm:p-6 transition-all hover:shadow-2xl ${theme.hoverBorder}`}
               >
-                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3 sm:gap-4">
+                {/* Layout vertical siempre: icon+nombre arriba, valor full-width abajo.
+                    El horizontal con justify-between rompia el numero cuando la card
+                    quedaba angosta (ej. cuando hay 1 sola distribucion en md:grid-cols-2). */}
+                <div className="flex flex-col gap-3">
                   <div className="flex items-center gap-3 sm:gap-4 min-w-0">
                     <div className={`w-12 h-12 sm:w-14 sm:h-14 shrink-0 rounded-2xl flex items-center justify-center shadow-lg transition-transform group-hover:scale-110 ${theme.bgColor} ${theme.mainColor} ${theme.borderColor} border`}>
                       <theme.icon className="w-6 h-6 sm:w-7 sm:h-7" />
                     </div>
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <h3 className={`text-base sm:text-xl font-black text-white group-hover:${theme.mainColor} transition-colors uppercase tracking-tighter truncate`}>
                         {item.name}
                       </h3>
@@ -234,11 +237,11 @@ export default function WeeklyReport() {
                       </p>
                     </div>
                   </div>
-                  <div className="sm:text-right min-w-0 border-t sm:border-t-0 border-gray-700/50 pt-3 sm:pt-0">
-                    <div className="text-[10px] font-black text-green-500 bg-green-500/10 px-2 py-0.5 rounded-md mb-1 sm:mb-2 inline-block">
+                  <div className="border-t border-gray-700/50 pt-3 flex items-end justify-between gap-3">
+                    <div className="text-[10px] font-black text-green-500 bg-green-500/10 px-2 py-0.5 rounded-md inline-block self-center">
                       + GANANCIA
                     </div>
-                    <p className="text-2xl sm:text-3xl font-black font-mono text-white leading-tight tabular-nums break-words">
+                    <p className="text-2xl sm:text-3xl font-black font-mono text-white leading-none tabular-nums whitespace-nowrap text-right">
                       {formatMoney(item.total)}
                     </p>
                   </div>

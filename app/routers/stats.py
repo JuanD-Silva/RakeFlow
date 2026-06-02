@@ -5,10 +5,27 @@ from sqlalchemy import func, text, desc, or_
 from sqlalchemy.orm import selectinload
 from typing import List
 from datetime import datetime, timedelta, time
+from zoneinfo import ZoneInfo
 import logging
 
 from .. import models, schemas, services
 from ..dependencies import get_db, get_current_club, require_role
+
+# Mambo y demas clubes operan en Colombia. Railway corre en UTC, asi que
+# usar datetime.utcnow().replace(day=1) deja el "mes en curso" desfasado
+# para el cliente entre 19:00 (Colombia) y 00:00 (UTC) del primer dia del mes
+# siguiente: el server pasa al mes nuevo pero el cliente todavia ve el anterior.
+_COL_TZ = ZoneInfo("America/Bogota")
+_UTC = ZoneInfo("UTC")
+
+
+def _start_of_month_col_as_utc() -> datetime:
+    """Inicio del mes en hora Colombia, expresado como UTC naive para
+    comparar con Session.end_time / Tournament.end_time (que se guardan
+    con datetime.utcnow() — naive UTC)."""
+    col_now = datetime.now(_COL_TZ)
+    col_start = col_now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    return col_start.astimezone(_UTC).replace(tzinfo=None)
 
 # Reportes financieros: solo dueno y encargado, no cashier
 _REPORT_ROLES = [models.UserRole.OWNER, models.UserRole.MANAGER]
@@ -47,7 +64,7 @@ async def get_dashboard_stats(
 ):
     try:
         now = datetime.utcnow()
-        start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        start_of_month = _start_of_month_col_as_utc()
         # Si el club tiene reset manual dentro del mes, respetarlo.
         if current_club.rankings_reset_at and current_club.rankings_reset_at > start_of_month:
             start_of_month = current_club.rankings_reset_at
@@ -78,7 +95,10 @@ async def get_dashboard_stats(
             models.DistributionRule.active == True,
             or_(models.DistributionRule.rule_type == models.RuleType.MONTHLY_QUOTA, models.DistributionRule.rule_type == models.RuleType.FIXED)
         )
-        monthly_goal = (await db.execute(stmt_meta)).scalar() or 50000000.0
+        # Sin reglas FIXED/QUOTA activas no hay meta: devolvemos 0 para que el
+        # frontend oculte la barra (antes default 50M hardcoded que aparecia
+        # aunque el club nunca hubiera configurado meta).
+        monthly_goal = (await db.execute(stmt_meta)).scalar() or 0.0
         efficiency = (total_profit / monthly_goal * 100) if monthly_goal > 0 else 0
 
         # D. JACKPOT
@@ -229,14 +249,14 @@ async def get_monthly_debt_quota(
     current_club: models.Club = Depends(get_current_club),
     _: models.User = Depends(require_role(_REPORT_ROLES)),
 ):
-    # Meta
+    # Meta. Sin reglas configuradas el target queda en 0 y el frontend oculta la barra.
     stmt_rules = select(func.sum(models.DistributionRule.value)).where(models.DistributionRule.club_id == current_club.id, models.DistributionRule.active == True, or_(models.DistributionRule.rule_type == models.RuleType.MONTHLY_QUOTA, models.DistributionRule.rule_type == models.RuleType.FIXED))
-    target = (await db.execute(stmt_rules)).scalar() or 50000000.0
+    target = (await db.execute(stmt_rules)).scalar() or 0.0
 
-    # Pagado (Profit Acumulado)
+    # Pagado (Profit Acumulado) — mes en hora Colombia para que coincida con la UI del cliente.
     now = datetime.utcnow()
-    start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    
+    start_of_month = _start_of_month_col_as_utc()
+
     current = await _get_net_profit_in_range(db, current_club.id, start_of_month, now)
     
     remaining = max(0.0, target - current)
@@ -274,8 +294,9 @@ async def get_rankings(
                 end_date = datetime(year, month + 1, 1)
             is_current_month = (year == now.year and month == now.month)
         else:
-            # Mes en curso (default): respeta rankings_reset_at del club
-            start_date = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            # Mes en curso (default): respeta rankings_reset_at del club.
+            # Mes en hora Colombia para coincidir con la UI del cliente.
+            start_date = _start_of_month_col_as_utc()
             if current_club.rankings_reset_at and current_club.rankings_reset_at > start_date:
                 start_date = current_club.rankings_reset_at
             end_date = now

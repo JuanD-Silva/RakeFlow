@@ -138,12 +138,12 @@ export default function KPIDashboard() {
           value={quota ? formatMoney(quota.paid_so_far) : '$0'}
           sub={quota && quota.target > 0
             ? `${Math.min(100, (quota.paid_so_far / quota.target) * 100).toFixed(0)}% de la meta`
-            : "Sin meta configurada"}
+            : "Acumulado este mes"}
           icon="💰"
-          color={quota && quota.remaining <= 0 ? "border-green-500" : "border-emerald-500"}
+          color={quota && quota.target > 0 && quota.remaining <= 0 ? "border-green-500" : "border-emerald-500"}
         />
 
-        {quota && (
+        {quota && quota.target > 0 && (
           <div className="sm:col-span-2 lg:col-span-4 bg-gray-800/80 border border-gray-700 rounded-xl p-4 shadow-lg">
             <div className="flex justify-between items-center mb-2">
               <p className="text-blue-400 text-xs font-bold uppercase tracking-wider">Meta Mensual</p>
