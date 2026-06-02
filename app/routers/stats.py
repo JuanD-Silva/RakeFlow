@@ -84,18 +84,36 @@ async def get_dashboard_stats(
         # D. JACKPOT
         stmt_jackpot_in = select(func.sum(models.Session.declared_jackpot_cash)).where(models.Session.club_id == current_club.id, models.Session.status == "CLOSED")
         jackpot_in = (await db.execute(stmt_jackpot_in)).scalar() or 0.0
-        
+
         stmt_jackpot_out = select(func.sum(models.Transaction.amount)).join(models.Session).where(models.Transaction.type == models.TransactionType.JACKPOT_PAYOUT, models.Session.club_id == current_club.id)
         jackpot_out = (await db.execute(stmt_jackpot_out)).scalar() or 0.0
+
+        # E. BUY-IN PROMEDIO: total buyins/rebuys del mes / jugadores unicos del mes.
+        # Antes estaba hardcoded en 0 y la card "Buy-in Promedio" siempre mostraba $0.
+        stmt_avg_ticket = (
+            select(
+                func.coalesce(func.sum(models.Transaction.amount), 0).label("total_buyin"),
+                func.count(func.distinct(models.Transaction.player_id)).label("unique_players"),
+            )
+            .join(models.Session, models.Transaction.session_id == models.Session.id)
+            .where(
+                models.Session.club_id == current_club.id,
+                models.Session.status == models.SessionStatus.CLOSED,
+                models.Session.end_time >= start_of_month,
+                models.Transaction.type.in_([models.TransactionType.BUYIN, models.TransactionType.REBUY]),
+            )
+        )
+        row = (await db.execute(stmt_avg_ticket)).first()
+        avg_ticket = int(row.total_buyin / row.unique_players) if (row and row.unique_players) else 0
 
         return {
             "avg_rake_hour": int(total_profit / total_hours) if total_hours > 0 else 0,
             "total_hours": round(total_hours, 1),
             "total_sessions": total_sessions,
-            "avg_ticket": 0, 
+            "avg_ticket": avg_ticket,
             "efficiency": round(efficiency, 1),
             "jackpot": int(jackpot_in - jackpot_out),
-            "weekly_profit": 0 
+            "weekly_profit": 0
         }
 
     except Exception as e:

@@ -216,36 +216,36 @@ export default function WeeklyReport() {
             }
 
             return (
-              <div 
-                key={idx} 
-                className={`group relative bg-gray-800 border border-gray-700 rounded-2xl p-6 transition-all hover:shadow-2xl ${theme.hoverBorder}`}
+              <div
+                key={idx}
+                className={`group relative bg-gray-800 border border-gray-700 rounded-2xl p-4 sm:p-6 transition-all hover:shadow-2xl ${theme.hoverBorder}`}
               >
-                <div className="flex justify-between items-start">
-                  <div className="flex items-center gap-4">
-                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg transition-transform group-hover:scale-110 ${theme.bgColor} ${theme.mainColor} ${theme.borderColor} border`}>
-                      <theme.icon className="w-7 h-7" />
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3 sm:gap-4">
+                  <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                    <div className={`w-12 h-12 sm:w-14 sm:h-14 shrink-0 rounded-2xl flex items-center justify-center shadow-lg transition-transform group-hover:scale-110 ${theme.bgColor} ${theme.mainColor} ${theme.borderColor} border`}>
+                      <theme.icon className="w-6 h-6 sm:w-7 sm:h-7" />
                     </div>
-                    <div>
-                      <h3 className={`text-xl font-black text-white group-hover:${theme.mainColor} transition-colors uppercase tracking-tighter`}>
+                    <div className="min-w-0">
+                      <h3 className={`text-base sm:text-xl font-black text-white group-hover:${theme.mainColor} transition-colors uppercase tracking-tighter truncate`}>
                         {item.name}
                       </h3>
-                      <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">
+                      <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest truncate">
                         {theme.label}
                       </p>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="text-[10px] font-black text-green-500 bg-green-500/10 px-2 py-0.5 rounded-md mb-2 inline-block">
+                  <div className="sm:text-right min-w-0 border-t sm:border-t-0 border-gray-700/50 pt-3 sm:pt-0">
+                    <div className="text-[10px] font-black text-green-500 bg-green-500/10 px-2 py-0.5 rounded-md mb-1 sm:mb-2 inline-block">
                       + GANANCIA
                     </div>
-                    <p className="text-3xl font-black font-mono text-white leading-none">
+                    <p className="text-2xl sm:text-3xl font-black font-mono text-white leading-tight tabular-nums break-words">
                       {formatMoney(item.total)}
                     </p>
                   </div>
                 </div>
-                
+
                 {/* Decoración inferior */}
-                <div className={`absolute bottom-0 left-6 right-6 h-0.5 rounded-full transition-all duration-500 ${theme.bottomBar}`}></div>
+                <div className={`absolute bottom-0 left-4 sm:left-6 right-4 sm:right-6 h-0.5 rounded-full transition-all duration-500 ${theme.bottomBar}`}></div>
               </div>
             );
           })

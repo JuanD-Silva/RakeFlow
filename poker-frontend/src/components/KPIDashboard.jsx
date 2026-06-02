@@ -134,11 +134,13 @@ export default function KPIDashboard() {
         />
 
         <Card
-          title="Descuadre Neto"
-          value={`$${stats.efficiency?.toLocaleString() ?? 0}`}
-          sub={stats.efficiency >= 0 ? "A favor (Sobra)" : "En contra (Falta)"}
-          icon="⚖️"
-          color={stats.efficiency >= 0 ? "border-green-500" : "border-red-500"}
+          title="Rake del Mes"
+          value={quota ? formatMoney(quota.paid_so_far) : '$0'}
+          sub={quota && quota.target > 0
+            ? `${Math.min(100, (quota.paid_so_far / quota.target) * 100).toFixed(0)}% de la meta`
+            : "Sin meta configurada"}
+          icon="💰"
+          color={quota && quota.remaining <= 0 ? "border-green-500" : "border-emerald-500"}
         />
 
         {quota && (
