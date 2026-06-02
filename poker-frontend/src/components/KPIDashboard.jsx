@@ -111,7 +111,7 @@ export default function KPIDashboard() {
         <Card
           title="Rake / Hora"
           value={`$${stats.avg_rake_hour?.toLocaleString() ?? 0}`}
-          sub="Promedio Histórico"
+          sub="Promedio este mes"
           icon="⚡"
           color="border-yellow-500"
         />
@@ -119,7 +119,7 @@ export default function KPIDashboard() {
         <Card
           title="Horas Operadas"
           value={`${stats.total_hours ?? 0}h`}
-          sub={`${stats.total_sessions ?? 0} Sesiones cerradas`}
+          sub={`${stats.total_sessions ?? 0} sesiones este mes`}
           icon="⏱️"
           color="border-blue-500"
           onClick={openHoursModal}
@@ -128,7 +128,7 @@ export default function KPIDashboard() {
         <Card
           title="Buy-in Promedio"
           value={`$${stats.avg_ticket?.toLocaleString() ?? 0}`}
-          sub="Gasto por jugador"
+          sub="Por entrada (este mes)"
           icon="🎟️"
           color="border-purple-500"
         />

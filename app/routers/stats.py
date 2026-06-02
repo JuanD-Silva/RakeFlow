@@ -64,21 +64,21 @@ async def get_dashboard_stats(
 ):
     try:
         now = datetime.utcnow()
-        # Los KPIs del dashboard son HISTORICOS (el sub de cada card dice
-        # "Promedio Historico" / "Sesiones cerradas" / "Gasto por jugador").
-        # Antes filtraban por mes en curso y daban 0 mientras /history tenia
-        # decenas de sesiones — inconsistencia visible. Para el rake del MES
-        # el frontend usa /stats/monthly-debt-quota (paid_so_far).
-        # Limite inferior: 2020-01-01 (no hay datos antes que ese).
-        all_time_start = datetime(2020, 1, 1)
+        # Todos los KPIs del dashboard son del MES EN CURSO (hora Colombia).
+        # El sub de cada card aclara "este mes" para que sea consistente.
+        # Para visión histórica está el modal "Ver detalle" que carga /history/.
+        start_of_month = _start_of_month_col_as_utc()
+        if current_club.rankings_reset_at and current_club.rankings_reset_at > start_of_month:
+            start_of_month = current_club.rankings_reset_at
 
-        # A. TOTAL SESIONES Y HORAS (Cash + Torneos) — todo el historial cerrado
+        # A. TOTAL SESIONES Y HORAS DEL MES (Cash + Torneos)
         stmt_cash = select(models.Session).where(
             models.Session.club_id == current_club.id,
             models.Session.status == "CLOSED",
+            models.Session.end_time >= start_of_month,
         )
         cash_sessions = (await db.execute(stmt_cash)).scalars().all()
-        # Duracion real (antes len(sessions) * 5 hardcoded).
+        # Duracion real por sesion (antes len(sessions) * 5 hardcoded).
         cash_hours = sum(
             (s.end_time - s.start_time).total_seconds() / 3600
             for s in cash_sessions if s.end_time and s.start_time
@@ -87,6 +87,7 @@ async def get_dashboard_stats(
         stmt_tourney = select(models.Tournament).where(
             models.Tournament.club_id == current_club.id,
             models.Tournament.status == "COMPLETED",
+            models.Tournament.end_time >= start_of_month,
         )
         tournaments = (await db.execute(stmt_tourney)).scalars().all()
         tourney_hours = sum(
@@ -97,13 +98,10 @@ async def get_dashboard_stats(
         total_sessions = len(cash_sessions) + len(tournaments)
         total_hours = cash_hours + tourney_hours
 
-        # B. RAKE TOTAL HISTORICO (Profit Operativo)
-        total_profit = await _get_net_profit_in_range(db, current_club.id, all_time_start, now)
+        # B. RAKE DEL MES (Profit Operativo) — usado para avg_rake_hour y eficiencia
+        monthly_profit = await _get_net_profit_in_range(db, current_club.id, start_of_month, now)
 
-        # C. META (Eficiencia) — esta SI es del mes en curso (hora Colombia)
-        start_of_month = _start_of_month_col_as_utc()
-        if current_club.rankings_reset_at and current_club.rankings_reset_at > start_of_month:
-            start_of_month = current_club.rankings_reset_at
+        # C. META (Eficiencia) — mismo mes
         stmt_meta = select(func.sum(models.DistributionRule.value)).where(
             models.DistributionRule.club_id == current_club.id,
             models.DistributionRule.active == True,
@@ -113,34 +111,36 @@ async def get_dashboard_stats(
         # frontend oculte la barra (antes default 50M hardcoded que aparecia
         # aunque el club nunca hubiera configurado meta).
         monthly_goal = (await db.execute(stmt_meta)).scalar() or 0.0
-        monthly_profit = await _get_net_profit_in_range(db, current_club.id, start_of_month, now)
         efficiency = (monthly_profit / monthly_goal * 100) if monthly_goal > 0 else 0
 
-        # D. JACKPOT — historico (no filtra fecha)
+        # D. JACKPOT — historico (no filtra fecha, es saldo acumulado)
         stmt_jackpot_in = select(func.sum(models.Session.declared_jackpot_cash)).where(models.Session.club_id == current_club.id, models.Session.status == "CLOSED")
         jackpot_in = (await db.execute(stmt_jackpot_in)).scalar() or 0.0
 
         stmt_jackpot_out = select(func.sum(models.Transaction.amount)).join(models.Session).where(models.Transaction.type == models.TransactionType.JACKPOT_PAYOUT, models.Session.club_id == current_club.id)
         jackpot_out = (await db.execute(stmt_jackpot_out)).scalar() or 0.0
 
-        # E. BUY-IN PROMEDIO HISTORICO: total buyins/rebuys / jugadores unicos.
+        # E. BUY-IN PROMEDIO DEL MES = monto total de buyins/rebuys / numero de
+        # entradas. Antes dividia por jugadores unicos lo cual daba el "gasto
+        # total por persona" (ej $700k), no el monto por entrada (~$50-100k).
         stmt_avg_ticket = (
             select(
                 func.coalesce(func.sum(models.Transaction.amount), 0).label("total_buyin"),
-                func.count(func.distinct(models.Transaction.player_id)).label("unique_players"),
+                func.count(models.Transaction.id).label("entries"),
             )
             .join(models.Session, models.Transaction.session_id == models.Session.id)
             .where(
                 models.Session.club_id == current_club.id,
                 models.Session.status == models.SessionStatus.CLOSED,
+                models.Session.end_time >= start_of_month,
                 models.Transaction.type.in_([models.TransactionType.BUYIN, models.TransactionType.REBUY]),
             )
         )
         row = (await db.execute(stmt_avg_ticket)).first()
-        avg_ticket = int(row.total_buyin / row.unique_players) if (row and row.unique_players) else 0
+        avg_ticket = int(row.total_buyin / row.entries) if (row and row.entries) else 0
 
         return {
-            "avg_rake_hour": int(total_profit / total_hours) if total_hours > 0 else 0,
+            "avg_rake_hour": int(monthly_profit / total_hours) if total_hours > 0 else 0,
             "total_hours": round(total_hours, 1),
             "total_sessions": total_sessions,
             "avg_ticket": avg_ticket,
