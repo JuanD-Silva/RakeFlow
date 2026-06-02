@@ -148,18 +148,18 @@ export default function SessionHistory() {
            <div className={`bg-gray-900 border rounded-3xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl ${selectedItem.type === 'TOURNAMENT' ? 'border-violet-900' : 'border-gray-800'}`}>
                 
                 {/* HEADER DEL MODAL */}
-                <div className="p-6 border-b border-gray-800 flex justify-between items-center bg-gray-800/30">
-                    <div>
+                <div className="p-4 md:p-6 border-b border-gray-800 flex justify-between items-center gap-3 bg-gray-800/30">
+                    <div className="min-w-0 flex-1">
                         <span className={`${selectedItem.type === 'TOURNAMENT' ? 'text-violet-500' : 'text-blue-500'} font-mono font-bold text-xs uppercase tracking-widest`}>Resumen Detallado</span>
-                        <h3 className="text-2xl font-black text-white uppercase tracking-tighter">
+                        <h3 className="text-lg md:text-2xl font-black text-white uppercase tracking-tighter truncate">
                             {selectedItem.type === 'TOURNAMENT' ? selectedItem.title : `Sesión Cash #${selectedItem.id}`}
                         </h3>
                     </div>
-                    <button onClick={() => setSelectedItem(null)} className="w-10 h-10 flex items-center justify-center bg-gray-800 hover:bg-gray-700 rounded-full text-white text-2xl">×</button>
+                    <button onClick={() => setSelectedItem(null)} className="w-10 h-10 shrink-0 flex items-center justify-center bg-gray-800 hover:bg-gray-700 rounded-full text-white text-2xl">×</button>
                 </div>
 
                 {/* CONTENIDO DEL MODAL */}
-                <div className="overflow-y-auto p-8 space-y-8 flex-1">
+                <div className="overflow-y-auto p-4 md:p-8 space-y-6 md:space-y-8 flex-1">
                     {loadingDetails || !detailData ? (
                         <div className="flex justify-center py-20 text-gray-500 animate-pulse font-bold uppercase tracking-widest">Cargando datos...</div>
                     ) : selectedItem.type === 'TOURNAMENT' ? (
@@ -175,23 +175,45 @@ export default function SessionHistory() {
                             
                             <h4 className="text-xs font-black text-yellow-500 uppercase tracking-widest flex items-center gap-2 mt-4"><TrophySolid className="w-4 h-4"/> Tabla de Posiciones</h4>
                             <div className="bg-gray-800/30 rounded-2xl border border-gray-800 overflow-hidden">
-                                <table className="w-full text-left text-sm">
-                                    <thead className="bg-gray-900/50 text-gray-500 uppercase text-[10px] font-black tracking-widest">
-                                        <tr><th className="px-6 py-4">#</th><th className="px-6 py-4">Jugador</th><th className="px-6 py-4 text-center">R/A</th><th className="px-6 py-4 text-right">Inversión</th><th className="px-6 py-4 text-right">Premio</th><th className="px-6 py-4 text-right">Profit</th></tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-gray-800 font-mono">
-                                        {detailData.players.map((p) => (
-                                            <tr key={p.player_id} className={`hover:bg-gray-800/50 ${p.rank <= 3 ? 'bg-yellow-500/5' : ''}`}>
-                                                <td className={`px-6 py-4 font-black ${p.rank===1?'text-yellow-400':p.rank===2?'text-gray-300':p.rank===3?'text-orange-400':'text-gray-600'}`}>{p.rank}</td>
-                                                <td className="px-6 py-4 font-bold text-white uppercase">{p.name}</td>
-                                                <td className="px-6 py-4 text-center text-xs text-gray-500">R:{p.rebuys_count} A:{p.addons_count}</td>
-                                                <td className="px-6 py-4 text-right text-gray-400">{formatMoney(p.invested)}</td>
-                                                <td className="px-6 py-4 text-right font-bold text-yellow-400">{p.prize > 0 ? formatMoney(p.prize) : '-'}</td>
-                                                <td className={`px-6 py-4 text-right font-black ${p.net_profit > 0 ? 'text-green-400' : 'text-red-400'}`}>{p.net_profit > 0 ? '+' : ''}{formatMoney(p.net_profit)}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
+                                {/* MOVIL: cards apiladas (antes overflow-hidden ocultaba Inversion/Premio/Profit) */}
+                                <div className="md:hidden divide-y divide-gray-800">
+                                    {detailData.players.map((p) => (
+                                        <div key={`m-${p.player_id}`} className={`p-3 ${p.rank <= 3 ? 'bg-yellow-500/5' : ''}`}>
+                                            <div className="flex items-center justify-between gap-2 mb-2">
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                    <span className={`text-base font-black shrink-0 ${p.rank===1?'text-yellow-400':p.rank===2?'text-gray-300':p.rank===3?'text-orange-400':'text-gray-600'}`}>#{p.rank}</span>
+                                                    <span className="text-white font-bold uppercase text-sm truncate">{p.name}</span>
+                                                </div>
+                                                <span className="text-[10px] text-gray-500 shrink-0 font-mono">R:{p.rebuys_count} A:{p.addons_count}</span>
+                                            </div>
+                                            <div className="grid grid-cols-3 gap-2 text-xs font-mono">
+                                                <div className="min-w-0"><div className="text-[9px] text-gray-500 uppercase tracking-wider">Inv.</div><div className="text-gray-300 truncate">{formatMoney(p.invested)}</div></div>
+                                                <div className="min-w-0"><div className="text-[9px] text-gray-500 uppercase tracking-wider">Premio</div><div className="text-yellow-400 font-bold truncate">{p.prize > 0 ? formatMoney(p.prize) : '-'}</div></div>
+                                                <div className="min-w-0"><div className="text-[9px] text-gray-500 uppercase tracking-wider">Profit</div><div className={`font-black truncate ${p.net_profit > 0 ? 'text-green-400' : 'text-red-400'}`}>{p.net_profit > 0 ? '+' : ''}{formatMoney(p.net_profit)}</div></div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                                {/* DESKTOP: tabla horizontal */}
+                                <div className="hidden md:block overflow-x-auto">
+                                    <table className="w-full text-left text-sm">
+                                        <thead className="bg-gray-900/50 text-gray-500 uppercase text-[10px] font-black tracking-widest">
+                                            <tr><th className="px-6 py-4">#</th><th className="px-6 py-4">Jugador</th><th className="px-6 py-4 text-center">R/A</th><th className="px-6 py-4 text-right">Inversión</th><th className="px-6 py-4 text-right">Premio</th><th className="px-6 py-4 text-right">Profit</th></tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-800 font-mono">
+                                            {detailData.players.map((p) => (
+                                                <tr key={p.player_id} className={`hover:bg-gray-800/50 ${p.rank <= 3 ? 'bg-yellow-500/5' : ''}`}>
+                                                    <td className={`px-6 py-4 font-black ${p.rank===1?'text-yellow-400':p.rank===2?'text-gray-300':p.rank===3?'text-orange-400':'text-gray-600'}`}>{p.rank}</td>
+                                                    <td className="px-6 py-4 font-bold text-white uppercase">{p.name}</td>
+                                                    <td className="px-6 py-4 text-center text-xs text-gray-500">R:{p.rebuys_count} A:{p.addons_count}</td>
+                                                    <td className="px-6 py-4 text-right text-gray-400">{formatMoney(p.invested)}</td>
+                                                    <td className="px-6 py-4 text-right font-bold text-yellow-400">{p.prize > 0 ? formatMoney(p.prize) : '-'}</td>
+                                                    <td className={`px-6 py-4 text-right font-black ${p.net_profit > 0 ? 'text-green-400' : 'text-red-400'}`}>{p.net_profit > 0 ? '+' : ''}{formatMoney(p.net_profit)}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
                         </>
 
@@ -232,21 +254,41 @@ export default function SessionHistory() {
 
                             {/* Ranking Mesa Cash */}
                             <div className="bg-gray-800/30 rounded-2xl border border-gray-800 overflow-hidden">
-                                <table className="w-full text-left text-sm">
-                                    <thead className="bg-gray-900/50 text-gray-500 uppercase text-[10px] font-black tracking-widest">
-                                        <tr><th className="px-6 py-4">Jugador</th><th className="px-6 py-4 text-right">Compras</th><th className="px-6 py-4 text-right">Retiro</th><th className="px-6 py-4 text-right">Balance</th></tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-gray-800 font-mono">
-                                        {detailData.players?.map((p, i) => (
-                                            <tr key={i} className="hover:bg-gray-800/50">
-                                                <td className="px-6 py-4 font-bold text-white uppercase">{p.name}</td>
-                                                <td className="px-6 py-4 text-right text-gray-400">{formatMoney(p.buyin)}</td>
-                                                <td className="px-6 py-4 text-right text-gray-400">{formatMoney(p.cashout + (p.jackpot||0))}</td>
-                                                <td className={`px-6 py-4 text-right font-black ${p.balance >= 0 ? 'text-green-400' : 'text-red-400'}`}>{p.balance >= 0 ? '+' : ''}{formatMoney(p.balance)}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
+                                {/* MOVIL: cards apiladas */}
+                                <div className="md:hidden divide-y divide-gray-800">
+                                    {detailData.players?.map((p, i) => (
+                                        <div key={`m-c-${i}`} className="p-3">
+                                            <div className="flex items-center justify-between gap-2 mb-2">
+                                                <span className="text-white font-bold uppercase text-sm truncate">{p.name}</span>
+                                                <span className={`font-mono font-black text-sm shrink-0 px-2 py-0.5 rounded ${p.balance >= 0 ? 'bg-green-900/30 text-green-400 border border-green-500/30' : 'bg-red-900/30 text-red-400 border border-red-500/30'}`}>
+                                                    {p.balance >= 0 ? '+' : ''}{formatMoney(p.balance)}
+                                                </span>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+                                                <div className="min-w-0"><div className="text-[9px] text-gray-500 uppercase tracking-wider">Compras</div><div className="text-gray-300 truncate">{formatMoney(p.buyin)}</div></div>
+                                                <div className="min-w-0"><div className="text-[9px] text-gray-500 uppercase tracking-wider">Retiro</div><div className="text-gray-300 truncate">{formatMoney(p.cashout + (p.jackpot||0))}</div></div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                                {/* DESKTOP: tabla horizontal */}
+                                <div className="hidden md:block overflow-x-auto">
+                                    <table className="w-full text-left text-sm">
+                                        <thead className="bg-gray-900/50 text-gray-500 uppercase text-[10px] font-black tracking-widest">
+                                            <tr><th className="px-6 py-4">Jugador</th><th className="px-6 py-4 text-right">Compras</th><th className="px-6 py-4 text-right">Retiro</th><th className="px-6 py-4 text-right">Balance</th></tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-800 font-mono">
+                                            {detailData.players?.map((p, i) => (
+                                                <tr key={i} className="hover:bg-gray-800/50">
+                                                    <td className="px-6 py-4 font-bold text-white uppercase">{p.name}</td>
+                                                    <td className="px-6 py-4 text-right text-gray-400">{formatMoney(p.buyin)}</td>
+                                                    <td className="px-6 py-4 text-right text-gray-400">{formatMoney(p.cashout + (p.jackpot||0))}</td>
+                                                    <td className={`px-6 py-4 text-right font-black ${p.balance >= 0 ? 'text-green-400' : 'text-red-400'}`}>{p.balance >= 0 ? '+' : ''}{formatMoney(p.balance)}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
                         </>
                     )}
@@ -262,9 +304,9 @@ export default function SessionHistory() {
 
 function DetailCard({ label, value, color }) {
     return (
-        <div className="bg-gray-800/50 p-6 rounded-2xl border border-gray-700 text-center">
-            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">{label}</p>
-            <p className={`text-2xl lg:text-3xl font-black font-mono mt-1 ${color}`}>{value}</p>
+        <div className="bg-gray-800/50 p-3 md:p-6 rounded-2xl border border-gray-700 text-center min-w-0 overflow-hidden">
+            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest truncate">{label}</p>
+            <p className={`text-base sm:text-lg md:text-2xl lg:text-3xl font-black font-mono mt-1 leading-tight tabular-nums ${color}`}>{value}</p>
         </div>
     );
 }
