@@ -1,0 +1,51 @@
+name: Backup DB - pg_dump diario
+
+on:
+  schedule:
+    # Diario a las 07:00 UTC (2am hora Colombia, baja actividad de clubes)
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Instalar postgresql-client 17
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsS https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17
+
+      - name: pg_dump
+        env:
+          # Debe ser la connection string PUBLICA de Railway Postgres
+          # (la interna *.railway.internal NO es accesible desde GitHub Actions).
+          DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::Falta el secret BACKUP_DATABASE_URL"
+            exit 1
+          fi
+          # Normaliza postgres:// -> postgresql:// (pg_dump no acepta el alias)
+          URL="${DATABASE_URL/postgres:\/\//postgresql://}"
+          STAMP=$(date -u +%Y%m%d_%H%M%S)
+          FILE="rakeflow_${STAMP}.sql.gz"
+          echo "FILE=$FILE" >> "$GITHUB_ENV"
+          # --no-owner/--no-privileges para restore limpio en cualquier rol
+          pg_dump --no-owner --no-privileges --clean --if-exists "$URL" | gzip -9 > "$FILE"
+          ls -lh "$FILE"
+          # Falla si el dump salio sospechosamente chico (<10KB = casi seguro error)
+          SIZE=$(stat -c%s "$FILE")
+          if [ "$SIZE" -lt 10240 ]; then
+            echo "::error::Dump demasiado chico ($SIZE bytes), posible fallo"
+            exit 1
+          fi
+
+      - name: Subir artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.FILE }}
+          path: ${{ env.FILE }}
+          retention-days: 90
