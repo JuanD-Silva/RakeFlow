@@ -33,8 +33,10 @@ jobs:
           STAMP=$(date -u +%Y%m%d_%H%M%S)
           FILE="rakeflow_${STAMP}.sql.gz"
           echo "FILE=$FILE" >> "$GITHUB_ENV"
-          # --no-owner/--no-privileges para restore limpio en cualquier rol
-          pg_dump --no-owner --no-privileges --clean --if-exists "$URL" | gzip -9 > "$FILE"
+          # Ruta explicita al pg_dump 17 (el runner trae el 16 en PATH y el
+          # server es 17.x -> mismatch). --no-owner/--no-privileges para
+          # restore limpio en cualquier rol.
+          /usr/lib/postgresql/17/bin/pg_dump --no-owner --no-privileges --clean --if-exists "$URL" | gzip -9 > "$FILE"
           ls -lh "$FILE"
           # Falla si el dump salio sospechosamente chico (<10KB = casi seguro error)
           SIZE=$(stat -c%s "$FILE")
