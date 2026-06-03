@@ -13,6 +13,18 @@ import {
   BoltIcon
 } from '@heroicons/react/24/outline';
 
+// Contacto de ventas — WhatsApp con mensaje pre-cargado
+const WHATSAPP_URL = `https://wa.me/573041076526?text=${encodeURIComponent('Hola! Me interesa RakeFlow para mi club. ¿Podemos agendar una demo?')}`;
+
+// Logo oficial de WhatsApp (heroicons no lo trae)
+function WhatsAppIcon({ className }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.885-9.885 9.885M20.52 3.449C18.24 1.245 15.24 0 12.045 0 5.463 0 .104 5.334.101 11.892c0 2.096.549 4.142 1.595 5.945L0 24l6.335-1.652a12.062 12.062 0 005.71 1.448h.006c6.585 0 11.946-5.336 11.949-11.896 0-3.176-1.24-6.165-3.495-8.411z" />
+    </svg>
+  );
+}
+
 // Hook para detectar cuando un elemento entra al viewport
 function useInView(threshold = 0.15) {
   const ref = useRef(null);
@@ -341,9 +353,15 @@ export default function Landing() {
                       </li>
                     ))}
                   </ul>
-                  <Link to="/register" className={`w-full py-3.5 rounded-xl font-bold text-sm uppercase tracking-wider text-center transition-all active:scale-[0.98] block hover:-translate-y-0.5 ${plan.btn}`}>
-                    {plan.price === 'Contacto' ? 'Contactar' : 'Comenzar'}
-                  </Link>
+                  {plan.price === 'Contacto' ? (
+                    <a href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer" className={`w-full py-3.5 rounded-xl font-bold text-sm uppercase tracking-wider text-center transition-all active:scale-[0.98] flex items-center justify-center gap-2 hover:-translate-y-0.5 ${plan.btn}`}>
+                      <WhatsAppIcon className="w-4 h-4" /> Contactar
+                    </a>
+                  ) : (
+                    <Link to="/register" className={`w-full py-3.5 rounded-xl font-bold text-sm uppercase tracking-wider text-center transition-all active:scale-[0.98] block hover:-translate-y-0.5 ${plan.btn}`}>
+                      Comenzar
+                    </Link>
+                  )}
                 </div>
               </AnimatedSection>
             ))}
@@ -369,9 +387,14 @@ export default function Landing() {
               <p className="text-gray-400 text-lg mb-8 max-w-xl mx-auto">
                 Unete a los clubes que ya gestionan sus finanzas con RakeFlow. Configuracion en menos de 2 minutos.
               </p>
-              <Link to="/register" className="group/btn inline-flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold text-lg px-10 py-4 rounded-xl shadow-[0_0_30px_rgba(16,185,129,0.3)] hover:shadow-[0_0_50px_rgba(16,185,129,0.5)] transition-all active:scale-[0.98]">
-                Crear Mi Club Gratis <ArrowRightIcon className="w-5 h-5 group-hover/btn:translate-x-1 transition-transform" />
-              </Link>
+              <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+                <Link to="/register" className="group/btn inline-flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold text-lg px-10 py-4 rounded-xl shadow-[0_0_30px_rgba(16,185,129,0.3)] hover:shadow-[0_0_50px_rgba(16,185,129,0.5)] transition-all active:scale-[0.98]">
+                  Crear Mi Club Gratis <ArrowRightIcon className="w-5 h-5 group-hover/btn:translate-x-1 transition-transform" />
+                </Link>
+                <a href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer" className="group/wa inline-flex items-center gap-2 bg-gray-800/60 hover:bg-gray-700/80 text-gray-300 hover:text-white font-bold text-lg px-10 py-4 rounded-xl border border-gray-700 hover:border-emerald-500/40 transition-all active:scale-[0.98] backdrop-blur-sm">
+                  <WhatsAppIcon className="w-5 h-5 text-emerald-400 group-hover/wa:scale-110 transition-transform" /> Agendar una demo
+                </a>
+              </div>
             </div>
           </div>
         </AnimatedSection>
@@ -390,12 +413,27 @@ export default function Landing() {
             <a href="#features" className="hover:text-gray-300 transition-colors">Funciones</a>
             <a href="#pricing" className="hover:text-gray-300 transition-colors">Planes</a>
             <Link to="/login" className="hover:text-gray-300 transition-colors">Acceder</Link>
+            <a href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer" className="hover:text-emerald-400 transition-colors flex items-center gap-1"><WhatsAppIcon className="w-3.5 h-3.5" /> WhatsApp</a>
+            <a href="mailto:soporte@rakeflow.site" className="hover:text-gray-300 transition-colors">Soporte</a>
             <Link to="/terms" className="hover:text-gray-300 transition-colors">Términos</Link>
             <Link to="/privacy" className="hover:text-gray-300 transition-colors">Privacidad</Link>
           </div>
           <p className="text-gray-700 text-xs">&copy; 2026 RakeFlow</p>
         </div>
       </footer>
+
+      {/* WhatsApp FAB — contacto de ventas siempre visible */}
+      <a
+        href={WHATSAPP_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="Agendar demo por WhatsApp"
+        className="group/fab fixed bottom-6 right-6 z-50 flex items-center gap-2.5 bg-[#25D366] hover:bg-[#20bd5a] text-white font-bold rounded-full pl-4 pr-5 py-3.5 shadow-[0_8px_30px_rgba(37,211,102,0.4)] hover:shadow-[0_8px_45px_rgba(37,211,102,0.65)] hover:-translate-y-0.5 transition-all duration-300 active:scale-95"
+      >
+        <span className="absolute inset-0 rounded-full bg-[#25D366] animate-ping opacity-20 group-hover/fab:opacity-0"></span>
+        <WhatsAppIcon className="w-6 h-6 relative z-10 shrink-0" />
+        <span className="hidden sm:inline relative z-10 text-sm whitespace-nowrap">Agendar demo</span>
+      </a>
     </div>
   );
 }
