@@ -131,7 +131,7 @@ export default function Landing() {
 
           <div className="animate-fade-up delay-300 flex flex-col sm:flex-row gap-4 justify-center">
             <Link to="/register" className="group bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold text-lg px-8 py-4 rounded-xl shadow-[0_0_30px_rgba(16,185,129,0.3)] hover:shadow-[0_0_50px_rgba(16,185,129,0.4)] transition-all active:scale-[0.98] flex items-center justify-center gap-2 animate-pulse-glow">
-              Probar 7 Dias Gratis <ArrowRightIcon className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+              Probar 14 Dias Gratis <ArrowRightIcon className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
             </Link>
             <a href="#features" className="bg-gray-800/60 hover:bg-gray-700/80 text-gray-300 hover:text-white font-bold text-lg px-8 py-4 rounded-xl border border-gray-700 hover:border-gray-500 transition-all flex items-center justify-center gap-2 backdrop-blur-sm">
               Ver Funciones
@@ -139,7 +139,7 @@ export default function Landing() {
           </div>
 
           <div className="animate-fade-up delay-500 flex flex-wrap items-center justify-center gap-6 mt-10 text-gray-500 text-sm">
-            <span className="flex items-center gap-1.5 hover:text-gray-300 transition-colors"><CheckIcon className="w-4 h-4 text-emerald-500" /> 7 dias de prueba gratis</span>
+            <span className="flex items-center gap-1.5 hover:text-gray-300 transition-colors"><CheckIcon className="w-4 h-4 text-emerald-500" /> 14 dias de prueba gratis</span>
             <span className="flex items-center gap-1.5 hover:text-gray-300 transition-colors"><CheckIcon className="w-4 h-4 text-emerald-500" /> Listo en 2 minutos</span>
             <span className="flex items-center gap-1.5 hover:text-gray-300 transition-colors"><DeviceTabletIcon className="w-4 h-4 text-emerald-500" /> Funciona en tablet</span>
           </div>
