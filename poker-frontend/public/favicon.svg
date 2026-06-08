@@ -1,10 +1,39 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="rf_fav_bg" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="rf_bg" x1="0" y1="0" x2="1" y2="1" gradientUnits="objectBoundingBox">
       <stop offset="0" stop-color="#059669"/>
-      <stop offset="1" stop-color="#14532D"/>
+      <stop offset="1" stop-color="#064E3B"/>
+    </linearGradient>
+    <linearGradient id="rf_bill" x1="0" y1="0" x2="1" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0" stop-color="#ECFDF5"/>
+      <stop offset="1" stop-color="#A7F3D0"/>
     </linearGradient>
   </defs>
-  <rect width="100" height="100" rx="24" fill="url(#rf_fav_bg)"/>
-  <text x="50" y="55" font-size="62" text-anchor="middle" dominant-baseline="central">💸</text>
+
+  <!-- Fondo cuadrado redondeado verde -->
+  <rect width="256" height="256" rx="60" fill="url(#rf_bg)"/>
+  <rect x="2" y="2" width="252" height="252" rx="58" fill="none" stroke="#6EE7B7" stroke-opacity="0.35" stroke-width="3"/>
+
+  <!-- Ala derecha (plumas) -->
+  <path d="M158 120 C 186 100 212 94 238 98 C 226 106 226 112 233 121 C 220 119 215 124 220 135 C 206 130 201 135 204 146 C 188 139 170 134 158 120 Z"
+        fill="#FFFFFF" fill-opacity="0.92"/>
+  <!-- Ala izquierda (espejo) -->
+  <path d="M98 120 C 70 100 44 94 18 98 C 30 106 30 112 23 121 C 36 119 41 124 36 135 C 50 130 55 135 52 146 C 68 139 86 134 98 120 Z"
+        fill="#FFFFFF" fill-opacity="0.92"/>
+
+  <!-- Lineas de movimiento debajo (cayendo/volando) -->
+  <g stroke="#A7F3D0" stroke-opacity="0.6" stroke-width="7" stroke-linecap="round">
+    <line x1="96" y1="206" x2="120" y2="206"/>
+    <line x1="128" y1="218" x2="160" y2="218"/>
+    <line x1="138" y1="200" x2="158" y2="200"/>
+  </g>
+
+  <!-- Billete (al frente, centrado) -->
+  <g transform="rotate(-8 128 132)">
+    <rect x="78" y="100" width="100" height="64" rx="10" fill="url(#rf_bill)" stroke="#065F46" stroke-width="4"/>
+    <circle cx="128" cy="132" r="20" fill="none" stroke="#065F46" stroke-width="4.5"/>
+    <text x="128" y="142" font-family="Arial, sans-serif" font-size="30" font-weight="bold" fill="#065F46" text-anchor="middle">$</text>
+    <circle cx="92" cy="113" r="3.5" fill="#065F46"/>
+    <circle cx="164" cy="151" r="3.5" fill="#065F46"/>
+  </g>
 </svg>

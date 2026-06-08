@@ -3,6 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 
     <!-- Google Search Console -->
@@ -32,7 +35,26 @@
     <meta name="twitter:image" content="https://rakeflow.site/rakeflow-logo.png" />
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Contenido pre-renderizado para SEO: lo lee Google sin ejecutar JS.
+           React lo reemplaza por la app al cargar. -->
+      <main style="max-width:900px;margin:0 auto;padding:40px 24px;font-family:system-ui,sans-serif;color:#e5e7eb;background:#0a0f1a">
+        <h1>RakeFlow — Software de gestión para clubes de poker</h1>
+        <p>RakeFlow es el sistema con el que tu club de poker controla el rake, cierra la caja sin descuadres, reparte las ganancias entre socios automáticamente y administra torneos completos (rebuys, add-ons, premiación). Pensado para clubes y partidas privadas en Colombia que hoy gestionan con Excel o cuadernos.</p>
+        <h2>Qué hace RakeFlow</h2>
+        <ul>
+          <li><strong>Control de rake:</strong> registra buy-ins, cashouts, propinas y gastos en tiempo real y calcula el rake automáticamente al cerrar cada sesión.</li>
+          <li><strong>Cierre de caja con auditoría:</strong> detecta descuadres antes de cerrar. Sin sorpresas.</li>
+          <li><strong>Distribución a socios:</strong> reparte por montos fijos, porcentajes o metas mensuales configurables.</li>
+          <li><strong>Gestión de torneos:</strong> estructura de premios, rebuys, add-ons y asignación de ganadores.</li>
+          <li><strong>Gestión de jugadores:</strong> base de datos con historial, ranking mensual y tiempo en mesa.</li>
+          <li><strong>Reportes financieros:</strong> ingresos semanales y mensuales, metas y fondos operativos.</li>
+        </ul>
+        <h2>Precio</h2>
+        <p>Plan Pro: $149.000 COP al mes, con 14 días de prueba gratis. Mesas, jugadores y torneos ilimitados, multi-usuario y soporte prioritario.</p>
+        <p><a href="/register">Crear club gratis</a> · <a href="/login">Iniciar sesión</a></p>
+      </main>
+    </div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
