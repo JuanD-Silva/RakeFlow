@@ -36,23 +36,27 @@
   </head>
   <body>
     <div id="root">
-      <!-- Contenido pre-renderizado para SEO: lo lee Google sin ejecutar JS.
-           React lo reemplaza por la app al cargar. -->
-      <main style="max-width:900px;margin:0 auto;padding:40px 24px;font-family:system-ui,sans-serif;color:#e5e7eb;background:#0a0f1a">
-        <h1>RakeFlow — Software de gestión para clubes de poker</h1>
-        <p>RakeFlow es el sistema con el que tu club de poker controla el rake, cierra la caja sin descuadres, reparte las ganancias entre socios automáticamente y administra torneos completos (rebuys, add-ons, premiación). Pensado para clubes y partidas privadas en Colombia que hoy gestionan con Excel o cuadernos.</p>
-        <h2>Qué hace RakeFlow</h2>
+      <!-- Splash + contenido pre-renderizado para SEO (lo lee Google sin ejecutar
+           JS). React lo reemplaza por la app al montar (createRoot). -->
+      <div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:32px 24px;font-family:system-ui,-apple-system,sans-serif;background:#0a0f1a;color:#e5e7eb">
+        <img src="/favicon-192.png" alt="RakeFlow" width="72" height="72" style="border-radius:18px;margin-bottom:20px" />
+        <h1 style="font-size:26px;font-weight:800;color:#fff;margin:0 0 12px;max-width:600px;line-height:1.25">Controla el rake de tu club de poker como un profesional</h1>
+        <p style="color:#9ca3af;max-width:520px;margin:0 0 18px;line-height:1.5">RakeFlow automatiza el cierre de caja, distribuye las ganancias entre socios y administra torneos. 14 días de prueba gratis.</p>
+        <span style="color:#10b981;font-weight:600;font-size:13px;letter-spacing:.05em">CARGANDO…</span>
+      </div>
+      <main style="max-width:760px;margin:0 auto;padding:24px;font-family:system-ui,sans-serif;color:#9ca3af;background:#0a0f1a">
+        <h2 style="color:#fff">Qué hace RakeFlow</h2>
         <ul>
-          <li><strong>Control de rake:</strong> registra buy-ins, cashouts, propinas y gastos en tiempo real y calcula el rake automáticamente al cerrar cada sesión.</li>
+          <li><strong>Control de rake:</strong> registra buy-ins, cashouts, propinas y gastos y calcula el rake automáticamente al cerrar cada sesión.</li>
           <li><strong>Cierre de caja con auditoría:</strong> detecta descuadres antes de cerrar. Sin sorpresas.</li>
-          <li><strong>Distribución a socios:</strong> reparte por montos fijos, porcentajes o metas mensuales configurables.</li>
+          <li><strong>Distribución a socios:</strong> montos fijos, porcentajes o metas mensuales configurables.</li>
           <li><strong>Gestión de torneos:</strong> estructura de premios, rebuys, add-ons y asignación de ganadores.</li>
           <li><strong>Gestión de jugadores:</strong> base de datos con historial, ranking mensual y tiempo en mesa.</li>
           <li><strong>Reportes financieros:</strong> ingresos semanales y mensuales, metas y fondos operativos.</li>
         </ul>
-        <h2>Precio</h2>
-        <p>Plan Pro: $149.000 COP al mes, con 14 días de prueba gratis. Mesas, jugadores y torneos ilimitados, multi-usuario y soporte prioritario.</p>
-        <p><a href="/register">Crear club gratis</a> · <a href="/login">Iniciar sesión</a></p>
+        <h2 style="color:#fff">Precio</h2>
+        <p>Plan Pro: $149.000 COP al mes, con 14 días de prueba gratis. Mesas, jugadores y torneos ilimitados, multi-usuario y soporte prioritario. Para clubes y partidas privadas de poker en Colombia.</p>
+        <p><a href="/register" style="color:#10b981">Crear club gratis</a> · <a href="/login" style="color:#10b981">Iniciar sesión</a></p>
       </main>
     </div>
     <script type="module" src="/src/main.jsx"></script>

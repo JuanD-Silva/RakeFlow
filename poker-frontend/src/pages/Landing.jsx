@@ -69,13 +69,15 @@ function AnimatedSection({ children, className = '', animation = 'animate-fade-u
 }
 
 export default function Landing() {
-  const [scrollY, setScrollY] = useState(0);
   const [navSolid, setNavSolid] = useState(false);
 
+  // Solo cambia el navbar al cruzar el umbral — NO re-renderiza en cada scroll
+  // (el parallax por scrollY causaba lag en movil al repintar los blurs).
   useEffect(() => {
+    let solid = false;
     const handleScroll = () => {
-      setScrollY(window.scrollY);
-      setNavSolid(window.scrollY > 50);
+      const next = window.scrollY > 50;
+      if (next !== solid) { solid = next; setNavSolid(next); }
     };
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
@@ -110,17 +112,17 @@ export default function Landing() {
       <section className="pt-28 pb-24 px-6 relative min-h-[90vh] flex items-center">
         {/* Ambient background — parallax on scroll */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute top-20 left-1/4 w-[500px] h-[500px] bg-emerald-600/8 rounded-full blur-[120px] animate-drift" style={{ transform: `translate(${scrollY * 0.03}px, ${scrollY * -0.06}px)` }}></div>
-          <div className="absolute bottom-10 right-1/4 w-[400px] h-[400px] bg-violet-600/8 rounded-full blur-[100px] animate-drift delay-700" style={{ transform: `translate(${scrollY * -0.04}px, ${scrollY * -0.03}px)` }}></div>
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] h-[300px] bg-cyan-500/5 rounded-full blur-[80px]" style={{ transform: `translate(-50%, -50%) scale(${1 + scrollY * 0.0003})` }}></div>
+          <div className="absolute top-20 left-1/4 w-[500px] h-[500px] bg-emerald-600/8 rounded-full blur-[120px] animate-drift"></div>
+          <div className="absolute bottom-10 right-1/4 w-[400px] h-[400px] bg-violet-600/8 rounded-full blur-[100px] animate-drift delay-700"></div>
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] h-[300px] bg-cyan-500/5 rounded-full blur-[80px]"></div>
 
-          {/* Floating card suits — parallax */}
-          <div className="animate-orbit opacity-[0.04] text-6xl" style={{ position: 'absolute', top: '50%', left: '50%', transform: `translateY(${scrollY * -0.1}px)` }}>♠</div>
-          <div className="animate-orbit opacity-[0.03] text-5xl" style={{ position: 'absolute', top: '50%', left: '50%', animationDuration: '25s', animationDirection: 'reverse', transform: `translateY(${scrollY * -0.07}px)` }}>♥</div>
-          <div className="animate-orbit opacity-[0.03] text-4xl" style={{ position: 'absolute', top: '50%', left: '50%', animationDuration: '30s', transform: `translateY(${scrollY * -0.05}px)` }}>♦</div>
+          {/* Floating card suits */}
+          <div className="animate-orbit opacity-[0.04] text-6xl" style={{ position: 'absolute', top: '50%', left: '50%' }}>♠</div>
+          <div className="animate-orbit opacity-[0.03] text-5xl" style={{ position: 'absolute', top: '50%', left: '50%', animationDuration: '25s', animationDirection: 'reverse' }}>♥</div>
+          <div className="animate-orbit opacity-[0.03] text-4xl" style={{ position: 'absolute', top: '50%', left: '50%', animationDuration: '30s' }}>♦</div>
 
-          {/* Grid lines — subtle parallax */}
-          <div className="absolute inset-0 opacity-[0.02]" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '80px 80px', transform: `translateY(${scrollY * 0.02}px)` }}></div>
+          {/* Grid lines */}
+          <div className="absolute inset-0 opacity-[0.02]" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '80px 80px' }}></div>
         </div>
 
         <div className="max-w-4xl mx-auto text-center relative z-10">
@@ -158,7 +160,7 @@ export default function Landing() {
         </div>
 
         {/* HERO MOCKUP — Browser frame con UI simulada */}
-        <div className="max-w-5xl mx-auto mt-16 px-4 relative z-10 animate-fade-up delay-600" style={{ transform: `translateY(${scrollY * 0.04}px)` }}>
+        <div className="max-w-5xl mx-auto mt-16 px-4 relative z-10 animate-fade-up delay-600">
           <div className="relative group">
             {/* Glow detrás */}
             <div className="absolute -inset-4 bg-gradient-to-r from-emerald-500/10 via-cyan-500/5 to-violet-500/10 rounded-3xl blur-2xl opacity-60 group-hover:opacity-100 transition-opacity duration-1000"></div>
