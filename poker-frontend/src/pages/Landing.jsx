@@ -97,19 +97,21 @@ export default function Landing() {
               Rake<span className="text-emerald-500">Flow</span>
             </span>
           </div>
-          <div className="flex items-center gap-3">
-            <Link to="/login" className="text-gray-400 hover:text-white text-sm font-bold px-4 py-2 transition-colors relative after:absolute after:bottom-0 after:left-1/2 after:-translate-x-1/2 after:w-0 hover:after:w-full after:h-px after:bg-emerald-500 after:transition-all">
-              Iniciar Sesion
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            <Link to="/login" className="whitespace-nowrap text-gray-400 hover:text-white text-sm font-bold px-3 sm:px-4 py-2 transition-colors relative after:absolute after:bottom-0 after:left-1/2 after:-translate-x-1/2 after:w-0 hover:after:w-full after:h-px after:bg-emerald-500 after:transition-all">
+              <span className="sm:hidden">Entrar</span>
+              <span className="hidden sm:inline">Iniciar Sesion</span>
             </Link>
-            <Link to="/register" className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold px-5 py-2 rounded-lg transition-all shadow-lg shadow-emerald-900/20 hover:shadow-emerald-500/20 hover:-translate-y-0.5 active:translate-y-0">
-              Crear Club Gratis
+            <Link to="/register" className="whitespace-nowrap bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold px-4 sm:px-5 py-2 rounded-lg transition-all shadow-lg shadow-emerald-900/20 hover:shadow-emerald-500/20 hover:-translate-y-0.5 active:translate-y-0">
+              <span className="sm:hidden">Crear Club</span>
+              <span className="hidden sm:inline">Crear Club Gratis</span>
             </Link>
           </div>
         </div>
       </nav>
 
       {/* HERO */}
-      <section className="pt-28 pb-24 px-6 relative min-h-[90vh] flex items-center">
+      <section className="pt-28 pb-24 px-6 relative min-h-[90vh] flex flex-col items-center justify-center">
         {/* Ambient background — parallax on scroll */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <div className="absolute top-20 left-1/4 w-[500px] h-[500px] bg-emerald-600/8 rounded-full blur-[120px] animate-drift"></div>
