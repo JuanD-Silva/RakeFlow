@@ -111,7 +111,7 @@ export default function Landing() {
       </nav>
 
       {/* HERO */}
-      <section className="pt-28 pb-24 px-6 relative min-h-[90vh] flex flex-col items-center justify-center">
+      <section className="pt-28 pb-24 px-6 relative min-h-[90vh] flex flex-col lg:flex-row items-center justify-center">
         {/* Ambient background — parallax on scroll */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <div className="absolute top-20 left-1/4 w-[500px] h-[500px] bg-emerald-600/8 rounded-full blur-[120px] animate-drift"></div>
