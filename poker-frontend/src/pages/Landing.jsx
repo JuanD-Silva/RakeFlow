@@ -55,7 +55,7 @@ const steps = [
 ];
 
 const plans = [
-  { name: 'Pro', price: '$149.000', period: '/mes', desc: 'Para clubes activos', popular: true, color: 'border-emerald-500/50', btn: 'bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white shadow-lg shadow-emerald-900/30', features: ['Mesas ilimitadas', 'Jugadores ilimitados', 'Reportes avanzados', 'Torneos ilimitados', 'Soporte prioritario', 'Multi-usuario (cajeros)', '14 dias de prueba gratis'] },
+  { name: 'Pro', price: '$199.000', period: '/mes', desc: 'Para clubes activos', popular: true, color: 'border-emerald-500/50', btn: 'bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white shadow-lg shadow-emerald-900/30', features: ['Mesas ilimitadas', 'Jugadores ilimitados', 'Reportes avanzados', 'Torneos ilimitados', 'Soporte prioritario', 'Multi-usuario (cajeros)', '14 dias de prueba gratis'] },
   { name: 'Enterprise', price: 'Contacto', period: '', desc: 'Para cadenas de clubes', color: 'border-violet-500/50', btn: 'bg-violet-700 hover:bg-violet-600 text-white', features: ['Todo de Pro', 'Multi-sede', 'API personalizada', 'Dashboard corporativo', 'Soporte dedicado', 'SLA garantizado'] }
 ];
 

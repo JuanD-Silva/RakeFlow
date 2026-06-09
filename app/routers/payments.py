@@ -24,7 +24,7 @@ router = APIRouter(
 
 # Precio default del Plan Pro. Clubes "fundadores" (grandfathered) tienen
 # su propio precio en clubs.subscription_price_cop.
-PLAN_PRICE = 149000  # COP
+PLAN_PRICE = 199000  # COP
 PLAN_NAME = "RakeFlow Pro"
 TRIAL_DAYS = 14
 

@@ -23,7 +23,7 @@ const PLAN_FEATURES = [
 
 export default function Subscribe() {
   const [status, setStatus] = useState(null);
-  const [planPrice, setPlanPrice] = useState(149000);
+  const [planPrice, setPlanPrice] = useState(199000);
   const [loading, setLoading] = useState(true);
   const [startingTrial, setStartingTrial] = useState(false);
   const [showCardModal, setShowCardModal] = useState(false);
@@ -134,7 +134,7 @@ export default function Subscribe() {
               <span className="text-gray-500 text-sm">/mes</span>
             </div>
             <p className="text-gray-400 text-sm mt-2">Todo lo que necesitas para gestionar tu club</p>
-            {planPrice !== 149000 && (
+            {planPrice !== 199000 && (
               <p className="text-emerald-400 text-xs mt-2 font-bold">★ Precio de fundador (cliente original)</p>
             )}
           </div>
