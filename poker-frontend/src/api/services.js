@@ -323,6 +323,45 @@ export const wompiService = {
     },
 };
 
+// --- DEALERS (turnos en mesa cash: horas + % del rake) ---
+export const dealerService = {
+    list: async (includeInactive = false) => {
+        const res = await api.get(`/dealers/?include_inactive=${includeInactive}`);
+        return res.data;
+    },
+    create: async ({ name, phone = null, hourly_rate_cop = 0, rake_pct = 0 }) => {
+        const res = await api.post('/dealers/', { name, phone, hourly_rate_cop, rake_pct });
+        return res.data;
+    },
+    update: async (dealerId, payload) => {
+        const res = await api.patch(`/dealers/${dealerId}`, payload);
+        return res.data;
+    },
+    deactivate: async (dealerId) => {
+        await api.delete(`/dealers/${dealerId}`);
+    },
+    getShifts: async (sessionId) => {
+        const res = await api.get(`/sessions/${sessionId}/dealer-shifts`);
+        return res.data;
+    },
+    startShift: async (sessionId, dealerId, force = false) => {
+        const res = await api.post(`/sessions/${sessionId}/dealer-shifts/start`, { dealer_id: dealerId, force });
+        return res.data;
+    },
+    changeShift: async (sessionId, dealerId, declaredRake, force = false) => {
+        const res = await api.post(`/sessions/${sessionId}/dealer-shifts/change`, {
+            dealer_id: dealerId,
+            declared_rake: declaredRake,
+            force,
+        });
+        return res.data;
+    },
+    endShift: async (sessionId, declaredRake) => {
+        const res = await api.post(`/sessions/${sessionId}/dealer-shifts/end`, { declared_rake: declaredRake });
+        return res.data;
+    },
+};
+
 // --- USUARIOS (multi-usuario por club) ---
 export const userService = {
     list: async () => {

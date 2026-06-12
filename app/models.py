@@ -129,6 +129,55 @@ class Player(Base):
     transactions = relationship("Transaction", back_populates="player")
 
 
+class Dealer(Base):
+    """
+    Dealers del club. Cobran por hora dealeada + % del rake de su turno.
+    Soft delete via is_active (los turnos históricos los referencian).
+    """
+    __tablename__ = "dealers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False, index=True)
+
+    name = Column(String, nullable=False, index=True)
+    phone = Column(String, nullable=True)
+    hourly_rate_cop = Column(Float, default=0.0, nullable=False)  # tarifa por hora dealeada
+    rake_pct = Column(Float, default=0.0, nullable=False)         # % del rake del turno (0-100)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    club = relationship("Club")
+    shifts = relationship("DealerShift", back_populates="dealer")
+
+
+class DealerShift(Base):
+    """
+    Turno de un dealer en una mesa cash. end_time NULL => turno abierto.
+    declared_rake: rake contado por el cajero al terminar el turno (el último
+    turno de la sesión se auto-calcula al cierre como total - suma de previos).
+    Las tarifas se copian del Dealer al INICIAR (snapshot): editar al dealer
+    no cambia el valor de turnos históricos.
+    """
+    __tablename__ = "dealer_shifts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    # club_id redundante a propósito: tenant isolation sin join
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False, index=True)
+    session_id = Column(Integer, ForeignKey("sessions.id"), nullable=False, index=True)
+    dealer_id = Column(Integer, ForeignKey("dealers.id"), nullable=False, index=True)
+
+    start_time = Column(DateTime, default=datetime.utcnow, nullable=False)
+    end_time = Column(DateTime, nullable=True)
+    declared_rake = Column(Float, nullable=True)
+
+    # Snapshot de tarifas al momento de iniciar el turno
+    hourly_rate_cop = Column(Float, nullable=False, default=0.0)
+    rake_pct = Column(Float, nullable=False, default=0.0)
+
+    dealer = relationship("Dealer", back_populates="shifts")
+    session = relationship("Session")
+
+
 class Session(Base):
     """
     Una mesa o sesión de juego.

@@ -542,6 +542,11 @@ async def close_session(session_id: int, input_data: schemas.SessionCloseRequest
     session.debt_payment = float(final_debt_payment)
     session.partner_profit = float(final_partner_profit)
 
+    # Dealers (solo informe): cierra el turno abierto auto-calculando su rake
+    # como total - suma de turnos previos. NO toca la distribución.
+    from .dealers import close_dealer_shifts_and_build_report
+    dealers_info = await close_dealer_shifts_and_build_report(db, session, float(declared_rake))
+
     await log_action(
         db, request=request, club=current_club,
         action=AuditAction.SESSION_CLOSE,
@@ -570,11 +575,13 @@ async def close_session(session_id: int, input_data: schemas.SessionCloseRequest
         # 2. Enviamos la lista detallada
         "distributions": [
             {
-                "name": d.name, 
-                "amount": d.amount, 
+                "name": d.name,
+                "amount": d.amount,
                 "percentage_applied": d.percentage_applied
             } for d in distributions
-        ]
+        ],
+        # 3. Informe de dealers (vacío si la mesa no usó dealers)
+        **dealers_info,
     }
 # ---------------------------------------------------------
 # 6. DETALLES DE SESIÓN (HISTORIAL)
@@ -635,9 +642,23 @@ async def get_session_details(session_id: int, db: AsyncSession = Depends(get_db
         for d in dist_results
     ]
 
+    # 4. Turnos de dealers (vacío si la sesión no los usó)
+    dealers_q = (
+        select(models.DealerShift, models.Dealer.name)
+        .join(models.Dealer, models.Dealer.id == models.DealerShift.dealer_id)
+        .where(
+            models.DealerShift.session_id == session_id,
+            models.DealerShift.club_id == current_club.id,
+        )
+        .order_by(models.DealerShift.start_time)
+    )
+    from .dealers import _shift_to_dict
+    dealers_list = [_shift_to_dict(s, n) for s, n in (await db.execute(dealers_q)).all()]
+
     return {
         "players": players_list,
-        "distribution": distribution_list
+        "distribution": distribution_list,
+        "dealers": dealers_list
     }
 
 
@@ -666,8 +687,9 @@ async def delete_session(
             select(func.count(models.Transaction.id)).where(models.Transaction.session_id == session_id)
         )).scalar() or 0
 
-        # C. Eliminar primero las transacciones asociadas
+        # C. Eliminar primero las transacciones y turnos de dealer asociados
         await db.execute(delete(models.Transaction).where(models.Transaction.session_id == session_id))
+        await db.execute(delete(models.DealerShift).where(models.DealerShift.session_id == session_id))
 
         # D. Eliminar la sesión
         await db.execute(delete(models.Session).where(models.Session.id == session_id))

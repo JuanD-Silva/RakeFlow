@@ -13,6 +13,7 @@ import {
   ExclamationTriangleIcon,
   ChevronDownIcon
 } from '@heroicons/react/24/outline';
+import DealerManager from './DealerManager';
 
 const RULE_OPTIONS = [
   {
@@ -388,6 +389,9 @@ export default function ConfigPanel() {
           )}
         </div>
       )}
+
+      {/* DEALERS Y TARIFAS (autocontenido: guarda por si mismo) */}
+      <DealerManager />
 
       {/* ACCIONES (sticky) */}
       <div className="fixed bottom-0 left-0 right-0 bg-gray-900/95 backdrop-blur-md border-t border-gray-700/50 p-4 z-40">

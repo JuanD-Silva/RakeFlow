@@ -7,6 +7,7 @@ import Modal from './Modal';
 import TransactionForm from './TransactionForm';
 import CloseSessionForm from './CloseSessionForm';
 import StatsPanel from './StatsPanel';
+import DealerPanel from './DealerPanel';
 import PlayerTable from './PlayerTable';
 import api from '../api/axios';
 import ConfirmModal from './ConfirmModal';
@@ -450,9 +451,13 @@ const handleCreateTournament = async (formData) => {
            <ActionButton color="orange" label="🎁 Bono / Promo" onClick={() => handleOpenModal("bonus", "Otorgar Bono")} />
            <ActionButton color="blue" label="🍺 Bebida/Gasto" onClick={() => handleOpenModal("spend", "Registrar Gasto")} />
            <ActionButton color="purple" label="🎁 Jackpot Payout" onClick={() => handleOpenModal("jackpot-payout", "Pagar Premio Jackpot")} />
-           <ActionButton color="yellow" label="🤝 Propina Dealer" onClick={() => handleOpenModal("tip", "Registrar Propina")} />    
+           <ActionButton color="yellow" label="🤝 Propina Dealer" onClick={() => handleOpenModal("tip", "Registrar Propina")} />
 
-           <div className="col-span-2 md:col-span-3 mt-4">
+           <div className="col-span-2 md:col-span-3 mt-2">
+              <DealerPanel sessionId={activeSession?.id} refreshTrigger={refreshKey} />
+           </div>
+
+           <div className="col-span-2 md:col-span-3 mt-2">
               <StatsPanel refreshTrigger={refreshKey} sessionId={activeSession?.id} />
               <PlayerTable
                 refreshTrigger={refreshKey}

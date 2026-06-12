@@ -110,6 +110,62 @@ class PlayerResponse(PlayerBase):
     id: int
     created_at: datetime
 
+
+# --- DEALERS ---
+class DealerCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    phone: Optional[str] = Field(None, max_length=20)
+    hourly_rate_cop: float = Field(0, ge=0)
+    rake_pct: float = Field(0, ge=0, le=100)
+
+    @field_validator('name')
+    @classmethod
+    def strip_name(cls, v):
+        return v.strip()
+
+class DealerUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    phone: Optional[str] = Field(None, max_length=20)
+    hourly_rate_cop: Optional[float] = Field(None, ge=0)
+    rake_pct: Optional[float] = Field(None, ge=0, le=100)
+    is_active: Optional[bool] = None
+
+class DealerResponse(BaseSchema):
+    id: int
+    name: str
+    phone: Optional[str] = None
+    hourly_rate_cop: float
+    rake_pct: float
+    is_active: bool
+    created_at: Optional[datetime] = None
+
+class DealerShiftStart(BaseModel):
+    dealer_id: int
+    force: bool = False
+
+class DealerShiftChange(BaseModel):
+    dealer_id: int
+    declared_rake: float = Field(..., ge=0)
+    force: bool = False
+
+class DealerShiftEnd(BaseModel):
+    declared_rake: float = Field(..., ge=0)
+
+class DealerShiftResponse(BaseModel):
+    # Construido a mano en el router (lleva joins y campos calculados)
+    id: int
+    dealer_id: int
+    dealer_name: str
+    start_time: datetime
+    end_time: Optional[datetime] = None
+    elapsed_minutes: int   # calculado server-side (evita líos de TZ en el front)
+    hours: float
+    declared_rake: Optional[float] = None
+    hourly_rate_cop: float
+    rake_pct: float
+    payment: float
+
+
 class PlayerSessionStats(BaseModel):
     player_id: int
     name: str

@@ -1,0 +1,220 @@
+import { useState, useEffect } from 'react';
+import { dealerService } from '../api/services';
+import { useAuth } from '../context/AuthContext';
+import { PlusIcon, PencilSquareIcon, CheckIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { formatMoney } from '../utils/formatters';
+
+/**
+ * Gestión de dealers y sus tarifas (ConfigPanel).
+ * Editar/desactivar requiere OWNER o MANAGER (el backend lo exige igual).
+ * Las tarifas se snapshotean por turno: editar acá NO cambia turnos pasados.
+ */
+export default function DealerManager() {
+  const { role } = useAuth();
+  const canManage = ['owner', 'manager'].includes((role || '').toLowerCase());
+
+  const [dealers, setDealers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editingId, setEditingId] = useState(null);
+  const [draft, setDraft] = useState({});
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState(null);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      setDealers(await dealerService.list(true));
+    } catch (err) {
+      console.error("Error cargando dealers", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const startEdit = (dealer) => {
+    setEditingId(dealer.id);
+    setDraft({
+      name: dealer.name,
+      hourly_rate_cop: dealer.hourly_rate_cop,
+      rake_pct: dealer.rake_pct,
+      is_active: dealer.is_active,
+    });
+    setError(null);
+  };
+
+  const startCreate = () => {
+    setCreating(true);
+    setEditingId(null);
+    setDraft({ name: "", hourly_rate_cop: "", rake_pct: "", is_active: true });
+    setError(null);
+  };
+
+  const cancel = () => {
+    setEditingId(null);
+    setCreating(false);
+    setDraft({});
+    setError(null);
+  };
+
+  const save = async () => {
+    setError(null);
+    if (!draft.name?.trim()) { setError("El nombre es obligatorio."); return; }
+    const payload = {
+      name: draft.name.trim(),
+      hourly_rate_cop: parseFloat(draft.hourly_rate_cop) || 0,
+      rake_pct: parseFloat(draft.rake_pct) || 0,
+    };
+    try {
+      if (creating) {
+        await dealerService.create(payload);
+      } else {
+        await dealerService.update(editingId, { ...payload, is_active: draft.is_active });
+      }
+      cancel();
+      load();
+    } catch (err) {
+      setError(err.response?.data?.detail || "Error guardando el dealer.");
+    }
+  };
+
+  const toggleActive = async (dealer) => {
+    try {
+      if (dealer.is_active) {
+        await dealerService.deactivate(dealer.id);
+      } else {
+        await dealerService.update(dealer.id, { is_active: true });
+      }
+      load();
+    } catch (err) {
+      setError(err.response?.data?.detail || "Error actualizando el dealer.");
+    }
+  };
+
+  const editForm = (
+    <div className="bg-gray-900/60 border border-amber-500/30 rounded-xl p-4 space-y-3">
+      <input
+        type="text"
+        value={draft.name || ""}
+        onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+        className="w-full bg-gray-800 text-white border border-gray-600 rounded-lg py-2.5 px-3 focus:border-amber-500 outline-none text-sm"
+        placeholder="Nombre del dealer"
+      />
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="text-gray-500 text-[10px] font-bold uppercase px-1">$ / hora</label>
+          <input
+            type="number"
+            inputMode="numeric"
+            min="0"
+            value={draft.hourly_rate_cop}
+            onChange={(e) => setDraft({ ...draft, hourly_rate_cop: e.target.value })}
+            className="w-full bg-gray-800 text-white border border-gray-600 rounded-lg py-2 px-3 focus:border-amber-500 outline-none font-mono text-sm"
+            placeholder="20000"
+          />
+        </div>
+        <div>
+          <label className="text-gray-500 text-[10px] font-bold uppercase px-1">% del rake</label>
+          <input
+            type="number"
+            inputMode="decimal"
+            min="0"
+            max="100"
+            value={draft.rake_pct}
+            onChange={(e) => setDraft({ ...draft, rake_pct: e.target.value })}
+            className="w-full bg-gray-800 text-white border border-gray-600 rounded-lg py-2 px-3 focus:border-amber-500 outline-none font-mono text-sm"
+            placeholder="10"
+          />
+        </div>
+      </div>
+      {error && <p className="text-red-400 text-xs">{error}</p>}
+      <div className="flex gap-2">
+        <button onClick={save} className="flex-1 bg-amber-600 hover:bg-amber-500 text-white font-bold py-2 rounded-lg text-xs uppercase flex items-center justify-center gap-1">
+          <CheckIcon className="w-4 h-4" /> Guardar
+        </button>
+        <button onClick={cancel} className="flex-1 bg-gray-700 hover:bg-gray-600 text-gray-300 font-bold py-2 rounded-lg text-xs uppercase flex items-center justify-center gap-1">
+          <XMarkIcon className="w-4 h-4" /> Cancelar
+        </button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="bg-gray-800/40 rounded-2xl border border-gray-700/50 p-5 backdrop-blur-sm space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <h3 className="text-white font-bold text-base">🃏 Dealers y Tarifas</h3>
+          <p className="text-gray-500 text-xs mt-0.5">
+            Pago por hora + % del rake del turno. Editar tarifas no cambia turnos pasados.
+          </p>
+        </div>
+        {canManage && !creating && (
+          <button
+            onClick={startCreate}
+            className="bg-amber-600/20 hover:bg-amber-600 text-amber-400 hover:text-white border border-amber-500/30 rounded-lg p-2 transition-all"
+            title="Agregar dealer"
+          >
+            <PlusIcon className="w-5 h-5" />
+          </button>
+        )}
+      </div>
+
+      {creating && editForm}
+
+      {loading ? (
+        <p className="text-gray-500 text-sm py-4 text-center">Cargando...</p>
+      ) : dealers.length === 0 && !creating ? (
+        <p className="text-gray-600 text-xs py-3 text-center italic">
+          Sin dealers registrados. También se pueden crear desde la mesa al asignar turno.
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {dealers.map((d) => (
+            editingId === d.id ? (
+              <div key={d.id}>{editForm}</div>
+            ) : (
+              <div
+                key={d.id}
+                className={`bg-gray-900/40 border border-gray-700/50 rounded-xl p-3 flex items-center justify-between gap-3 ${!d.is_active ? 'opacity-50' : ''}`}
+              >
+                <div className="min-w-0">
+                  <p className="text-white font-bold text-sm truncate flex items-center gap-2">
+                    {d.name}
+                    {!d.is_active && (
+                      <span className="text-[9px] bg-gray-700 text-gray-400 px-2 py-0.5 rounded-full uppercase font-bold">Inactivo</span>
+                    )}
+                  </p>
+                  <p className="text-gray-500 text-xs font-mono mt-0.5">
+                    {formatMoney(d.hourly_rate_cop)}/h · {d.rake_pct}% rake
+                  </p>
+                </div>
+                {canManage && (
+                  <div className="flex gap-1.5 shrink-0">
+                    <button
+                      onClick={() => startEdit(d)}
+                      className="text-gray-400 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg p-2 transition-all"
+                      title="Editar"
+                    >
+                      <PencilSquareIcon className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => toggleActive(d)}
+                      className={`text-[10px] font-bold px-2.5 py-1.5 rounded-lg border transition-all ${
+                        d.is_active
+                          ? 'text-red-400 border-red-500/30 hover:bg-red-500/10'
+                          : 'text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10'
+                      }`}
+                    >
+                      {d.is_active ? 'Desactivar' : 'Activar'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

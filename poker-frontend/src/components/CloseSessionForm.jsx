@@ -133,7 +133,64 @@ export default function CloseSessionForm({ sessionId, onSuccess }) {
   </div>
 </div>
 
-          
+          {/* PAGO A DEALERS (solo informe, no descuenta de la caja) */}
+          {closureReport.dealers_report && closureReport.dealers_report.length > 0 && (
+            <div className="pt-4 space-y-3 border-t border-gray-700">
+              <p className="text-[10px] text-amber-500 font-bold uppercase tracking-widest">
+                🃏 Pago a Dealers (informativo)
+              </p>
+
+              {closureReport.dealers_warning && (
+                <div className="bg-yellow-900/30 border border-yellow-500/40 text-yellow-300 p-2.5 rounded-lg text-[10px] text-left">
+                  ⚠️ {closureReport.dealers_warning}
+                </div>
+              )}
+
+              <div className="space-y-2">
+                {closureReport.dealers_report.map((shift, i) => (
+                  <div key={i} className="bg-gray-900/40 border border-gray-700/50 p-3 rounded-lg text-left">
+                    <div className="flex justify-between items-center">
+                      <p className="text-xs text-white font-bold">{shift.dealer_name}</p>
+                      <span className="text-amber-400 font-mono font-bold text-sm">
+                        {formatMoney(shift.payment)}
+                      </span>
+                    </div>
+                    <p className="text-[9px] text-gray-500 font-mono mt-1">
+                      {shift.hours}h × {formatMoney(shift.hourly_rate_cop)}/h
+                      {shift.rake_pct > 0 && (
+                        <> + {shift.rake_pct}% de {formatMoney(Math.max(0, shift.declared_rake || 0))} rake</>
+                      )}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              {closureReport.unassigned_rake > 0 && (
+                <p className="text-[9px] text-gray-500 text-left">
+                  Rake sin dealer asignado: {formatMoney(closureReport.unassigned_rake)}
+                </p>
+              )}
+
+              {closureReport.dealers_note && (
+                <p className="text-[9px] text-gray-500 text-left italic">
+                  ℹ️ {closureReport.dealers_note}
+                </p>
+              )}
+
+              <div className="flex justify-between items-center bg-amber-900/20 p-3 rounded-lg border border-amber-500/30">
+                <span className="text-amber-400 font-bold uppercase text-[10px] tracking-wider">
+                  Total a pagar dealers
+                </span>
+                <span className="text-amber-400 font-mono font-bold text-base">
+                  {formatMoney(closureReport.total_dealers_payment)}
+                </span>
+              </div>
+              <p className="text-[8px] text-gray-600 text-left italic">
+                Informativo: no se descuenta de la utilidad de socios.
+              </p>
+            </div>
+          )}
+
         </div>
 
         <button

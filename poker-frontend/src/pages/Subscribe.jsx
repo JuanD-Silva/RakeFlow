@@ -161,7 +161,7 @@ export default function Subscribe() {
                   {startingTrial ? (
                     <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> Activando...</>
                   ) : (
-                    <><ClockIcon className="w-5 h-5" /> Probar 7 dias gratis</>
+                    <><ClockIcon className="w-5 h-5" /> Probar 14 dias gratis</>
                   )}
                 </button>
               )}
