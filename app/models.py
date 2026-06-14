@@ -224,6 +224,8 @@ class Transaction(Base):
     tournament_id = Column(Integer, ForeignKey("tournaments.id"), nullable=True, index=True)
     # 👇 Se cambia a nullable=True para permitir propinas anónimas
     player_id = Column(Integer, ForeignKey("players.id"), nullable=True, index=True)
+    # Dealer destinatario (solo TIPs por ahora): a quién le dieron la propina
+    dealer_id = Column(Integer, ForeignKey("dealers.id"), nullable=True, index=True)
 
     type = Column(SqEnum(TransactionType))
     amount = Column(Float, nullable=False)

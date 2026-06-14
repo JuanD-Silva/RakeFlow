@@ -275,12 +275,27 @@ async def create_tip(
 ):
     """
     Registra propina al dealer (fichas que salen de juego).
+    Opcionalmente se asigna al dealer que la recibió (dealer_id).
     """
     session = await get_active_session(db, current_club.id, tx.session_id)
+
+    # Validar que el dealer (si viene) sea de ESTE club
+    dealer_id = None
+    if tx.dealer_id is not None:
+        dealer = (await db.execute(
+            select(models.Dealer).where(
+                models.Dealer.id == tx.dealer_id,
+                models.Dealer.club_id == current_club.id,
+            )
+        )).scalars().first()
+        if not dealer:
+            raise HTTPException(status_code=404, detail="Dealer no encontrado")
+        dealer_id = dealer.id
 
     new_tx = models.Transaction(
         session_id=session.id,
         player_id=tx.player_id,
+        dealer_id=dealer_id,
         type=models.TransactionType.TIP,
         amount=tx.amount
     )

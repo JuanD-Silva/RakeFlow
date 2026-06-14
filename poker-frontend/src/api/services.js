@@ -139,12 +139,14 @@ export const transactionService = {
         });
     },
     
-    tip: async (playerId, amount, sessionId) => {
-        return await api.post('/transactions/tip', { 
-            // Tip a veces no lleva player_id, pero sí necesita session_id
-            player_id: playerId, 
+    tip: async (playerId, amount, sessionId, dealerId = null) => {
+        return await api.post('/transactions/tip', {
+            // Tip a veces no lleva player_id, pero sí necesita session_id.
+            // dealer_id (opcional): a qué dealer se le dio la propina.
+            player_id: playerId,
             amount,
-            session_id: sessionId 
+            session_id: sessionId,
+            dealer_id: dealerId
         });
     },
 

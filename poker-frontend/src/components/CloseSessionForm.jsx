@@ -191,6 +191,23 @@ export default function CloseSessionForm({ sessionId, onSuccess }) {
             </div>
           )}
 
+          {/* PROPINAS POR DEALER (lo que recibió cada uno) */}
+          {closureReport.dealers_tips && closureReport.dealers_tips.length > 0 && (
+            <div className="pt-4 space-y-2 border-t border-gray-700">
+              <p className="text-[10px] text-yellow-500 font-bold uppercase tracking-widest">
+                🤝 Propinas por Dealer
+              </p>
+              <div className="space-y-1.5">
+                {closureReport.dealers_tips.map((t, i) => (
+                  <div key={i} className="flex justify-between items-center bg-gray-900/40 border border-gray-700/50 p-2.5 rounded-lg">
+                    <span className="text-xs text-white font-bold">{t.dealer_name}</span>
+                    <span className="text-yellow-400 font-mono font-bold text-sm">{formatMoney(t.total)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
         </div>
 
         <button

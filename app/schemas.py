@@ -206,6 +206,7 @@ class TransactionCreate(BaseSchema):
     session_id: Optional[int] = None  # opcional para compat; si no viene, fallback a primera OPEN
     amount: Decimal = Field(..., gt=0, decimal_places=2)
     method: str = "CASH"
+    dealer_id: Optional[int] = None  # solo lo usa /tip: dealer destinatario
 
 class TransactionResponse(BaseSchema):
     id: int
@@ -214,6 +215,7 @@ class TransactionResponse(BaseSchema):
     amount: Decimal
     timestamp: datetime
     player_id: Optional[int] = None
+    dealer_id: Optional[int] = None
 
 class AuditResponse(BaseModel):
     total_buyins: float

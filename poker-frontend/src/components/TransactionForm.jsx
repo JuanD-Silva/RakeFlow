@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 // 👇 MANTENEMOS TUS IMPORTS ORIGINALES QUE SÍ FUNCIONAN
-import { transactionService, playerService, sessionService } from '../api/services';
+import { transactionService, playerService, sessionService, dealerService } from '../api/services';
 import { 
   UserIcon, 
   MagnifyingGlassIcon, 
@@ -34,6 +34,11 @@ export default function TransactionForm({ type, onSuccess, sessionId, createSess
   const [loadingPlayers, setLoadingPlayers] = useState(true);
   const [error, setError] = useState(null);
 
+  // --- PROPINA: a qué dealer se le dio ---
+  const [tipDealers, setTipDealers] = useState([]);
+  const [tipDealerId, setTipDealerId] = useState(null);     // null = sin asignar
+  const [onShiftDealerId, setOnShiftDealerId] = useState(null);
+
   const wrapperRef = useRef(null);
 
   // 1. CARGA INICIAL
@@ -43,13 +48,37 @@ export default function TransactionForm({ type, onSuccess, sessionId, createSess
     setIsCreatingNew(false);
     setAmount("");
     setPaymentMethod("CASH");
-    
+
     if (type === 'tip') {
       setLoadingPlayers(false);
     } else {
       loadPlayers();
     }
   }, [type]);
+
+  // 1b. PROPINA: cargar dealers y preseleccionar al que está en mesa
+  useEffect(() => {
+    if (type !== 'tip') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [dealers, shifts] = await Promise.all([
+          dealerService.list(),
+          sessionId ? dealerService.getShifts(sessionId).catch(() => []) : Promise.resolve([]),
+        ]);
+        if (cancelled) return;
+        setTipDealers(dealers);
+        const open = shifts.find(s => !s.end_time);
+        if (open) {
+          setOnShiftDealerId(open.dealer_id);
+          setTipDealerId(open.dealer_id); // preselecciona al dealer en turno
+        }
+      } catch (err) {
+        console.error("Error cargando dealers para propina", err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [type, sessionId]);
 
   // 2. FILTRADO DE JUGADORES
   useEffect(() => {
@@ -171,11 +200,7 @@ export default function TransactionForm({ type, onSuccess, sessionId, createSess
             await transactionService.jackpotPayout(pId, amt, activeSessionId);
             break;
         case 'tip':
-            if (transactionService.tip) {
-                await transactionService.tip(pId, amt, activeSessionId);
-            } else {
-                await transactionService.spend(pId, amt, activeSessionId);
-            }
+            await transactionService.tip(pId, amt, activeSessionId, tipDealerId);
             break;
         default: throw new Error("Tipo desconocido");
       }
@@ -303,6 +328,45 @@ export default function TransactionForm({ type, onSuccess, sessionId, createSess
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* --- PROPINA: ¿PARA QUÉ DEALER? --- */}
+      {type === 'tip' && tipDealers.length > 0 && (
+        <div className="space-y-2">
+          <label className="text-gray-400 text-xs font-bold uppercase tracking-wider px-1">
+            ¿Para qué dealer?
+          </label>
+          <div className="flex gap-2 overflow-x-auto pb-1 custom-scrollbar">
+            <button
+              type="button"
+              onClick={() => setTipDealerId(null)}
+              className={`shrink-0 px-4 py-2.5 rounded-xl text-xs font-bold border transition-all ${
+                tipDealerId === null
+                  ? 'bg-gray-700 border-gray-500 text-white'
+                  : 'bg-gray-800/60 border-gray-700 text-gray-500 hover:text-gray-300'
+              }`}
+            >
+              Sin asignar
+            </button>
+            {tipDealers.map((d) => (
+              <button
+                key={d.id}
+                type="button"
+                onClick={() => setTipDealerId(d.id)}
+                className={`shrink-0 px-4 py-2.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 ${
+                  tipDealerId === d.id
+                    ? 'bg-amber-600/20 border-amber-500 text-amber-300 shadow-lg shadow-amber-900/20'
+                    : 'bg-gray-800/60 border-gray-700 text-gray-400 hover:text-gray-200 hover:border-gray-500'
+                }`}
+              >
+                🃏 {d.name}
+                {d.id === onShiftDealerId && (
+                  <span className="text-[8px] bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded-full uppercase">En mesa</span>
+                )}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 

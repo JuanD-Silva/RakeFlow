@@ -12,6 +12,7 @@ El cierre es SOLO INFORMATIVO: no toca la distribución financiera ni
 registra gastos.
 """
 from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.future import select
@@ -144,6 +145,25 @@ async def close_dealer_shifts_and_build_report(
         .order_by(models.DealerShift.start_time)
     )
     rows = result.all()
+
+    # Propinas asignadas a dealers en esta sesión (independiente de los turnos:
+    # informan cuánto recibió cada dealer, no salen de la caja del rake)
+    tips_result = await db.execute(
+        select(models.Transaction.dealer_id, models.Dealer.name, func.sum(models.Transaction.amount))
+        .join(models.Dealer, models.Dealer.id == models.Transaction.dealer_id)
+        .where(
+            models.Transaction.session_id == session.id,
+            models.Transaction.type == models.TransactionType.TIP,
+            models.Transaction.dealer_id.isnot(None),
+            models.Dealer.club_id == session.club_id,
+        )
+        .group_by(models.Transaction.dealer_id, models.Dealer.name)
+    )
+    dealers_tips = [
+        {"dealer_id": d_id, "dealer_name": d_name, "total": float(total or 0)}
+        for d_id, d_name, total in tips_result.all()
+    ]
+
     if not rows:
         return {
             "dealers_report": [],
@@ -151,6 +171,7 @@ async def close_dealer_shifts_and_build_report(
             "unassigned_rake": 0,
             "dealers_warning": None,
             "dealers_note": None,
+            "dealers_tips": dealers_tips,
         }
 
     closed_rake_sum = sum(
@@ -206,6 +227,7 @@ async def close_dealer_shifts_and_build_report(
         "unassigned_rake": unassigned,
         "dealers_warning": warning,
         "dealers_note": note,
+        "dealers_tips": dealers_tips,
     }
 
 

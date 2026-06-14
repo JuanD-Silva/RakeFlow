@@ -92,9 +92,18 @@ export default function DealerPanel({ sessionId, refreshTrigger }) {
       ) : (
         <button
           onClick={() => setModalMode("start")}
-          className="w-full border-2 border-dashed border-gray-700 hover:border-amber-500/50 text-gray-500 hover:text-amber-400 rounded-xl py-2.5 text-xs font-bold transition-all flex items-center justify-center gap-2"
+          className="group/assign w-full bg-gradient-to-r from-amber-500/10 to-amber-600/5 hover:from-amber-500/20 hover:to-amber-600/10 border border-amber-500/30 hover:border-amber-500/60 rounded-xl px-4 py-3 transition-all active:scale-[0.99] flex items-center justify-between gap-3"
         >
-          🃏 Asignar dealer
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 bg-amber-500/15 border border-amber-500/30 rounded-lg flex items-center justify-center shrink-0 group-hover/assign:scale-110 transition-transform">
+              <span className="text-base">🃏</span>
+            </div>
+            <div className="text-left">
+              <p className="text-amber-300 font-bold text-sm leading-tight">Asignar dealer</p>
+              <p className="text-amber-400/50 text-[11px] leading-tight">Lleva sus horas y % del rake</p>
+            </div>
+          </div>
+          <span className="text-amber-400 text-lg font-bold group-hover/assign:translate-x-0.5 transition-transform shrink-0">+</span>
         </button>
       )}
 
