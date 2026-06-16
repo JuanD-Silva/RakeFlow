@@ -200,6 +200,15 @@ export const statsService = {
         }
         const response = await api.get(url);
         return response.data;
+    },
+
+    getDealerPayments: async (startDate, endDate) => {
+        let url = '/stats/dealer-payments';
+        if (startDate && endDate) {
+            url += `?start_date=${startDate}&end_date=${endDate}`;
+        }
+        const response = await api.get(url);
+        return response.data;
     }
 
     

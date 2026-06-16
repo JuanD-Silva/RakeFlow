@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import api from '../api/axios';
 import KPIDashboard from '../components/KPIDashboard';
+import DealerPaymentsTable from './DealerPaymentsTable';
 import { formatMoney } from '../utils/formatters';
 import { 
   ArrowLeftIcon, 
@@ -14,8 +15,9 @@ import {
 export default function WeeklyReport() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState('week'); 
+  const [viewMode, setViewMode] = useState('week');
   const [referenceDate, setReferenceDate] = useState(new Date());
+  const [reportTab, setReportTab] = useState('distribution'); // 'distribution' | 'dealers'
 
   // Rango calculado una sola vez; lo usamos para el fetch local Y se lo pasamos
   // al KPIDashboard para que sus 4 KPIs sigan el mismo periodo que el usuario
@@ -23,6 +25,9 @@ export default function WeeklyReport() {
   // quedaba en 0 cuando el user navegaba mayo y el server estaba en junio).
   const range = useMemo(() => {
     const curr = new Date(referenceDate);
+    if (viewMode === 'day') {
+      return { start: new Date(curr), end: new Date(curr) };
+    }
     if (viewMode === 'week') {
       const day = curr.getDay();
       const diff = curr.getDate() - day + (day === 0 ? -6 : 1);
@@ -70,7 +75,9 @@ export default function WeeklyReport() {
 
   const changePeriod = (direction) => {
     const newDate = new Date(referenceDate);
-    if (viewMode === 'week') {
+    if (viewMode === 'day') {
+      newDate.setDate(newDate.getDate() + direction);
+    } else if (viewMode === 'week') {
       newDate.setDate(newDate.getDate() + (direction * 7));
     } else {
       newDate.setMonth(newDate.getMonth() + direction);
@@ -117,20 +124,42 @@ export default function WeeklyReport() {
 
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-8 animate-fade-in">
-      <KPIDashboard startDate={range.start} endDate={range.end} />
-      
+      {reportTab === 'distribution' && <KPIDashboard startDate={range.start} endDate={range.end} />}
+
+      {/* TABS: Distribución / Dealers */}
+      <div className="flex bg-gray-900 p-1 rounded-xl w-full sm:w-fit">
+        <button
+          onClick={() => setReportTab('distribution')}
+          className={`flex-1 sm:flex-none px-5 py-2 rounded-lg text-xs font-bold transition-all ${reportTab === 'distribution' ? 'bg-gray-700 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+        >
+          DISTRIBUCIÓN
+        </button>
+        <button
+          onClick={() => setReportTab('dealers')}
+          className={`flex-1 sm:flex-none px-5 py-2 rounded-lg text-xs font-bold transition-all ${reportTab === 'dealers' ? 'bg-amber-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+        >
+          🃏 DEALERS
+        </button>
+      </div>
+
       {/* HEADER Y NAVEGACIÓN */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gray-800/40 p-4 rounded-2xl border border-gray-700/50 backdrop-blur-sm">
         <div className="flex bg-gray-900 p-1 rounded-xl w-fit">
-          <button 
+          <button
+            onClick={() => { setViewMode('day'); setReferenceDate(new Date()); }}
+            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${viewMode === 'day' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
+          >
+            DIARIO
+          </button>
+          <button
             onClick={() => { setViewMode('week'); setReferenceDate(new Date()); }}
-            className={`px-5 py-2 rounded-lg text-xs font-bold transition-all ${viewMode === 'week' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
+            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${viewMode === 'week' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
           >
             SEMANAL
           </button>
-          <button 
+          <button
             onClick={() => { setViewMode('month'); setReferenceDate(new Date()); }}
-            className={`px-5 py-2 rounded-lg text-xs font-bold transition-all ${viewMode === 'month' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
+            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${viewMode === 'month' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
           >
             MENSUAL
           </button>
@@ -143,7 +172,7 @@ export default function WeeklyReport() {
           
           <div className="text-center min-w-[140px]">
               <h2 className="text-sm font-bold text-white uppercase tracking-tighter italic">
-                {viewMode === 'week' ? 'Semana Actual' : 'Mes Actual'}
+                {viewMode === 'day' ? 'Día' : viewMode === 'week' ? 'Semana' : 'Mes'}
               </h2>
               <p className="text-[10px] text-blue-400 font-mono font-bold">
                 {data.range.start} — {data.range.end}
@@ -155,6 +184,14 @@ export default function WeeklyReport() {
           </button>
         </div>
       </div>
+
+      {/* TAB DEALERS */}
+      {reportTab === 'dealers' && (
+        <DealerPaymentsTable startISO={formatDateISO(range.start)} endISO={formatDateISO(range.end)} />
+      )}
+
+      {/* ===== TAB DISTRIBUCIÓN ===== */}
+      {reportTab === 'distribution' && <>
 
       {/* KPI CARDS (RESUMEN RÁPIDO) */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -281,6 +318,8 @@ export default function WeeklyReport() {
           Actualizar Reporte en Vivo
         </button>
       </div>
+
+      </>}
     </div>
   );
 }

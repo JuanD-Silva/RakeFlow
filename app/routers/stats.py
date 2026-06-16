@@ -597,3 +597,128 @@ async def get_mixed_history(
     return history_list[skip : skip + limit]
 
 
+
+
+# ---------------------------------------------------------
+# PAGOS A DEALERS EN UN RANGO (diario / semanal / mensual)
+# ---------------------------------------------------------
+@router.get("/dealer-payments")
+async def get_dealer_payments(
+    start_date: str = None,
+    end_date: str = None,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+    _: models.User = Depends(require_role(_REPORT_ROLES)),
+):
+    """
+    Reporte de cuánto se le debe pagar a cada dealer en un rango.
+    Agrega los turnos CERRADOS (end_time dentro del rango) y las propinas
+    asignadas. Pago del club = horas x tarifa + % del rake (snapshot por turno).
+    Las propinas se reportan aparte (son del dealer, no las paga el club).
+    """
+    # 1. Rango (default: mes en curso, hora Colombia)
+    if not start_date or not end_date:
+        start_dt = _start_of_month_col_as_utc()
+        end_dt = datetime.utcnow()
+    else:
+        start_dt = datetime.combine(datetime.strptime(start_date, "%Y-%m-%d").date(), time.min)
+        end_dt = datetime.combine(datetime.strptime(end_date, "%Y-%m-%d").date(), time.max)
+
+    # 2. Turnos cerrados del club en el rango (por end_time)
+    shifts_stmt = (
+        select(models.DealerShift, models.Dealer.name, models.Dealer.is_active)
+        .join(models.Dealer, models.Dealer.id == models.DealerShift.dealer_id)
+        .where(
+            models.DealerShift.club_id == current_club.id,
+            models.DealerShift.end_time.isnot(None),
+            models.DealerShift.end_time >= start_dt,
+            models.DealerShift.end_time <= end_dt,
+        )
+        .order_by(models.DealerShift.start_time)
+    )
+    shift_rows = (await db.execute(shifts_stmt)).all()
+
+    # 3. Propinas asignadas a dealers en el rango (por timestamp)
+    tips_stmt = (
+        select(models.Transaction.dealer_id, func.sum(models.Transaction.amount))
+        .where(
+            models.Transaction.type == models.TransactionType.TIP,
+            models.Transaction.dealer_id.isnot(None),
+            models.Transaction.timestamp >= start_dt,
+            models.Transaction.timestamp <= end_dt,
+        )
+        .group_by(models.Transaction.dealer_id)
+    )
+    tips_by_dealer = {d_id: float(total or 0) for d_id, total in (await db.execute(tips_stmt)).all()}
+
+    # 4. Agregar por dealer
+    dealers = {}
+    for shift, name, is_active in shift_rows:
+        elapsed_min = max(0, int((shift.end_time - shift.start_time).total_seconds() // 60))
+        hours = elapsed_min / 60.0
+        hour_payment = hours * (shift.hourly_rate_cop or 0)
+        rake_commission = max(0.0, shift.declared_rake or 0.0) * (shift.rake_pct or 0) / 100.0
+
+        d = dealers.setdefault(shift.dealer_id, {
+            "dealer_id": shift.dealer_id,
+            "name": name,
+            "is_active": is_active,
+            "shifts_count": 0,
+            "sessions": set(),
+            "total_minutes": 0,
+            "hour_payment": 0.0,
+            "rake_commission": 0.0,
+        })
+        d["shifts_count"] += 1
+        d["sessions"].add(shift.session_id)
+        d["total_minutes"] += elapsed_min
+        d["hour_payment"] += hour_payment
+        d["rake_commission"] += rake_commission
+
+    # Asegurar que dealers con propina pero sin turno cerrado aparezcan
+    for d_id, tip_total in tips_by_dealer.items():
+        if d_id not in dealers:
+            dr = (await db.execute(
+                select(models.Dealer.name, models.Dealer.is_active).where(
+                    models.Dealer.id == d_id,
+                    models.Dealer.club_id == current_club.id,
+                )
+            )).first()
+            if not dr:
+                continue
+            dealers[d_id] = {
+                "dealer_id": d_id, "name": dr[0], "is_active": dr[1],
+                "shifts_count": 0, "sessions": set(), "total_minutes": 0,
+                "hour_payment": 0.0, "rake_commission": 0.0,
+            }
+
+    result = []
+    summary = {"total_hours": 0.0, "club_payment": 0, "tips": 0, "grand_total": 0, "dealers_count": 0}
+    for d in dealers.values():
+        club_payment = round(d["hour_payment"] + d["rake_commission"])
+        tips = round(tips_by_dealer.get(d["dealer_id"], 0))
+        hours = round(d["total_minutes"] / 60.0, 1)
+        result.append({
+            "dealer_id": d["dealer_id"],
+            "name": d["name"],
+            "is_active": d["is_active"],
+            "shifts_count": d["shifts_count"],
+            "sessions_count": len(d["sessions"]),
+            "hours": hours,
+            "hour_payment": round(d["hour_payment"]),
+            "rake_commission": round(d["rake_commission"]),
+            "club_payment": club_payment,
+            "tips": tips,
+            "grand_total": club_payment + tips,
+        })
+        summary["total_hours"] += hours
+        summary["club_payment"] += club_payment
+        summary["tips"] += tips
+        summary["grand_total"] += club_payment + tips
+    summary["dealers_count"] = len(result)
+    summary["total_hours"] = round(summary["total_hours"], 1)
+
+    # Mayor pago primero
+    result.sort(key=lambda x: x["grand_total"], reverse=True)
+
+    return {"summary": summary, "dealers": result}
