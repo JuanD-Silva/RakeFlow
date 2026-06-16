@@ -93,6 +93,10 @@ async def observability_middleware(request: Request, call_next):
             },
         )
         response.headers["X-Request-ID"] = req_id
+        # La API devuelve datos vivos (totales de mesa, etc.). Evitamos que el
+        # navegador/proxy sirva GETs cacheados tras un borrado/edición, que
+        # mostraba totales con transacciones ya eliminadas.
+        response.headers["Cache-Control"] = "no-store"
         return response
     finally:
         request_id_ctx.reset(token_req_id)
