@@ -56,25 +56,36 @@ export default function TransactionForm({ type, onSuccess, sessionId, createSess
     }
   }, [type]);
 
-  // 1b. PROPINA: cargar dealers y preseleccionar al que está en mesa
+  // 1b. PROPINA: solo dealers que tuvieron turno en ESTA sesión (en turno
+  // activo o en pausa), igual que cashout solo lista jugadores de la mesa.
+  // NO mostramos todos los dealers del club. Preselecciona al que está en turno.
   useEffect(() => {
     if (type !== 'tip') return;
     let cancelled = false;
     (async () => {
       try {
-        const [dealers, shifts] = await Promise.all([
-          dealerService.list(),
-          sessionId ? dealerService.getShifts(sessionId).catch(() => []) : Promise.resolve([]),
-        ]);
+        const shifts = sessionId
+          ? await dealerService.getShifts(sessionId).catch(() => [])
+          : [];
         if (cancelled) return;
-        setTipDealers(dealers);
         const open = shifts.find(s => !s.end_time);
+        // Dealers únicos que dealearon en esta sesión (el de turno abierto primero)
+        const seen = new Map();
+        for (const s of shifts) {
+          if (!seen.has(s.dealer_id)) {
+            seen.set(s.dealer_id, { id: s.dealer_id, name: s.dealer_name });
+          }
+        }
+        const list = [...seen.values()].sort(
+          (a, b) => (b.id === open?.dealer_id) - (a.id === open?.dealer_id)
+        );
+        setTipDealers(list);
         if (open) {
           setOnShiftDealerId(open.dealer_id);
           setTipDealerId(open.dealer_id); // preselecciona al dealer en turno
         }
       } catch (err) {
-        console.error("Error cargando dealers para propina", err);
+        console.error("Error cargando dealers de la sesión para propina", err);
       }
     })();
     return () => { cancelled = true; };
