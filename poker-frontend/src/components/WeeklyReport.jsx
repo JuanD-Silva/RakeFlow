@@ -2,6 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import api from '../api/axios';
 import KPIDashboard from '../components/KPIDashboard';
 import DealerPaymentsTable from './DealerPaymentsTable';
+import ExportMenu from './ExportMenu';
+import { statsService } from '../api/services';
+import { useAuth } from '../context/AuthContext';
+import { buildDistributionModel, buildDealersModel } from '../utils/reportExport';
 import { formatMoney } from '../utils/formatters';
 import { 
   ArrowLeftIcon, 
@@ -18,6 +22,7 @@ export default function WeeklyReport() {
   const [viewMode, setViewMode] = useState('week');
   const [referenceDate, setReferenceDate] = useState(new Date());
   const [reportTab, setReportTab] = useState('distribution'); // 'distribution' | 'dealers'
+  const { email } = useAuth();
 
   // Rango calculado una sola vez; lo usamos para el fetch local Y se lo pasamos
   // al KPIDashboard para que sus 4 KPIs sigan el mismo periodo que el usuario
@@ -122,24 +127,37 @@ export default function WeeklyReport() {
   const totalMeta = data.distribution.filter(isMetaItem).reduce((acc, curr) => acc + curr.total, 0);
   const totalFondos = data.distribution.filter(isFondoItem).reduce((acc, curr) => acc + curr.total, 0);
 
+  // Arma el modelo de exportación según la pestaña activa. Dealers se trae al
+  // momento (su data vive en el componente hijo); distribución ya está en `data`.
+  const buildExportModel = async () => {
+    if (reportTab === 'dealers') {
+      const dealerData = await statsService.getDealerPayments(formatDateISO(range.start), formatDateISO(range.end));
+      return buildDealersModel({ dealerData, viewMode, start: range.start, end: range.end, user: email });
+    }
+    return buildDistributionModel({ data, totalSocios, totalMeta, totalFondos, viewMode, start: range.start, end: range.end, user: email });
+  };
+
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-8 animate-fade-in">
       {reportTab === 'distribution' && <KPIDashboard startDate={range.start} endDate={range.end} />}
 
-      {/* TABS: Distribución / Dealers */}
-      <div className="flex bg-gray-900 p-1 rounded-xl w-full sm:w-fit">
-        <button
-          onClick={() => setReportTab('distribution')}
-          className={`flex-1 sm:flex-none px-5 py-2 rounded-lg text-xs font-bold transition-all ${reportTab === 'distribution' ? 'bg-gray-700 text-white shadow' : 'text-gray-400 hover:text-white'}`}
-        >
-          DISTRIBUCIÓN
-        </button>
-        <button
-          onClick={() => setReportTab('dealers')}
-          className={`flex-1 sm:flex-none px-5 py-2 rounded-lg text-xs font-bold transition-all ${reportTab === 'dealers' ? 'bg-amber-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}
-        >
-          🃏 DEALERS
-        </button>
+      {/* TABS: Distribución / Dealers  +  Exportar */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex bg-gray-900 p-1 rounded-xl w-full sm:w-fit">
+          <button
+            onClick={() => setReportTab('distribution')}
+            className={`flex-1 sm:flex-none px-5 py-2 rounded-lg text-xs font-bold transition-all ${reportTab === 'distribution' ? 'bg-gray-700 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+          >
+            DISTRIBUCIÓN
+          </button>
+          <button
+            onClick={() => setReportTab('dealers')}
+            className={`flex-1 sm:flex-none px-5 py-2 rounded-lg text-xs font-bold transition-all ${reportTab === 'dealers' ? 'bg-amber-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+          >
+            🃏 DEALERS
+          </button>
+        </div>
+        <ExportMenu getModel={buildExportModel} />
       </div>
 
       {/* HEADER Y NAVEGACIÓN */}
