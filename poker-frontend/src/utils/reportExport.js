@@ -21,6 +21,56 @@ const isoDay = (d) => {
   const dd = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${dd}`;
 };
+const fmtShort = (d) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+const round1 = (n) => Math.round(n * 10) / 10;
+
+// Detalle por sesión: filtra los eventos (mesas cash + torneos) del endpoint
+// /history/ al rango navegado y arma una tabla fila-por-sesión. Devuelve null
+// si no hay nada en el rango (para no agregar hoja/tabla vacía).
+function buildSessionsDetail(historyItems, start, end) {
+  const sISO = isoDay(start);
+  const eISO = isoDay(end);
+  const inRange = (historyItems || [])
+    .filter((it) => {
+      const diso = isoDay(new Date(it.date));
+      return diso >= sISO && diso <= eISO;
+    })
+    .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+  if (inRange.length === 0) return null;
+
+  const rows = inRange.map((it) => ({
+    fecha: fmtShort(new Date(it.date)),
+    tipo: it.type === 'TOURNAMENT' ? 'Torneo' : 'Cash',
+    evento: it.title,
+    horas: round1((it.duration_minutes || 0) / 60),
+    total_in: it.total_in || 0,
+    rake: it.rake || 0,
+    secundario: it.secondary_metric || 0,
+  }));
+  const sum = (k) => rows.reduce((a, r) => a + (typeof r[k] === 'number' ? r[k] : 0), 0);
+
+  return {
+    name: 'Sesiones',
+    columns: [
+      { key: 'fecha', label: 'Fecha', type: 'text' },
+      { key: 'tipo', label: 'Tipo', type: 'text' },
+      { key: 'evento', label: 'Evento', type: 'text' },
+      { key: 'horas', label: 'Horas', type: 'number', align: 'right' },
+      { key: 'total_in', label: 'Total In', type: 'money', align: 'right' },
+      { key: 'rake', label: 'Rake', type: 'money', align: 'right' },
+      { key: 'secundario', label: 'Meta / Premios', type: 'money', align: 'right' },
+    ],
+    rows,
+    totals: {
+      fecha: 'Total',
+      horas: round1(sum('horas')),
+      total_in: sum('total_in'),
+      rake: sum('rake'),
+      secundario: sum('secundario'),
+    },
+  };
+}
 
 export function periodLabel(viewMode, start, end) {
   if (viewMode === 'day') return `Día ${fmtFecha(start)}`;
@@ -37,7 +87,7 @@ function nowLabel() {
 // ---------------------------------------------------------------------------
 // Builders de modelo
 // ---------------------------------------------------------------------------
-export function buildDistributionModel({ data, totalSocios, totalMeta, totalFondos, viewMode, start, end, user }) {
+export function buildDistributionModel({ data, totalSocios, totalMeta, totalFondos, viewMode, start, end, user, sessions }) {
   const rows = (data.distribution || []).map((item) => ({
     concepto: item.name,
     tipo: item.percent > 0 ? `Utilidad socio (${item.percent}%)` : 'Gasto / Fondo / Meta',
@@ -64,6 +114,7 @@ export function buildDistributionModel({ data, totalSocios, totalMeta, totalFond
     ],
     rows,
     totals: { concepto: 'Total generado', monto: data.total_week || 0 },
+    detail: sessions ? buildSessionsDetail(sessions, start, end) : null,
     filenameBase: `rakeflow-distribucion-${isoDay(start)}`,
   };
 }
@@ -249,30 +300,43 @@ export async function exportPDF(model, { share = false } = {}) {
   doc.setTextColor(40);
   doc.text(kpiText, M, 128, { maxWidth: W - 2 * M });
 
-  // Tabla
-  const head = [model.columns.map((c) => c.label)];
-  const body = model.rows.map((r) => model.columns.map((c) => cellText(model, c, r[c.key])));
-  const foot = model.totals
-    ? [model.columns.map((c) => (model.totals[c.key] !== undefined ? cellText(model, c, model.totals[c.key]) : ''))]
-    : undefined;
+  // Render de una tabla genérica ({ columns, rows, totals }) a partir de startY.
+  const renderTable = (table, startY) => {
+    const head = [table.columns.map((c) => c.label)];
+    const body = table.rows.map((r) => table.columns.map((c) => cellText(table, c, r[c.key])));
+    const foot = table.totals
+      ? [table.columns.map((c) => (table.totals[c.key] !== undefined ? cellText(table, c, table.totals[c.key]) : ''))]
+      : undefined;
+    const columnStyles = {};
+    table.columns.forEach((c, i) => {
+      if (c.align === 'right') columnStyles[i] = { halign: 'right' };
+    });
+    autoTable(doc, {
+      head,
+      body,
+      foot,
+      startY,
+      margin: { left: M, right: M },
+      styles: { fontSize: 9, cellPadding: 6 },
+      headStyles: { fillColor: [16, 122, 87], textColor: 255, fontStyle: 'bold' },
+      footStyles: { fillColor: [240, 240, 240], textColor: 20, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [248, 250, 249] },
+      columnStyles,
+    });
+  };
 
-  const columnStyles = {};
-  model.columns.forEach((c, i) => {
-    if (c.align === 'right') columnStyles[i] = { halign: 'right' };
-  });
+  // Tabla principal (resumen)
+  renderTable(model, 144);
 
-  autoTable(doc, {
-    head,
-    body,
-    foot,
-    startY: 144,
-    margin: { left: M, right: M },
-    styles: { fontSize: 9, cellPadding: 6 },
-    headStyles: { fillColor: [16, 122, 87], textColor: 255, fontStyle: 'bold' },
-    footStyles: { fillColor: [240, 240, 240], textColor: 20, fontStyle: 'bold' },
-    alternateRowStyles: { fillColor: [248, 250, 249] },
-    columnStyles,
-  });
+  // Tabla de detalle por sesión (si hay)
+  if (model.detail && model.detail.rows.length) {
+    const y = doc.lastAutoTable.finalY + 26;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(20);
+    doc.text('Detalle por sesión', M, y);
+    renderTable(model.detail, y + 8);
+  }
 
   // Pie
   const pageCount = doc.internal.getNumberOfPages();
@@ -316,7 +380,20 @@ export async function exportExcel(model, { share = false } = {}) {
   ws['!cols'] = model.columns.map((c) => ({ wch: c.type === 'text' ? 28 : 14 }));
 
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Reporte');
+  XLSX.utils.book_append_sheet(wb, ws, 'Resumen');
+
+  // Hoja de detalle: una fila por sesión/torneo del periodo.
+  if (model.detail && model.detail.rows.length) {
+    const d = model.detail;
+    const daoa = [d.columns.map((c) => c.label)];
+    d.rows.forEach((r) => daoa.push(d.columns.map((c) => r[c.key] ?? '')));
+    if (d.totals) {
+      daoa.push(d.columns.map((c) => (d.totals[c.key] !== undefined ? d.totals[c.key] : '')));
+    }
+    const ws2 = XLSX.utils.aoa_to_sheet(daoa);
+    ws2['!cols'] = d.columns.map((c) => ({ wch: c.type === 'text' ? 26 : 14 }));
+    XLSX.utils.book_append_sheet(wb, ws2, d.name.slice(0, 31));
+  }
 
   const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
   const blob = new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });

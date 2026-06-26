@@ -3,7 +3,7 @@ import api from '../api/axios';
 import KPIDashboard from '../components/KPIDashboard';
 import DealerPaymentsTable from './DealerPaymentsTable';
 import ExportMenu from './ExportMenu';
-import { statsService } from '../api/services';
+import { statsService, historyService } from '../api/services';
 import { useAuth } from '../context/AuthContext';
 import { buildDistributionModel, buildDealersModel } from '../utils/reportExport';
 import { formatMoney } from '../utils/formatters';
@@ -134,7 +134,11 @@ export default function WeeklyReport() {
       const dealerData = await statsService.getDealerPayments(formatDateISO(range.start), formatDateISO(range.end));
       return buildDealersModel({ dealerData, viewMode, start: range.start, end: range.end, user: email });
     }
-    return buildDistributionModel({ data, totalSocios, totalMeta, totalFondos, viewMode, start: range.start, end: range.end, user: email });
+    // Detalle por sesión: /history/ trae todas las cerradas; lo filtra el builder
+    // al rango. Si falla (rol/red), el reporte sale igual sin la hoja de detalle.
+    let sessions = [];
+    try { sessions = await historyService.getAll(); } catch { sessions = []; }
+    return buildDistributionModel({ data, totalSocios, totalMeta, totalFondos, viewMode, start: range.start, end: range.end, user: email, sessions });
   };
 
   return (
