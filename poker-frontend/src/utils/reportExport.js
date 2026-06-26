@@ -169,16 +169,22 @@ function downloadBlob(blob, filename) {
 // Intenta compartir el archivo nativo (móvil → permite mandarlo por WhatsApp).
 // Si no hay soporte, lo descarga. Devuelve 'shared' | 'downloaded'.
 async function deliver(blob, filename, text) {
-  try {
-    const file = new File([blob], filename, { type: blob.type });
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+  const file = new File([blob], filename, { type: blob.type });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
       await navigator.share({ files: [file], title: filename, text });
       return 'shared';
+    } catch (err) {
+      // El sheet nativo ya se mostró. Si el usuario lo cancela (AbortError) o el
+      // navegador lo rechaza por gesto consumido (NotAllowedError), NO caemos a
+      // descarga: evita la doble acción (compartir + descargar) en móvil.
+      if (err && (err.name === 'AbortError' || err.name === 'NotAllowedError')) return 'cancelled';
+      // Solo un fallo inesperado del share justifica el fallback a descarga.
+      downloadBlob(blob, filename);
+      return 'downloaded';
     }
-  } catch (err) {
-    if (err && err.name === 'AbortError') return 'cancelled';
-    // cae a descarga
   }
+  // Sin soporte de Web Share de archivos: descarga directa.
   downloadBlob(blob, filename);
   return 'downloaded';
 }
@@ -297,7 +303,7 @@ export async function exportExcel(model, { share = false } = {}) {
   aoa.push([model.periodLabel]);
   aoa.push([`Generado ${model.generatedAt}${model.user ? ' · ' + model.user : ''}`]);
   aoa.push([]);
-  model.kpis.forEach((k) => aoa.push([k.label, k.money ? k.value : k.value]));
+  model.kpis.forEach((k) => aoa.push([k.label, k.value]));
   aoa.push([]);
   aoa.push(model.columns.map((c) => c.label));
   model.rows.forEach((r) => aoa.push(model.columns.map((c) => r[c.key] ?? '')));
