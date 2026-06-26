@@ -357,46 +357,131 @@ export async function exportPDF(model, { share = false } = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// Excel
+// Excel (ExcelJS — soporta estilos de marca: encabezados verdes, totales,
+// formato de moneda COP. xlsx community no estiliza celdas.)
 // ---------------------------------------------------------------------------
+// Paleta de marca RakeFlow (ARGB para ExcelJS)
+const XL = {
+  emerald: 'FF107A57',      // verde fuerte (encabezados)
+  emeraldText: 'FF0B7A4B',
+  rowAlt: 'FFF2FAF6',       // verde muy claro (filas alternas)
+  totalBg: 'FFE6F4EE',      // verde claro (fila total)
+  grayText: 'FF6B7280',
+  lightText: 'FF9CA3AF',
+  border: 'FFE5E7EB',
+};
+const MONEY_FMT = '"$"\\ #,##0';
+
 export async function exportExcel(model, { share = false } = {}) {
-  const XLSX = await import('xlsx');
+  const mod = await import('exceljs');
+  const ExcelJS = mod.default || mod;
 
-  const aoa = [];
-  aoa.push([model.title]);
-  aoa.push([model.periodLabel]);
-  aoa.push([`Generado ${model.generatedAt}${model.user ? ' · ' + model.user : ''}`]);
-  aoa.push([]);
-  model.kpis.forEach((k) => aoa.push([k.label, k.value]));
-  aoa.push([]);
-  aoa.push(model.columns.map((c) => c.label));
-  model.rows.forEach((r) => aoa.push(model.columns.map((c) => r[c.key] ?? '')));
-  if (model.totals) {
-    aoa.push(model.columns.map((c) => (model.totals[c.key] !== undefined ? model.totals[c.key] : '')));
-  }
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'RakeFlow';
 
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  // Ancho de columnas
-  ws['!cols'] = model.columns.map((c) => ({ wch: c.type === 'text' ? 28 : 14 }));
+  const thinBorder = {
+    top: { style: 'thin', color: { argb: XL.border } },
+    bottom: { style: 'thin', color: { argb: XL.border } },
+    left: { style: 'thin', color: { argb: XL.border } },
+    right: { style: 'thin', color: { argb: XL.border } },
+  };
 
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Resumen');
+  const addSheet = (name, table, meta) => {
+    const ws = wb.addWorksheet(name, { views: [{ showGridLines: false }] });
+    const ncol = table.columns.length;
+    let r = 1;
 
-  // Hoja de detalle: una fila por sesión/torneo del periodo.
-  if (model.detail && model.detail.rows.length) {
-    const d = model.detail;
-    const daoa = [d.columns.map((c) => c.label)];
-    d.rows.forEach((r) => daoa.push(d.columns.map((c) => r[c.key] ?? '')));
-    if (d.totals) {
-      daoa.push(d.columns.map((c) => (d.totals[c.key] !== undefined ? d.totals[c.key] : '')));
+    if (meta) {
+      ws.mergeCells(r, 1, r, ncol);
+      const tc = ws.getCell(r, 1);
+      tc.value = meta.title;
+      tc.font = { bold: true, size: 16, color: { argb: XL.emeraldText } };
+      r++;
+      ws.mergeCells(r, 1, r, ncol);
+      ws.getCell(r, 1).value = meta.periodLabel;
+      ws.getCell(r, 1).font = { size: 11, color: { argb: XL.grayText } };
+      r++;
+      ws.mergeCells(r, 1, r, ncol);
+      ws.getCell(r, 1).value = `Generado ${meta.generatedAt}${meta.user ? ' · ' + meta.user : ''}`;
+      ws.getCell(r, 1).font = { size: 9, italic: true, color: { argb: XL.lightText } };
+      r += 2;
+
+      meta.kpis.forEach((k) => {
+        const lc = ws.getCell(r, 1);
+        lc.value = k.label;
+        lc.font = { bold: true, color: { argb: XL.grayText } };
+        const vc = ws.getCell(r, 2);
+        vc.value = k.value;
+        if (k.money) vc.numFmt = MONEY_FMT;
+        vc.font = { bold: true };
+        r++;
+      });
+      r++;
     }
-    const ws2 = XLSX.utils.aoa_to_sheet(daoa);
-    ws2['!cols'] = d.columns.map((c) => ({ wch: c.type === 'text' ? 26 : 14 }));
-    XLSX.utils.book_append_sheet(wb, ws2, d.name.slice(0, 31));
+
+    // Encabezado de tabla
+    const headerRow = ws.getRow(r);
+    headerRow.height = 22;
+    table.columns.forEach((c, i) => {
+      const cell = headerRow.getCell(i + 1);
+      cell.value = c.label;
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: XL.emerald } };
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.alignment = { horizontal: c.align === 'right' ? 'right' : 'left', vertical: 'middle' };
+      cell.border = thinBorder;
+    });
+    r++;
+
+    // Filas
+    table.rows.forEach((row, idx) => {
+      const tr = ws.getRow(r);
+      table.columns.forEach((c, i) => {
+        const cell = tr.getCell(i + 1);
+        cell.value = row[c.key] ?? '';
+        if (c.type === 'money') cell.numFmt = MONEY_FMT;
+        cell.alignment = { horizontal: c.align === 'right' ? 'right' : 'left' };
+        cell.border = thinBorder;
+        if (idx % 2 === 1) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: XL.rowAlt } };
+      });
+      r++;
+    });
+
+    // Totales
+    if (table.totals) {
+      const tr = ws.getRow(r);
+      table.columns.forEach((c, i) => {
+        const cell = tr.getCell(i + 1);
+        const v = table.totals[c.key];
+        cell.value = v !== undefined ? v : '';
+        if (c.type === 'money') cell.numFmt = MONEY_FMT;
+        cell.font = { bold: true, color: { argb: XL.emeraldText } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: XL.totalBg } };
+        cell.alignment = { horizontal: c.align === 'right' ? 'right' : 'left' };
+        cell.border = thinBorder;
+      });
+      r++;
+    }
+
+    // Anchos
+    table.columns.forEach((c, i) => {
+      ws.getColumn(i + 1).width = c.type === 'text' ? 30 : 16;
+    });
+  };
+
+  addSheet('Resumen', { columns: model.columns, rows: model.rows, totals: model.totals }, {
+    title: model.title,
+    periodLabel: model.periodLabel,
+    generatedAt: model.generatedAt,
+    user: model.user,
+    kpis: model.kpis,
+  });
+
+  if (model.detail && model.detail.rows.length) {
+    addSheet(model.detail.name.slice(0, 31), model.detail, null);
   }
 
-  const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-  const blob = new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   const filename = `${model.filenameBase}.xlsx`;
   if (share) return deliver(blob, filename, model.periodLabel);
   downloadBlob(blob, filename);
