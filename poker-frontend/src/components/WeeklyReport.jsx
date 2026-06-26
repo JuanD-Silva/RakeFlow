@@ -217,12 +217,18 @@ export default function WeeklyReport() {
 
       {/* KPI CARDS (RESUMEN RÁPIDO) */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {/* Total Generado (CORREGIDO: usa total_week) */}
+        {/* Rake bruto + neto (después de gastos: dealers + cortesías) */}
         <div className="bg-gradient-to-br from-green-900/20 to-transparent border border-green-500/20 p-5 rounded-2xl">
-          <p className="text-[10px] font-bold text-green-500 uppercase tracking-widest mb-1">Total Generado</p>
+          <p className="text-[10px] font-bold text-green-500 uppercase tracking-widest mb-1">Rake Bruto</p>
           <p className="text-3xl font-black text-white font-mono">
-            {formatMoney(data.total_week || 0)} 
+            {formatMoney(data.gross_week ?? data.total_week ?? 0)}
           </p>
+          {data.expenses_week > 0 && (
+            <p className="text-[11px] text-gray-400 font-mono mt-1">
+              Neto: <span className="text-emerald-400 font-bold">{formatMoney(data.net_week || 0)}</span>
+              <span className="text-gray-600"> (− {formatMoney(data.expenses_week)} gastos)</span>
+            </p>
+          )}
         </div>
         
         {/* Meta / Fondos */}

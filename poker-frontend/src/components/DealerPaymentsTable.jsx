@@ -1,16 +1,20 @@
 import { useEffect, useState } from 'react';
-import { statsService } from '../api/services';
+import { statsService, dealerService } from '../api/services';
 import { formatMoney } from '../utils/formatters';
-import { CurrencyDollarIcon, ClockIcon, UserGroupIcon } from '@heroicons/react/24/outline';
+import Modal from './Modal';
+import { CurrencyDollarIcon, ClockIcon, UserGroupIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
 
 /**
  * Reporte de pagos a dealers en un rango (recibe startISO/endISO YYYY-MM-DD).
  * Pago del club = horas × tarifa + % del rake. Propinas aparte (son del dealer).
  * Solo cuenta turnos CERRADOS dentro del rango.
+ * Liquidación: marcar pagado (ledger de caja). pendiente = pago club − pagado.
  */
 export default function DealerPaymentsTable({ startISO, endISO }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [liquidating, setLiquidating] = useState(null); // dealer a liquidar
 
   useEffect(() => {
     let cancelled = false;
@@ -27,7 +31,7 @@ export default function DealerPaymentsTable({ startISO, endISO }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [startISO, endISO]);
+  }, [startISO, endISO, reloadKey]);
 
   if (loading) return (
     <div className="flex justify-center py-16">
@@ -46,6 +50,13 @@ export default function DealerPaymentsTable({ startISO, endISO }) {
     </div>
   );
 
+  const onLiquidated = () => { setLiquidating(null); setReloadKey(k => k + 1); };
+  const PaidBadge = ({ d }) => (
+    d.pending <= 0
+      ? <span className="text-[8px] bg-green-700/60 text-green-200 px-1.5 py-0.5 rounded-full uppercase font-bold whitespace-nowrap">✓ Pagado</span>
+      : <span className="text-[8px] bg-amber-700/60 text-amber-200 px-1.5 py-0.5 rounded-full uppercase font-bold whitespace-nowrap">Pendiente</span>
+  );
+
   return (
     <div className="space-y-5">
       {/* RESUMEN */}
@@ -54,17 +65,17 @@ export default function DealerPaymentsTable({ startISO, endISO }) {
           <p className="text-[10px] font-bold text-amber-500 uppercase tracking-widest mb-1 flex items-center gap-1"><CurrencyDollarIcon className="w-3.5 h-3.5" /> Pago Club</p>
           <p className="text-xl font-black text-white font-mono">{formatMoney(s.club_payment || 0)}</p>
         </div>
+        <div className="bg-gradient-to-br from-green-900/20 to-transparent border border-green-500/20 p-4 rounded-2xl">
+          <p className="text-[10px] font-bold text-green-500 uppercase tracking-widest mb-1 flex items-center gap-1"><CheckCircleIcon className="w-3.5 h-3.5" /> Liquidado</p>
+          <p className="text-xl font-black text-white font-mono">{formatMoney(s.paid || 0)}</p>
+        </div>
+        <div className="bg-gradient-to-br from-orange-900/20 to-transparent border border-orange-500/20 p-4 rounded-2xl">
+          <p className="text-[10px] font-bold text-orange-400 uppercase tracking-widest mb-1">Pendiente</p>
+          <p className="text-xl font-black text-white font-mono">{formatMoney(s.pending || 0)}</p>
+        </div>
         <div className="bg-gradient-to-br from-yellow-900/20 to-transparent border border-yellow-500/20 p-4 rounded-2xl">
           <p className="text-[10px] font-bold text-yellow-500 uppercase tracking-widest mb-1">🤝 Propinas</p>
           <p className="text-xl font-black text-white font-mono">{formatMoney(s.tips || 0)}</p>
-        </div>
-        <div className="bg-gradient-to-br from-gray-800/40 to-transparent border border-gray-600/30 p-4 rounded-2xl">
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1 flex items-center gap-1"><ClockIcon className="w-3.5 h-3.5" /> Horas</p>
-          <p className="text-xl font-black text-white font-mono">{(s.total_hours || 0).toLocaleString('es-CO')}h</p>
-        </div>
-        <div className="bg-gradient-to-br from-emerald-900/20 to-transparent border border-emerald-500/20 p-4 rounded-2xl">
-          <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mb-1">Total</p>
-          <p className="text-xl font-black text-white font-mono">{formatMoney(s.grand_total || 0)}</p>
         </div>
       </div>
 
@@ -77,12 +88,13 @@ export default function DealerPaymentsTable({ startISO, endISO }) {
                 <h3 className="font-bold text-white truncate flex items-center gap-2">
                   {d.name}
                   {!d.is_active && <span className="text-[8px] bg-gray-700 text-gray-400 px-1.5 py-0.5 rounded-full uppercase">Inactivo</span>}
+                  <PaidBadge d={d} />
                 </h3>
                 <p className="text-[11px] text-gray-500">{d.sessions_count} mesa{d.sessions_count !== 1 ? 's' : ''} · {d.hours}h</p>
               </div>
-              <p className="text-lg font-mono font-black text-emerald-400 shrink-0">{formatMoney(d.grand_total)}</p>
+              <p className="text-lg font-mono font-black text-emerald-400 shrink-0">{formatMoney(d.club_payment)}</p>
             </div>
-            <div className="grid grid-cols-3 gap-2 text-xs">
+            <div className="grid grid-cols-3 gap-2 text-xs mb-3">
               <div className="bg-gray-900/40 p-2 rounded-lg">
                 <div className="text-gray-500 text-[9px] uppercase">Horas</div>
                 <div className="font-mono text-white">{formatMoney(d.hour_payment)}</div>
@@ -92,10 +104,15 @@ export default function DealerPaymentsTable({ startISO, endISO }) {
                 <div className="font-mono text-white">{formatMoney(d.rake_commission)}</div>
               </div>
               <div className="bg-gray-900/40 p-2 rounded-lg">
-                <div className="text-gray-500 text-[9px] uppercase">Propinas</div>
-                <div className="font-mono text-yellow-400">{formatMoney(d.tips)}</div>
+                <div className="text-gray-500 text-[9px] uppercase">Pendiente</div>
+                <div className="font-mono text-orange-400">{formatMoney(d.pending)}</div>
               </div>
             </div>
+            {d.pending > 0 && (
+              <button onClick={() => setLiquidating(d)} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-2 rounded-lg transition-colors">
+                Liquidar {formatMoney(d.pending)}
+              </button>
+            )}
           </div>
         ))}
       </div>
@@ -107,27 +124,38 @@ export default function DealerPaymentsTable({ startISO, endISO }) {
             <tr className="text-left text-[10px] uppercase tracking-widest text-gray-500 border-b border-gray-700">
               <th className="p-4">Dealer</th>
               <th className="p-4 text-right">Horas</th>
-              <th className="p-4 text-right">Pago horas</th>
-              <th className="p-4 text-right">% Rake</th>
               <th className="p-4 text-right">Pago club</th>
+              <th className="p-4 text-right">Pagado</th>
+              <th className="p-4 text-right">Pendiente</th>
               <th className="p-4 text-right">Propinas</th>
-              <th className="p-4 text-right">Total</th>
+              <th className="p-4 text-center">Acción</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-800">
             {dealers.map((d) => (
               <tr key={d.dealer_id} className="hover:bg-gray-800/40 transition-colors">
                 <td className="p-4 font-bold text-white">
-                  {d.name}
-                  {!d.is_active && <span className="ml-2 text-[8px] bg-gray-700 text-gray-400 px-1.5 py-0.5 rounded-full uppercase">Inactivo</span>}
+                  <span className="flex items-center gap-2">
+                    {d.name}
+                    {!d.is_active && <span className="text-[8px] bg-gray-700 text-gray-400 px-1.5 py-0.5 rounded-full uppercase">Inactivo</span>}
+                    <PaidBadge d={d} />
+                  </span>
                   <div className="text-[10px] text-gray-500 font-normal">{d.sessions_count} mesa{d.sessions_count !== 1 ? 's' : ''} · {d.shifts_count} turno{d.shifts_count !== 1 ? 's' : ''}</div>
                 </td>
                 <td className="p-4 text-right font-mono text-gray-300">{d.hours}h</td>
-                <td className="p-4 text-right font-mono text-gray-300">{formatMoney(d.hour_payment)}</td>
-                <td className="p-4 text-right font-mono text-gray-300">{formatMoney(d.rake_commission)}</td>
                 <td className="p-4 text-right font-mono text-white font-bold">{formatMoney(d.club_payment)}</td>
+                <td className="p-4 text-right font-mono text-green-400">{formatMoney(d.paid)}</td>
+                <td className="p-4 text-right font-mono text-orange-400 font-bold">{formatMoney(d.pending)}</td>
                 <td className="p-4 text-right font-mono text-yellow-400">{formatMoney(d.tips)}</td>
-                <td className="p-4 text-right font-mono text-emerald-400 font-black">{formatMoney(d.grand_total)}</td>
+                <td className="p-4 text-center">
+                  {d.pending > 0 ? (
+                    <button onClick={() => setLiquidating(d)} className="bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap">
+                      Liquidar
+                    </button>
+                  ) : (
+                    <span className="text-[10px] text-green-500 font-bold">✓</span>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -135,20 +163,104 @@ export default function DealerPaymentsTable({ startISO, endISO }) {
             <tr className="border-t border-gray-700 text-sm font-black">
               <td className="p-4 text-gray-400 uppercase text-[10px] tracking-widest">Total</td>
               <td className="p-4 text-right font-mono text-gray-300">{(s.total_hours || 0)}h</td>
-              <td className="p-4"></td>
-              <td className="p-4"></td>
               <td className="p-4 text-right font-mono text-white">{formatMoney(s.club_payment || 0)}</td>
+              <td className="p-4 text-right font-mono text-green-400">{formatMoney(s.paid || 0)}</td>
+              <td className="p-4 text-right font-mono text-orange-400">{formatMoney(s.pending || 0)}</td>
               <td className="p-4 text-right font-mono text-yellow-400">{formatMoney(s.tips || 0)}</td>
-              <td className="p-4 text-right font-mono text-emerald-400">{formatMoney(s.grand_total || 0)}</td>
+              <td className="p-4"></td>
             </tr>
           </tfoot>
         </table>
       </div>
 
       <p className="text-[10px] text-gray-600 text-center italic">
-        El "Pago club" es lo que el club le paga al dealer (horas + % del rake). Las propinas son del dealer.
-        Solo se cuentan turnos de mesas ya cerradas.
+        El "Pago club" (horas + % del rake) ya se descontó de la utilidad de socios al cerrar cada mesa.
+        Liquidar solo registra que ya le entregaste la plata al dealer. Las propinas son del dealer.
       </p>
+
+      {liquidating && (
+        <LiquidarModal dealer={liquidating} startISO={startISO} endISO={endISO} onClose={() => setLiquidating(null)} onDone={onLiquidated} />
+      )}
     </div>
+  );
+}
+
+function LiquidarModal({ dealer, startISO, endISO, onClose, onDone }) {
+  const [amount, setAmount] = useState(String(Math.max(0, dealer.pending || 0)));
+  const [method, setMethod] = useState('cash');
+  const [note, setNote] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    const value = Number(amount);
+    if (!value || value <= 0) { setError('Ingresá un monto válido.'); return; }
+    setError(null);
+    setLoading(true);
+    try {
+      await dealerService.createPayout(dealer.dealer_id, {
+        amount: value,
+        method,
+        note: note.trim() || null,
+        period_start: startISO,
+        period_end: endISO,
+      });
+      onDone();
+    } catch (err) {
+      setError(err.response?.data?.detail || 'No se pudo registrar el pago.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Modal isOpen={true} onClose={onClose} title={`Liquidar a ${dealer.name}`}>
+      <form onSubmit={submit} className="space-y-4">
+        <div className="bg-gray-900/50 border border-gray-700 rounded-lg p-3 text-xs text-gray-400 space-y-1">
+          <div className="flex justify-between"><span>Pago club (periodo):</span><span className="font-mono text-white">{formatMoney(dealer.club_payment)}</span></div>
+          <div className="flex justify-between"><span>Ya pagado:</span><span className="font-mono text-green-400">{formatMoney(dealer.paid)}</span></div>
+          <div className="flex justify-between font-bold"><span>Pendiente:</span><span className="font-mono text-orange-400">{formatMoney(dealer.pending)}</span></div>
+        </div>
+
+        <div>
+          <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Monto a pagar</label>
+          <input
+            type="number" inputMode="numeric" value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white font-mono focus:border-emerald-500 focus:outline-none"
+            autoFocus
+          />
+        </div>
+
+        <div>
+          <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Método</label>
+          <div className="flex gap-2">
+            {[['cash', 'Efectivo'], ['transfer', 'Transferencia']].map(([val, lbl]) => (
+              <button type="button" key={val} onClick={() => setMethod(val)}
+                className={`flex-1 py-2 rounded-lg text-xs font-bold transition-colors ${method === val ? 'bg-emerald-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white'}`}>
+                {lbl}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Nota (opcional)</label>
+          <input
+            type="text" value={note} onChange={(e) => setNote(e.target.value)} maxLength={200}
+            placeholder="Ej: pago semana"
+            className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:border-emerald-500 focus:outline-none"
+          />
+        </div>
+
+        {error && <p className="text-red-400 text-xs">{error}</p>}
+
+        <button type="submit" disabled={loading}
+          className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-bold py-2.5 rounded-lg transition-colors">
+          {loading ? 'Registrando…' : 'Registrar pago'}
+        </button>
+      </form>
+    </Modal>
   );
 }

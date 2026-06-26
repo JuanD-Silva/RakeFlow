@@ -7,6 +7,30 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from . import models
 
 
+def shift_payment_breakdown(hours: float, hourly_rate: float, rake_pct: float, declared_rake) -> dict:
+    """Pago de un turno de dealer, fuente ÚNICA de verdad (cierre Y reportes).
+
+    pago = horas x tarifa + % del rake. El componente de rake nunca resta:
+    un rake auto-calculado negativo paga $0 de ese componente.
+
+    Devuelve el total redondeado UNA sola vez (club_payment) más los
+    componentes redondeados para mostrar. club_payment es el canónico: así el
+    mismo dealer muestra el mismo total en la factura de cierre y en el reporte.
+    """
+    hour_pay = hours * hourly_rate
+    rake_comm = max(0.0, declared_rake or 0.0) * rake_pct / 100.0
+    return {
+        "hour_payment": round(hour_pay),
+        "rake_commission": round(rake_comm),
+        "club_payment": round(hour_pay + rake_comm),
+    }
+
+
+def shift_payment(hours: float, hourly_rate: float, rake_pct: float, declared_rake) -> float:
+    """Total del pago de un turno (atajo de shift_payment_breakdown)."""
+    return shift_payment_breakdown(hours, hourly_rate, rake_pct, declared_rake)["club_payment"]
+
+
 def calculate_distribution(total_rake: Decimal):
     """
     Distribuye el Rake:

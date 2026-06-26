@@ -371,6 +371,19 @@ export const dealerService = {
         const res = await api.post(`/sessions/${sessionId}/dealer-shifts/end`, { declared_rake: declaredRake });
         return res.data;
     },
+    // Liquidación: registrar un pago a un dealer (ledger de caja, no toca finanzas)
+    createPayout: async (dealerId, { amount, method = null, note = null, period_start = null, period_end = null }) => {
+        const res = await api.post(`/dealers/${dealerId}/payouts`, { amount, method, note, period_start, period_end });
+        return res.data;
+    },
+    getPayouts: async (startDate = null, endDate = null, dealerId = null) => {
+        const params = new URLSearchParams();
+        if (startDate) params.append('start_date', startDate);
+        if (endDate) params.append('end_date', endDate);
+        if (dealerId) params.append('dealer_id', dealerId);
+        const res = await api.get(`/dealers/payouts?${params.toString()}`);
+        return res.data;
+    },
 };
 
 // --- USUARIOS (multi-usuario por club) ---

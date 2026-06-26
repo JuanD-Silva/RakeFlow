@@ -70,11 +70,11 @@ export default function CloseSessionForm({ sessionId, onSuccess }) {
         {/* FACTURA */}
         <div className="bg-gray-800 rounded-xl p-5 border border-gray-600 shadow-xl text-sm space-y-3">
           
-          {/* RAKE */}
+          {/* RAKE BRUTO */}
           <div className="flex justify-between items-center border-b border-gray-700 pb-2">
-            <span className="text-gray-400">Total Rake (Ingreso):</span>
+            <span className="text-gray-400">Rake bruto (ingreso):</span>
             <span className="text-white font-mono font-bold text-lg">
-              {formatMoney(closureReport.declared_rake_cash)}
+              {formatMoney(closureReport.gross_rake ?? closureReport.declared_rake_cash)}
             </span>
           </div>
 
@@ -96,17 +96,44 @@ export default function CloseSessionForm({ sessionId, onSuccess }) {
              </div>
           )}
 
+          {/* GASTOS: salario dealers + cortesías (reducen la utilidad de socios) */}
+          {closureReport.dealer_cost > 0 && (
+            <div className="flex justify-between items-center text-amber-400">
+              <span>(-) Salario dealers:</span>
+              <span className="font-mono">{formatMoney(closureReport.dealer_cost)}</span>
+            </div>
+          )}
+          {closureReport.courtesy_cost > 0 && (
+            <div className="flex justify-between items-center text-amber-400">
+              <span>(-) Cortesías (bonos):</span>
+              <span className="font-mono">{formatMoney(closureReport.courtesy_cost)}</span>
+            </div>
+          )}
+
+          {/* RAKE NETO (monitoreo: bruto - gastos) */}
+          {(closureReport.dealer_cost > 0 || closureReport.courtesy_cost > 0) && (
+            <div className="flex justify-between items-center text-gray-300 border-t border-gray-700 pt-2">
+              <span className="text-xs uppercase tracking-wider">Rake neto (− gastos):</span>
+              <span className="font-mono font-bold">{formatMoney(closureReport.net_rake)}</span>
+            </div>
+          )}
+
           <div className="border-t border-gray-600 pt-2"></div>
 
-          {/* UTILIDAD SOCIOS */}
-          <div className="flex justify-between items-center bg-green-900/30 p-3 rounded-lg border border-green-500/30">
-            <span className="text-green-400 font-bold uppercase text-xs tracking-wider">
-              (=) Utilidad Neta (Socios)
+          {/* UTILIDAD SOCIOS (ya neta de gastos) */}
+          <div className={`flex justify-between items-center p-3 rounded-lg border ${closureReport.partner_profit < 0 ? 'bg-red-900/30 border-red-500/40' : 'bg-green-900/30 border-green-500/30'}`}>
+            <span className={`font-bold uppercase text-xs tracking-wider ${closureReport.partner_profit < 0 ? 'text-red-400' : 'text-green-400'}`}>
+              (=) Utilidad Socios
             </span>
-            <span className="text-green-400 font-mono font-bold text-xl">
+            <span className={`font-mono font-bold text-xl ${closureReport.partner_profit < 0 ? 'text-red-400' : 'text-green-400'}`}>
               {formatMoney(closureReport.partner_profit)}
             </span>
           </div>
+          {closureReport.partner_profit < 0 && (
+            <p className="text-[9px] text-red-400/80 text-left italic">
+              ⚠️ Los gastos (dealers + cortesías) superaron el rake disponible para socios esta sesión.
+            </p>
+          )}
 
         <div className="pt-4 space-y-3">
   <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">
@@ -133,11 +160,11 @@ export default function CloseSessionForm({ sessionId, onSuccess }) {
   </div>
 </div>
 
-          {/* PAGO A DEALERS (solo informe, no descuenta de la caja) */}
+          {/* PAGO A DEALERS (gasto: ya descontado de la utilidad de socios arriba) */}
           {closureReport.dealers_report && closureReport.dealers_report.length > 0 && (
             <div className="pt-4 space-y-3 border-t border-gray-700">
               <p className="text-[10px] text-amber-500 font-bold uppercase tracking-widest">
-                🃏 Pago a Dealers (informativo)
+                🃏 Detalle pago a Dealers
               </p>
 
               {closureReport.dealers_warning && (
@@ -186,7 +213,7 @@ export default function CloseSessionForm({ sessionId, onSuccess }) {
                 </span>
               </div>
               <p className="text-[8px] text-gray-600 text-left italic">
-                Informativo: no se descuenta de la utilidad de socios.
+                Este total ya se descontó de la utilidad de socios (rake neto).
               </p>
             </div>
           )}

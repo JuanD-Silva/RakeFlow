@@ -166,6 +166,26 @@ class DealerShiftResponse(BaseModel):
     payment: float
 
 
+class DealerPayoutCreate(BaseModel):
+    amount: float = Field(..., gt=0)
+    method: Optional[str] = Field(None, max_length=30)
+    note: Optional[str] = Field(None, max_length=200)
+    period_start: Optional[datetime] = None
+    period_end: Optional[datetime] = None
+
+class DealerPayoutResponse(BaseSchema):
+    id: int
+    dealer_id: int
+    dealer_name: Optional[str] = None
+    amount: float
+    method: Optional[str] = None
+    note: Optional[str] = None
+    period_start: Optional[datetime] = None
+    period_end: Optional[datetime] = None
+    paid_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+
+
 class PlayerSessionStats(BaseModel):
     player_id: int
     name: str

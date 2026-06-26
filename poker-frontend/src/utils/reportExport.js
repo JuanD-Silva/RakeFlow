@@ -95,9 +95,13 @@ export function buildDistributionModel({ data, totalSocios, totalMeta, totalFond
   }));
 
   const kpis = [
-    { label: 'Total generado', value: data.total_week || 0, money: true },
-    { label: 'Participación socios', value: totalSocios || 0, money: true },
+    { label: 'Rake bruto', value: data.gross_week ?? data.total_week ?? 0, money: true },
   ];
+  if ((data.expenses_week || 0) > 0) {
+    kpis.push({ label: 'Gastos (dealers + cortesías)', value: data.expenses_week, money: true });
+    kpis.push({ label: 'Rake neto', value: data.net_week || 0, money: true });
+  }
+  kpis.push({ label: 'Participación socios', value: totalSocios || 0, money: true });
   if (totalMeta > 0) kpis.push({ label: 'Abono a meta', value: totalMeta, money: true });
   if (totalFondos > 0) kpis.push({ label: 'Fondos operativos', value: totalFondos, money: true });
 

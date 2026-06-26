@@ -19,7 +19,7 @@ from sqlalchemy.future import select
 from typing import List, Optional
 from datetime import datetime
 
-from .. import models, schemas
+from .. import models, schemas, services
 from ..dependencies import get_db, get_current_club, require_role
 from ..audit import log_action, AuditAction
 
@@ -31,11 +31,10 @@ shifts_router = APIRouter(prefix="/sessions", tags=["DealerShifts"])
 # Helpers
 # ---------------------------------------------------------
 
+# Pago de turno: fuente única en services.shift_payment (cierre y reportes lo
+# comparten para que el mismo dealer no muestre dos totales por redondeo).
 def _shift_payment(hours: float, hourly_rate: float, rake_pct: float, declared_rake: Optional[float]) -> float:
-    """Pago de un turno: horas x tarifa + % del rake (el componente de rake
-    nunca resta: un rake auto-calculado negativo paga $0 de ese componente)."""
-    rake_component = max(0.0, declared_rake or 0.0) * rake_pct / 100.0
-    return round(hours * hourly_rate + rake_component)
+    return services.shift_payment(hours, hourly_rate, rake_pct, declared_rake)
 
 
 def _shift_to_dict(shift: models.DealerShift, dealer_name: str, now: Optional[datetime] = None) -> dict:
@@ -349,6 +348,89 @@ async def deactivate_dealer(
         meta={"name": dealer.name},
     )
     await db.commit()
+
+
+# ---------------------------------------------------------
+# Liquidación (ledger de caja: marcar pagado)
+# ---------------------------------------------------------
+# El costo del dealer YA se reconoce como gasto en el cierre de la sesión
+# (net_rake reduce la utilidad de socios). Esto SOLO registra la entrega física
+# de la plata para llevar pendiente vs pagado; no genera gasto financiero nuevo.
+
+@router.get("/payouts", response_model=List[schemas.DealerPayoutResponse])
+async def list_payouts(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    dealer_id: Optional[int] = None,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+    _: models.User = Depends(require_role([models.UserRole.OWNER, models.UserRole.MANAGER])),
+):
+    """Liquidaciones del club en un rango (por paid_at)."""
+    stmt = (
+        select(models.DealerPayout, models.Dealer.name)
+        .join(models.Dealer, models.Dealer.id == models.DealerPayout.dealer_id)
+        .where(models.DealerPayout.club_id == current_club.id)
+    )
+    if dealer_id is not None:
+        stmt = stmt.where(models.DealerPayout.dealer_id == dealer_id)
+    if start_date:
+        stmt = stmt.where(func.date(models.DealerPayout.paid_at) >= start_date)
+    if end_date:
+        stmt = stmt.where(func.date(models.DealerPayout.paid_at) <= end_date)
+    stmt = stmt.order_by(models.DealerPayout.paid_at.desc())
+
+    rows = (await db.execute(stmt)).all()
+    out = []
+    for p, name in rows:
+        item = schemas.DealerPayoutResponse.model_validate(p)
+        item.dealer_name = name
+        out.append(item)
+    return out
+
+
+@router.post("/{dealer_id}/payouts", response_model=schemas.DealerPayoutResponse, status_code=201)
+async def create_payout(
+    dealer_id: int,
+    data: schemas.DealerPayoutCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+    current_user: models.User = Depends(require_role([models.UserRole.OWNER, models.UserRole.MANAGER])),
+):
+    """Registra un pago a un dealer (liquidación)."""
+    dealer = (await db.execute(
+        select(models.Dealer).where(
+            models.Dealer.id == dealer_id,
+            models.Dealer.club_id == current_club.id,
+        )
+    )).scalars().first()
+    if not dealer:
+        raise HTTPException(status_code=404, detail="Dealer no encontrado")
+
+    payout = models.DealerPayout(
+        club_id=current_club.id,
+        dealer_id=dealer.id,
+        amount=float(data.amount),
+        method=data.method,
+        note=data.note,
+        period_start=data.period_start,
+        period_end=data.period_end,
+        paid_by_user_id=current_user.id,
+    )
+    db.add(payout)
+
+    await log_action(
+        db, request=request, club=current_club,
+        action=AuditAction.DEALER_PAYOUT, entity_type="Dealer", entity_id=dealer.id,
+        meta={"dealer": dealer.name, "amount": float(data.amount), "method": data.method},
+    )
+    await db.commit()
+    await db.refresh(payout)
+
+    resp = schemas.DealerPayoutResponse.model_validate(payout)
+    resp.dealer_name = dealer.name
+    return resp
 
 
 # ---------------------------------------------------------

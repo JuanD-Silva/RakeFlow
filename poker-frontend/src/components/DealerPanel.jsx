@@ -69,8 +69,14 @@ export default function DealerPanel({ sessionId, refreshTrigger }) {
             </div>
             <div className="min-w-0">
               <p className="text-white font-bold text-sm truncate">{openShift.dealer_name}</p>
-              <p className="text-amber-400/80 text-xs flex items-center gap-1 font-mono">
-                <ClockIcon className="w-3.5 h-3.5" /> {formatElapsed(localMinutes)} en mesa
+              <p className="text-amber-400/80 text-xs flex items-center gap-1.5 font-mono flex-wrap">
+                <ClockIcon className="w-3.5 h-3.5" /> {formatElapsed(localMinutes)}
+                {openShift.hourly_rate_cop > 0 && (
+                  <span className="text-emerald-400/90">
+                    · ~${Math.round((localMinutes / 60) * openShift.hourly_rate_cop).toLocaleString('es-CO')} hrs
+                    {openShift.rake_pct > 0 && <span className="text-gray-500"> + {openShift.rake_pct}% rake</span>}
+                  </span>
+                )}
               </p>
             </div>
           </div>

@@ -178,6 +178,31 @@ class DealerShift(Base):
     session = relationship("Session")
 
 
+class DealerPayout(Base):
+    """
+    Liquidación: registro de un pago físico a un dealer (ledger de caja).
+    NO genera gasto financiero (el costo del dealer ya se reconoce en el cierre
+    de la sesión vía net_rake). Sirve para llevar pendiente vs pagado.
+    pendiente = devengado (turnos cerrados) - Σ payouts.
+    """
+    __tablename__ = "dealer_payouts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False, index=True)
+    dealer_id = Column(Integer, ForeignKey("dealers.id"), nullable=False, index=True)
+
+    amount = Column(Float, nullable=False, default=0.0)
+    method = Column(String, nullable=True)   # 'cash' | 'transfer' | ...
+    note = Column(String, nullable=True)
+    period_start = Column(DateTime, nullable=True)  # rango que cubre el pago (informativo)
+    period_end = Column(DateTime, nullable=True)
+    paid_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    paid_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    dealer = relationship("Dealer")
+
+
 class Session(Base):
     """
     Una mesa o sesión de juego.
@@ -202,8 +227,13 @@ class Session(Base):
     
     # Resultados del Cierre (Calculados por el Backend) 👇 CRÍTICO
     debt_payment = Column(Float, default=0.0)    # Cuánto se pagó a deuda
-    partner_profit = Column(Float, default=0.0)  # Cuánto ganaron los socios
-    
+    partner_profit = Column(Float, default=0.0)  # Cuánto ganaron los socios (ya neto de gastos)
+
+    # Gastos del cierre y rake neto (monitoreo bruto vs neto)
+    dealer_cost = Column(Float, default=0.0)     # Salario de dealers (horas + % rake)
+    courtesy_cost = Column(Float, default=0.0)   # Cortesías = Σ BONUS de la sesión
+    net_rake = Column(Float, default=0.0)        # declared_rake_cash - dealer_cost - courtesy_cost
+
     notes = Column(String, nullable=True)
 
     # Relaciones

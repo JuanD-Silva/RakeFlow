@@ -127,6 +127,13 @@ export default function DealerShiftForm({ mode, sessionId, currentShift, onSucce
       }
 
       const rake = parseFloat(declaredRake) || 0;
+      // Guarda: rake en $0 suele ser un Enter sin contar → el % del dealer queda en $0.
+      if (needsRake && rake === 0) {
+        const ok = window.confirm(
+          "El rake contado quedó en $0. ¿Seguro? El componente de % del rake de este dealer será $0."
+        );
+        if (!ok) { setLoading(false); return; }
+      }
       if (mode === 'start') {
         await dealerService.startShift(sessionId, finalDealerId, force);
       } else if (mode === 'change') {

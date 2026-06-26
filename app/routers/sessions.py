@@ -23,6 +23,12 @@ router = APIRouter(
     tags=["Sessions"]
 )
 logger = logging.getLogger("uvicorn.error")
+
+# Nombres reservados de líneas de GASTO en FinancialDistribution. Se excluyen del
+# tracking mensual de meta para que no se cuenten como abono aunque un club nombre
+# una regla igual.
+_EXPENSE_LINE_NAMES = ("Salario Dealers", "Cortesías")
+
 # ---------------------------------------------------------
 # 1. ABRIR SESIÓN (Start Session)
 # ---------------------------------------------------------
@@ -405,13 +411,28 @@ async def close_session(session_id: int, input_data: schemas.SessionCloseRequest
         )
 
     # ---------------------------------------------------
-    # 4. ALGORITMO DE DISTRIBUCIÓN
+    # 3b. GASTOS DEL CIERRE (dealers + cortesías). Se reparte sobre el rake NETO
+    #     (bruto - gastos): los gastos del club se descuentan ANTES de repartir,
+    #     así meta y socios salen del neto y las líneas reconcilian al bruto.
+    #     Las propinas NO entran (son del dealer, no gasto del club).
+    # ---------------------------------------------------
+    session.end_time = datetime.utcnow()  # el cierre de turnos lo usa
+    from .dealers import close_dealer_shifts_and_build_report
+    dealers_info = await close_dealer_shifts_and_build_report(db, session, float(declared_rake))
+    dealer_cost = Decimal(str(dealers_info.get("total_dealers_payment", 0) or 0))
+    courtesy_cost = await get_global_sum([models.TransactionType.BONUS])
+    expenses_total = dealer_cost + courtesy_cost
+    net_rake = declared_rake - expenses_total
+    distributable = max(Decimal(0), net_rake)  # no se reparte en negativo
+
+    # ---------------------------------------------------
+    # 4. ALGORITMO DE DISTRIBUCIÓN (sobre el rake NETO)
     # ---------------------------------------------------
     final_debt_payment = Decimal(0)
     final_partner_profit = Decimal(0)
 
-    cash_remaining = declared_rake
-    calculation_base = declared_rake
+    cash_remaining = distributable
+    calculation_base = distributable
 
     # Los torneos SI cuentan para la meta: el rake de torneos del mes cubre las
     # obligaciones fijas antes que el cash de hoy. Se consume en orden de prioridad
@@ -440,9 +461,12 @@ async def close_session(session_id: int, input_data: schemas.SessionCloseRequest
 
             # --- LÓGICA DE REGLA FIJA (META/DEUDA) ---
             if rule.rule_type == models.RuleType.FIXED:
+                # Excluimos las líneas de gasto reservadas: aunque un club nombre
+                # una regla igual, nunca cuentan como abono a la meta.
                 paid_stmt = select(func.sum(models.FinancialDistribution.amount)).join(models.Session).where(
                     models.Session.club_id == current_club.id,
                     models.FinancialDistribution.name == rule.name,
+                    models.FinancialDistribution.name.notin_(_EXPENSE_LINE_NAMES),
                     models.Session.end_time >= _month_start,
                     models.Session.status == models.SessionStatus.CLOSED
                 )
@@ -478,7 +502,7 @@ async def close_session(session_id: int, input_data: schemas.SessionCloseRequest
                 ))
                 cash_remaining -= amount_to_pay
 
-        # 4. REMANENTE FINAL: Si sobra algo, va a utilidad de socios
+        # 4b. REMANENTE FINAL: lo que sobra del neto va a utilidad de socios
         if cash_remaining > 0:
             final_partner_profit += cash_remaining
             db.add(models.FinancialDistribution(
@@ -503,16 +527,17 @@ async def close_session(session_id: int, input_data: schemas.SessionCloseRequest
         paid_so_far += tourney_credit
         remaining_debt = max(Decimal(0), MONTHLY_TARGET - paid_so_far)
 
-        if declared_rake >= remaining_debt:
+        # El reparto corre sobre el rake NETO (distributable).
+        if distributable >= remaining_debt:
             final_debt_payment = remaining_debt
-            final_partner_profit = declared_rake - remaining_debt
+            final_partner_profit = distributable - remaining_debt
         else:
-            final_debt_payment = declared_rake
+            final_debt_payment = distributable
             final_partner_profit = Decimal(0)
 
         # REGISTROS EXPLÍCITOS CON % CALCULADO
         if final_debt_payment > 0:
-            effective_pct_debt = (final_debt_payment / declared_rake) if declared_rake > 0 else Decimal(0)
+            effective_pct_debt = (final_debt_payment / distributable) if distributable > 0 else Decimal(0)
 
             db.add(models.FinancialDistribution(
                 session_id=session.id,
@@ -522,7 +547,7 @@ async def close_session(session_id: int, input_data: schemas.SessionCloseRequest
             ))
 
         if final_partner_profit > 0:
-            effective_pct_profit = (final_partner_profit / declared_rake) if declared_rake > 0 else Decimal(0)
+            effective_pct_profit = (final_partner_profit / distributable) if distributable > 0 else Decimal(0)
 
             db.add(models.FinancialDistribution(
                 session_id=session.id,
@@ -531,21 +556,28 @@ async def close_session(session_id: int, input_data: schemas.SessionCloseRequest
                 percentage_applied=float(effective_pct_profit)
             ))
 
+    # Líneas de gasto (transparencia): bruto = meta + socios(neto) + gastos.
+    if dealer_cost > 0:
+        db.add(models.FinancialDistribution(
+            session_id=session.id, name="Salario Dealers",
+            amount=float(dealer_cost), percentage_applied=0.0))
+    if courtesy_cost > 0:
+        db.add(models.FinancialDistribution(
+            session_id=session.id, name="Cortesías",
+            amount=float(courtesy_cost), percentage_applied=0.0))
+
     # ---------------------------------------------------
-    # 5. GUARDAR Y RESPONDER
+    # 5. GUARDAR (gastos y utilidad neta ya calculados arriba)
     # ---------------------------------------------------
-    session.end_time = datetime.utcnow()
     session.status = models.SessionStatus.CLOSED
     session.declared_rake_cash = float(declared_rake)
     session.declared_jackpot_cash = float(declared_jackpot)
 
     session.debt_payment = float(final_debt_payment)
     session.partner_profit = float(final_partner_profit)
-
-    # Dealers (solo informe): cierra el turno abierto auto-calculando su rake
-    # como total - suma de turnos previos. NO toca la distribución.
-    from .dealers import close_dealer_shifts_and_build_report
-    dealers_info = await close_dealer_shifts_and_build_report(db, session, float(declared_rake))
+    session.dealer_cost = float(dealer_cost)
+    session.courtesy_cost = float(courtesy_cost)
+    session.net_rake = float(net_rake)
 
     await log_action(
         db, request=request, club=current_club,
@@ -556,6 +588,9 @@ async def close_session(session_id: int, input_data: schemas.SessionCloseRequest
             "declared_jackpot_cash": float(declared_jackpot),
             "debt_payment": float(final_debt_payment),
             "partner_profit": float(final_partner_profit),
+            "dealer_cost": float(dealer_cost),
+            "courtesy_cost": float(courtesy_cost),
+            "net_rake": float(net_rake),
         },
     )
     await db.commit()
@@ -570,6 +605,11 @@ async def close_session(session_id: int, input_data: schemas.SessionCloseRequest
         "status": "CLOSED",
         "declared_rake_cash": float(declared_rake),
         "declared_jackpot_cash": float(declared_jackpot),
+        # Rake bruto vs neto (gastos del cierre)
+        "gross_rake": float(declared_rake),
+        "dealer_cost": float(dealer_cost),
+        "courtesy_cost": float(courtesy_cost),
+        "net_rake": float(net_rake),
         "debt_payment": float(final_debt_payment),
         "partner_profit": float(final_partner_profit),
         # 2. Enviamos la lista detallada

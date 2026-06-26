@@ -192,14 +192,36 @@ async def get_weekly_distribution(
             start_dt = datetime.combine(datetime.strptime(start_date, "%Y-%m-%d").date(), time.min)
             end_dt = datetime.combine(datetime.strptime(end_date, "%Y-%m-%d").date(), time.max)
 
-        # 2. Profit de ESTA SEMANA
+        # 2. Profit de ESTA SEMANA (rake BRUTO: cash declarado + torneos)
         net_profit_week = await _get_net_profit_in_range(db, current_club.id, start_dt, end_dt)
 
-        # 3. Lógica de Cascada
-        distribution = []
-        remaining_pool = net_profit_week
+        # 2b. Gastos del cierre (salario dealers + cortesías) de las mesas cash
+        #     del rango → rake NETO = bruto - gastos.
+        exp_stmt = select(
+            func.coalesce(func.sum(models.Session.dealer_cost + models.Session.courtesy_cost), 0)
+        ).where(
+            models.Session.club_id == current_club.id,
+            models.Session.status == models.SessionStatus.CLOSED,
+            models.Session.end_time >= start_dt,
+            models.Session.end_time <= end_dt,
+        )
+        expenses_week = float((await db.execute(exp_stmt)).scalar() or 0)
+        net_rake_week = net_profit_week - expenses_week
 
-        #  
+        # 3. Lógica de Cascada — se reparte sobre el rake NETO (igual que el cierre:
+        #    los gastos salen antes de meta y socios).
+        distribution = []
+        remaining_pool = max(0, net_rake_week)
+
+        # Línea de gasto (display): bruto = gastos + meta + socios.
+        if expenses_week > 0:
+            distribution.append({
+                "name": "Gastos (dealers + cortesías)",
+                "total": int(expenses_week),
+                "percent": 0,
+            })
+
+        #
         # PASO A: META MENSUAL (Prioridad 1)
         stmt_quota = select(models.DistributionRule).where(
             models.DistributionRule.club_id == current_club.id,
@@ -261,7 +283,10 @@ async def get_weekly_distribution(
 
         return {
             "range": { "start": start_dt.strftime("%d %b"), "end": end_dt.strftime("%d %b") },
-            "total_week": int(net_profit_week), # Esto es el Total Generado (Card 1)
+            "total_week": int(net_profit_week), # Total Generado / rake BRUTO (Card 1)
+            "gross_week": int(net_profit_week),
+            "expenses_week": int(expenses_week),
+            "net_week": int(net_rake_week),     # rake NETO (después de gastos)
             "distribution": distribution
         }
 
@@ -638,12 +663,15 @@ async def get_dealer_payments(
     )
     shift_rows = (await db.execute(shifts_stmt)).all()
 
-    # 3. Propinas asignadas a dealers en el rango (por timestamp)
+    # 3. Propinas asignadas a dealers en el rango (por timestamp).
+    #    Join a Dealer para acotar al club (defensa tenant en la propia query).
     tips_stmt = (
         select(models.Transaction.dealer_id, func.sum(models.Transaction.amount))
+        .join(models.Dealer, models.Dealer.id == models.Transaction.dealer_id)
         .where(
             models.Transaction.type == models.TransactionType.TIP,
             models.Transaction.dealer_id.isnot(None),
+            models.Dealer.club_id == current_club.id,
             models.Transaction.timestamp >= start_dt,
             models.Transaction.timestamp <= end_dt,
         )
@@ -651,13 +679,26 @@ async def get_dealer_payments(
     )
     tips_by_dealer = {d_id: float(total or 0) for d_id, total in (await db.execute(tips_stmt)).all()}
 
-    # 4. Agregar por dealer
+    # 3b. Liquidaciones (pagos ya hechos) del club en el rango, por dealer.
+    payouts_stmt = (
+        select(models.DealerPayout.dealer_id, func.sum(models.DealerPayout.amount))
+        .where(
+            models.DealerPayout.club_id == current_club.id,
+            models.DealerPayout.paid_at >= start_dt,
+            models.DealerPayout.paid_at <= end_dt,
+        )
+        .group_by(models.DealerPayout.dealer_id)
+    )
+    paid_by_dealer = {d_id: float(total or 0) for d_id, total in (await db.execute(payouts_stmt)).all()}
+
+    # 4. Agregar por dealer. Usamos la MISMA función de pago que el cierre
+    #    (services.shift_payment_breakdown, redondeo por turno) para que el mismo
+    #    dealer muestre el mismo total acá y en la factura de cierre.
     dealers = {}
     for shift, name, is_active in shift_rows:
         elapsed_min = max(0, int((shift.end_time - shift.start_time).total_seconds() // 60))
-        hours = elapsed_min / 60.0
-        hour_payment = hours * (shift.hourly_rate_cop or 0)
-        rake_commission = max(0.0, shift.declared_rake or 0.0) * (shift.rake_pct or 0) / 100.0
+        hours = round(elapsed_min / 60.0, 2)
+        bd = services.shift_payment_breakdown(hours, shift.hourly_rate_cop or 0, shift.rake_pct or 0, shift.declared_rake)
 
         d = dealers.setdefault(shift.dealer_id, {
             "dealer_id": shift.dealer_id,
@@ -666,17 +707,20 @@ async def get_dealer_payments(
             "shifts_count": 0,
             "sessions": set(),
             "total_minutes": 0,
-            "hour_payment": 0.0,
-            "rake_commission": 0.0,
+            "hour_payment": 0,
+            "rake_commission": 0,
+            "club_payment": 0,
         })
         d["shifts_count"] += 1
         d["sessions"].add(shift.session_id)
         d["total_minutes"] += elapsed_min
-        d["hour_payment"] += hour_payment
-        d["rake_commission"] += rake_commission
+        d["hour_payment"] += bd["hour_payment"]
+        d["rake_commission"] += bd["rake_commission"]
+        d["club_payment"] += bd["club_payment"]
 
-    # Asegurar que dealers con propina pero sin turno cerrado aparezcan
-    for d_id, tip_total in tips_by_dealer.items():
+    # Asegurar que dealers con propina o liquidación pero sin turno cerrado
+    # aparezcan igual en el reporte.
+    for d_id in set(tips_by_dealer) | set(paid_by_dealer):
         if d_id not in dealers:
             dr = (await db.execute(
                 select(models.Dealer.name, models.Dealer.is_active).where(
@@ -689,14 +733,19 @@ async def get_dealer_payments(
             dealers[d_id] = {
                 "dealer_id": d_id, "name": dr[0], "is_active": dr[1],
                 "shifts_count": 0, "sessions": set(), "total_minutes": 0,
-                "hour_payment": 0.0, "rake_commission": 0.0,
+                "hour_payment": 0, "rake_commission": 0, "club_payment": 0,
             }
 
     result = []
-    summary = {"total_hours": 0.0, "club_payment": 0, "tips": 0, "grand_total": 0, "dealers_count": 0}
+    summary = {"total_hours": 0.0, "club_payment": 0, "tips": 0, "grand_total": 0,
+               "paid": 0, "pending": 0, "dealers_count": 0}
     for d in dealers.values():
-        club_payment = round(d["hour_payment"] + d["rake_commission"])
+        club_payment = round(d["club_payment"])
         tips = round(tips_by_dealer.get(d["dealer_id"], 0))
+        paid = round(paid_by_dealer.get(d["dealer_id"], 0))
+        # Pendiente = lo que el club le debe (pago por turnos) - lo ya liquidado.
+        # Clamp a >=0: si se sobre-liquidó, no mostramos pendiente negativo.
+        pending = max(0, club_payment - paid)
         hours = round(d["total_minutes"] / 60.0, 1)
         result.append({
             "dealer_id": d["dealer_id"],
@@ -710,11 +759,15 @@ async def get_dealer_payments(
             "club_payment": club_payment,
             "tips": tips,
             "grand_total": club_payment + tips,
+            "paid": paid,
+            "pending": pending,
         })
         summary["total_hours"] += hours
         summary["club_payment"] += club_payment
         summary["tips"] += tips
         summary["grand_total"] += club_payment + tips
+        summary["paid"] += paid
+        summary["pending"] += pending
     summary["dealers_count"] = len(result)
     summary["total_hours"] = round(summary["total_hours"], 1)
 
