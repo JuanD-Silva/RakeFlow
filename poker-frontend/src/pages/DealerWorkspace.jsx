@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { dealerSelfService } from '../api/services';
 import { useAuth } from '../context/AuthContext';
 
@@ -29,7 +29,7 @@ const TABS = [
 export default function DealerWorkspace() {
   const { logout } = useAuth();
   const [tab, setTab] = useState('table');
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const id = setInterval(() => setNow(Date.now()), 60000); return () => clearInterval(id); }, []);
 
   return (
@@ -71,21 +71,84 @@ const Spinner = () => (
   <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-500" /></div>
 );
 
+// Cargador resiliente para el portal del dealer: ante un cold-start de Railway o
+// un blip de red (la pestaña dormida que se reactiva) el primer fetch falla. En
+// vez de quedarse 30s hasta el próximo poll y mostrar un estado vacío engañoso,
+// reintenta rápido hasta el primer éxito, refetchea al volver a la pestaña, y
+// distingue "falló" (loadedOnce=false + error) de "vacío de verdad".
+function useDealerResource(fetcher, pollMs) {
+  const [data, setData] = useState(null);
+  const [loadedOnce, setLoadedOnce] = useState(false);
+  const [error, setError] = useState(false);
+  const loadedRef = useRef(false);
+
+  // El fetcher es un método de módulo (referencia estable), así que load es estable.
+  const load = useCallback(async () => {
+    try {
+      const d = await fetcher();
+      setData(d);
+      setError(false);
+      setLoadedOnce(true);
+      loadedRef.current = true;
+      return true;
+    } catch {
+      setError(true);
+      return false;
+    }
+  }, [fetcher]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let retryId = null;
+    const attempt = async () => {
+      const ok = await load();
+      if (cancelled || ok || loadedRef.current) return;
+      // Cold start / blip: reintento rápido hasta el primer éxito (no esperar al poll).
+      retryId = setTimeout(attempt, 3000);
+    };
+    attempt();
+
+    const pollId = pollMs ? setInterval(load, pollMs) : null;
+    // Volver a la pestaña/dispositivo tras un rato dormido => refetch inmediato.
+    const onVisible = () => { if (document.visibilityState === 'visible') load(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => {
+      cancelled = true;
+      if (retryId) clearTimeout(retryId);
+      if (pollId) clearInterval(pollId);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
+  }, [load, pollMs]);
+
+  return { data, loadedOnce, error, reload: load };
+}
+
+// Mientras nunca cargó y está fallando: spinner + "Reconectando…" (el hook
+// reintenta solo cada 3s). NO mostramos el estado vacío para no confundir un
+// fallo de red con "no tenés mesa/turno".
+const Reconnecting = () => (
+  <div className="text-center py-20">
+    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-500 mx-auto mb-4" />
+    <p className="text-sm text-gray-400">Reconectando…</p>
+  </div>
+);
+
+// Aviso sutil cuando ya había datos buenos y un poll posterior falló: se siguen
+// mostrando los últimos datos.
+const StaleHint = () => (
+  <p className="text-center text-[11px] text-amber-400/80 font-bold">⚠ Reconectando… mostrando últimos datos</p>
+);
+
 // ---------------------------------------------------------
 // Mi mesa
 // ---------------------------------------------------------
 function TableTab({ now }) {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const { data, loadedOnce, error, reload } = useDealerResource(dealerSelfService.getMyTable, 30000);
   const [sent, setSent] = useState(false);
   const [cooldown, setCooldown] = useState({});
   const [busy, setBusy] = useState({});
-
-  const load = useCallback(async () => {
-    try { setData(await dealerSelfService.getMyTable()); } catch { /* poll corrige */ }
-    finally { setLoading(false); }
-  }, []);
-  useEffect(() => { load(); const id = setInterval(load, 30000); return () => clearInterval(id); }, [load]);
 
   const send = async (type) => {
     if (cooldown[type]) return;
@@ -98,11 +161,11 @@ function TableTab({ now }) {
   const toggleBust = async (playerId) => {
     if (busy[playerId]) return;
     setBusy((b) => ({ ...b, [playerId]: true }));
-    try { await dealerSelfService.toggleBust(playerId); await load(); }
+    try { await dealerSelfService.toggleBust(playerId); await reload(); }
     catch { /* noop */ } finally { setBusy((b) => ({ ...b, [playerId]: false })); }
   };
 
-  if (loading) return <Spinner />;
+  if (!loadedOnce) return error ? <Reconnecting /> : <Spinner />;
 
   if (!data?.has_table) return (
     <div className="text-center py-20">
@@ -120,6 +183,7 @@ function TableTab({ now }) {
 
   return (
     <div className="space-y-5">
+      {error && <StaleHint />}
       <div className="text-center">
         <h1 className="text-2xl font-black text-white">{data.table_name}</h1>
         <span className="inline-block mt-2 text-[10px] font-bold uppercase px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/30">● En vivo</span>
@@ -188,10 +252,8 @@ function TableTab({ now }) {
 // Turno actual
 // ---------------------------------------------------------
 function ShiftTab() {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  useEffect(() => { dealerSelfService.getMyShift().then(setData).catch(() => {}).finally(() => setLoading(false)); }, []);
-  if (loading) return <Spinner />;
+  const { data, loadedOnce, error } = useDealerResource(dealerSelfService.getMyShift);
+  if (!loadedOnce) return error ? <Reconnecting /> : <Spinner />;
   if (!data?.has_shift) return (
     <div className="text-center py-20">
       <p className="text-5xl mb-4">⏱</p>
@@ -220,10 +282,8 @@ function ShiftTab() {
 // Historial
 // ---------------------------------------------------------
 function HistoryTab() {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  useEffect(() => { dealerSelfService.getMyHistory().then(setData).catch(() => {}).finally(() => setLoading(false)); }, []);
-  if (loading) return <Spinner />;
+  const { data, loadedOnce, error } = useDealerResource(dealerSelfService.getMyHistory);
+  if (!loadedOnce) return error ? <Reconnecting /> : <Spinner />;
   const shifts = data?.shifts || [];
   if (shifts.length === 0) return (
     <div className="text-center py-20"><p className="text-5xl mb-4">📜</p><p className="font-bold text-white">Sin turnos aún</p><p className="text-sm text-gray-400 mt-1">Acá vas a ver tus sesiones y lo que ganaste.</p></div>
@@ -250,10 +310,8 @@ function HistoryTab() {
 // Resumen
 // ---------------------------------------------------------
 function SummaryTab() {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  useEffect(() => { dealerSelfService.getMySummary().then(setData).catch(() => {}).finally(() => setLoading(false)); }, []);
-  if (loading) return <Spinner />;
+  const { data, loadedOnce, error } = useDealerResource(dealerSelfService.getMySummary);
+  if (!loadedOnce) return error ? <Reconnecting /> : <Spinner />;
   if (!data) return null;
   return (
     <div className="space-y-4">
