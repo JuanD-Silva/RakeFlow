@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from pydantic import BaseModel, Field
 
-from .. import models
+from .. import models, tournament_clock
 from ..dependencies import get_db
 from ..audit import log_action, AuditAction
 
@@ -115,6 +115,42 @@ async def get_club_activity(public_token: str, db: AsyncSession = Depends(get_db
         "tournaments": tournaments,
         "scheduled": [],  # torneos programados: pendiente T4 (no hay scheduled_start)
         "updated_at": datetime.utcnow().isoformat(),
+    }
+
+
+# ---------------------------------------------------------
+# VISTA TV DEL TORNEO (pública, sin auth) — reloj/blinds para proyectar.
+# Sólo datos no sensibles: nombre del club/torneo, reloj, blinds y conteo de
+# jugadores. NUNCA plata, rake, premios ni jugadores nominales.
+# ---------------------------------------------------------
+async def _get_tournament_by_token(db: AsyncSession, token: str) -> tuple[models.Tournament, models.Club]:
+    tournament = (await db.execute(
+        select(models.Tournament).where(models.Tournament.public_token == token)
+    )).scalars().first()
+    if not tournament:
+        raise HTTPException(status_code=404, detail="Torneo no encontrado")
+    club = (await db.execute(
+        select(models.Club).where(models.Club.id == tournament.club_id)
+    )).scalars().first()
+    if not club or not club.is_active:
+        raise HTTPException(status_code=404, detail="Torneo no encontrado")
+    return tournament, club
+
+
+@router.get("/tournaments/{public_token}/tv")
+async def get_tournament_tv(public_token: str, db: AsyncSession = Depends(get_db)):
+    """Estado para la pantalla TV del torneo: reloj + blinds + conteo de jugadores.
+    Cero datos sensibles."""
+    t, club = await _get_tournament_by_token(db, public_token)
+    registered = len(t.players)
+    active = sum(1 for p in t.players if p.status == "ACTIVE")
+    return {
+        "club_name": club.name,
+        "tournament_name": t.name,
+        "status": t.status,
+        "players_registered": registered,
+        "players_active": active,
+        "clock": tournament_clock.clock_state(t),
     }
 
 

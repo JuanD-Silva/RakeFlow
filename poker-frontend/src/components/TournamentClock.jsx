@@ -26,8 +26,18 @@ export default function TournamentClock({ tournament }) {
   const [loadedOnce, setLoadedOnce] = useState(false);
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [copiedTv, setCopiedTv] = useState(false);
   const [, forceTick] = useState(0); // sólo para re-renderizar el contador local cada segundo
   const fetchedAtRef = useRef(0);
+
+  const shareTv = async () => {
+    const tk = tournament?.public_token;
+    if (!tk) return;
+    const url = `${window.location.origin}/torneo/${tk}/tv`;
+    try { await navigator.clipboard.writeText(url); } catch { /* ignora */ }
+    setCopiedTv(true);
+    setTimeout(() => setCopiedTv(false), 2000);
+  };
 
   const apply = useCallback((state) => {
     setClock(state);
@@ -96,6 +106,19 @@ export default function TournamentClock({ tournament }) {
       <div className="flex items-center justify-between mb-3">
         <span className="text-[11px] font-black uppercase tracking-[0.25em] text-violet-300">⏱ Reloj del torneo</span>
         <div className="flex items-center gap-2">
+          {tournament?.public_token && (
+            <button
+              onClick={shareTv}
+              title="Copiar link de la pantalla TV (para proyectar)"
+              className={`text-[10px] font-bold uppercase px-2.5 py-1 rounded-full border transition-colors ${
+                copiedTv
+                  ? 'border-emerald-500/40 text-emerald-300 bg-emerald-500/10'
+                  : 'border-violet-500/40 text-violet-300 hover:bg-violet-500/10'
+              }`}
+            >
+              {copiedTv ? '✓ Link TV' : '📺 Compartir TV'}
+            </button>
+          )}
           <span className={`text-[10px] font-bold uppercase px-2.5 py-1 rounded-full ring-1 ${statusPill.cls}`}>{statusPill.txt}</span>
           {error && <span className="text-[10px] text-amber-400/80 font-bold" title="Reconectando">⚠</span>}
         </div>
