@@ -356,6 +356,17 @@ endTournament: async (tournamentId) => {
     const response = await api.post(`/tournaments/${tournamentId}/players/${playerId}/toggle-paid`);
     return response.data;
   },
+  // --- Reloj del torneo (T3). El backend calcula elapsed/remaining; el front tickea local. ---
+  getClock: async (tournamentId) => {
+    const response = await api.get(`/tournaments/${tournamentId}/clock`);
+    return response.data;
+  },
+  clockStart: async (tournamentId) => (await api.post(`/tournaments/${tournamentId}/clock/start`)).data,
+  clockPause: async (tournamentId) => (await api.post(`/tournaments/${tournamentId}/clock/pause`)).data,
+  clockNextLevel: async (tournamentId) => (await api.post(`/tournaments/${tournamentId}/clock/next-level`)).data,
+  clockPrevLevel: async (tournamentId) => (await api.post(`/tournaments/${tournamentId}/clock/prev-level`)).data,
+  updateBlinds: async (tournamentId, blindStructure) =>
+    (await api.patch(`/tournaments/${tournamentId}/blinds`, { blind_structure: blindStructure })).data,
 };
 
 export const historyService = {

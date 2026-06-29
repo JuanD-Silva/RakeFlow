@@ -1,4 +1,5 @@
 # app/routers/tournaments.py
+import secrets
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, delete
@@ -9,6 +10,7 @@ from pydantic import BaseModel
 import logging
 from ..dependencies import get_db, get_current_club, require_role
 from ..audit import log_action, AuditAction
+from .. import tournament_clock
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +50,12 @@ async def create_tournament(
     if active_tournament:
         raise HTTPException(status_code=409, detail="Ya existe un torneo activo. Only one active tournament allowed.")
 
+    # Estructura de blinds: la enviada (si vino) o la plantilla default editable.
+    if tournament_data.blind_structure is not None:
+        blinds = [lvl.model_dump() for lvl in tournament_data.blind_structure]
+    else:
+        blinds = [dict(lvl) for lvl in tournament_clock.DEFAULT_BLIND_STRUCTURE]
+
     # Crear el Torneo
     new_tournament = models.Tournament(
         name=tournament_data.name,
@@ -62,7 +70,12 @@ async def create_tournament(
         double_addon_price=tournament_data.double_addon_price,
         club_id=current_club.id,
         status="REGISTERING",
-        start_time=datetime.utcnow()
+        start_time=datetime.utcnow(),
+        blind_structure=blinds,
+        current_level=1,
+        clock_status="STOPPED",
+        clock_elapsed_seconds=0,
+        public_token=secrets.token_urlsafe(16),
     )
 
     db.add(new_tournament)
@@ -95,8 +108,108 @@ async def get_active_tournament(
         .order_by(desc(models.Tournament.start_time))
     )
     tournament = result.scalars().first()
-    
+
     return tournament
+
+
+# ---------------------------------------------------------
+# RELOJ DEL TORNEO (T3) — control del director + estado vivo.
+# El reloj es server-authoritative: GET /clock devuelve elapsed/remaining
+# calculados server-side y los clientes sólo tickean local. Mismo gate que
+# registrar/rebuy (cualquier usuario del club; get_current_club rechaza DEALER).
+# ---------------------------------------------------------
+async def _get_owned_tournament(db: AsyncSession, tournament_id: int, club_id: int) -> models.Tournament:
+    result = await db.execute(
+        select(models.Tournament)
+        .where(models.Tournament.id == tournament_id)
+        .where(models.Tournament.club_id == club_id)
+    )
+    tournament = result.scalars().first()
+    if not tournament:
+        raise HTTPException(status_code=404, detail="Torneo no encontrado")
+    return tournament
+
+
+@router.get("/{tournament_id}/clock")
+async def get_tournament_clock(
+    tournament_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+):
+    """Estado vivo del reloj (elapsed/remaining/nivel/blinds). Read-only."""
+    tournament = await _get_owned_tournament(db, tournament_id, current_club.id)
+    return tournament_clock.clock_state(tournament)
+
+
+async def _apply_clock_action(
+    db: AsyncSession, request: Request, current_club: models.Club,
+    tournament_id: int, action: str,
+) -> dict:
+    tournament = await _get_owned_tournament(db, tournament_id, current_club.id)
+    now = datetime.utcnow()
+    if action == "start":
+        tournament_clock.start_clock(tournament, now)
+    elif action == "pause":
+        tournament_clock.pause_clock(tournament, now)
+    elif action == "next":
+        tournament_clock.go_to_level(tournament, tournament_clock.effective_level(tournament) + 1, now)
+    elif action == "prev":
+        tournament_clock.go_to_level(tournament, tournament_clock.effective_level(tournament) - 1, now)
+    await log_action(
+        db, request=request, club=current_club,
+        action=AuditAction.TOURNAMENT_CLOCK, entity_type="Tournament", entity_id=tournament.id,
+        meta={"clock_action": action, "level": tournament.current_level, "status": tournament.clock_status},
+    )
+    await db.commit()
+    await db.refresh(tournament)
+    return tournament_clock.clock_state(tournament)
+
+
+@router.post("/{tournament_id}/clock/start")
+async def clock_start(tournament_id: int, request: Request, db: AsyncSession = Depends(get_db), current_club: models.Club = Depends(get_current_club)):
+    return await _apply_clock_action(db, request, current_club, tournament_id, "start")
+
+
+@router.post("/{tournament_id}/clock/pause")
+async def clock_pause(tournament_id: int, request: Request, db: AsyncSession = Depends(get_db), current_club: models.Club = Depends(get_current_club)):
+    return await _apply_clock_action(db, request, current_club, tournament_id, "pause")
+
+
+@router.post("/{tournament_id}/clock/next-level")
+async def clock_next_level(tournament_id: int, request: Request, db: AsyncSession = Depends(get_db), current_club: models.Club = Depends(get_current_club)):
+    return await _apply_clock_action(db, request, current_club, tournament_id, "next")
+
+
+@router.post("/{tournament_id}/clock/prev-level")
+async def clock_prev_level(tournament_id: int, request: Request, db: AsyncSession = Depends(get_db), current_club: models.Club = Depends(get_current_club)):
+    return await _apply_clock_action(db, request, current_club, tournament_id, "prev")
+
+
+@router.patch("/{tournament_id}/blinds", response_model=schemas.TournamentResponse)
+async def update_blind_structure(
+    tournament_id: int,
+    data: schemas.BlindStructureUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+    _: models.User = Depends(require_role([models.UserRole.OWNER, models.UserRole.MANAGER])),
+):
+    """Editar la estructura de blinds (OWNER/MANAGER). No reinicia el reloj; si el
+    nivel actual quedó fuera de rango se acota al editar la próxima acción."""
+    tournament = await _get_owned_tournament(db, tournament_id, current_club.id)
+    tournament.blind_structure = [lvl.model_dump() for lvl in data.blind_structure]
+    # Si la estructura se encogió, acotar current_level para que no quede fuera de
+    # rango (evita que next/prev queden "trabados" hasta volver al rango).
+    tournament.current_level = tournament_clock.effective_level(tournament)
+    await log_action(
+        db, request=request, club=current_club,
+        action=AuditAction.TOURNAMENT_BLINDS_UPDATE, entity_type="Tournament", entity_id=tournament.id,
+        meta={"levels": len(tournament.blind_structure)},
+    )
+    await db.commit()
+    await db.refresh(tournament)
+    return tournament
+
 
 # 3. FINALIZAR TORNEO
 @router.post("/{tournament_id}/end", response_model=schemas.TournamentResponse)
