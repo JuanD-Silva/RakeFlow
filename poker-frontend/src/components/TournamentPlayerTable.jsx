@@ -115,7 +115,7 @@ export default function TournamentPlayerTable({ tournament, onUpdate }) {
                 try {
                     if(isRebuy) await tournamentService.addRebuy(tournament.id, actionPlayer.player_id, type); else await tournamentService.addAddon(tournament.id, actionPlayer.player_id, type);
                     onUpdate(); setActionPlayer(null); showToast("Transacción exitosa");
-                } catch(e) { showToast("Error", "error"); } finally { setLoading(false); setConfirmModal(prev=>({...prev, isOpen:false})); }
+                } catch(e) { showToast(e.response?.data?.detail || "Error", "error"); } finally { setLoading(false); setConfirmModal(prev=>({...prev, isOpen:false})); }
             }
         });
     };
