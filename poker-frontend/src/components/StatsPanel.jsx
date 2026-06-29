@@ -37,7 +37,8 @@ export default function StatsPanel({ refreshTrigger, sessionId = null }) {
           ? `/sessions/${sessionId}/players-stats`
           : '/sessions/current/players-stats';
         const res = await api.get(path);
-        const players = res.data || [];
+        // Nuevo shape { players, table_bonus }; fallback a array (backend viejo).
+        const players = Array.isArray(res.data) ? res.data : (res.data?.players || []);
         setPlayerCount(players.length);
         if (players.length > 0) {
           const totalBuyins = players.reduce((acc, p) => acc + (p.total_buyin || 0), 0);

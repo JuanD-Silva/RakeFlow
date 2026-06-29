@@ -121,15 +121,15 @@ export default function TransactionForm({ type, onSuccess, sessionId, createSess
       if (type === 'buyin') {
         data = await playerService.getAll();
       } else {
-        // Para cashout/spend/jackpot/bonus: jugadores que estan en la mesa actual
+        // Para cashout/spend/jackpot/bonus: jugadores que estan en la mesa actual.
+        // Nuevo shape { players, table_bonus }; fallback a array (backend viejo).
         const stats = await sessionService.getActiveSession(sessionId);
-        if (stats) {
-          data = stats.map(s => ({
-            id: s.player_id,
-            name: s.name,
-            phone: s.phone
-          }));
-        }
+        const arr = Array.isArray(stats) ? stats : (stats?.players || []);
+        data = arr.map(s => ({
+          id: s.player_id,
+          name: s.name,
+          phone: s.phone
+        }));
       }
       const sorted = data.sort((a, b) => a.name.localeCompare(b.name));
       setPlayers(sorted);

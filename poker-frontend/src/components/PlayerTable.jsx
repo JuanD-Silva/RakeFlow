@@ -9,6 +9,7 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [totals, setTotals] = useState({ buyin: 0, cashout: 0, balance: 0 });
+  const [tableBonus, setTableBonus] = useState(0); // bono de mesa (sin jugador)
   const [expandedPlayerId, setExpandedPlayerId] = useState(null);
 
   useEffect(() => {
@@ -23,7 +24,10 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
       try {
         setError(null);
         const response = await api.get(`/sessions/${sessionId}/players-stats`);
-        const data = response.data;
+        // Nuevo shape: { players, table_bonus }. Fallback a array (backend viejo).
+        const raw = response.data;
+        const data = Array.isArray(raw) ? raw : (raw.players || []);
+        setTableBonus(Array.isArray(raw) ? 0 : (raw.table_bonus || 0));
         setPlayers(data);
 
         const newTotals = data.reduce((acc, p) => ({
@@ -173,7 +177,7 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
                     )}
                   </div>
                 </div>
-                <span className={`font-mono font-bold px-3 py-1.5 rounded-lg text-base shrink-0 ${
+                <span className={`font-mono font-bold px-3 py-1.5 rounded-lg text-base shrink-0 whitespace-nowrap ${
                   p.current_balance >= 0
                     ? 'bg-green-900/30 text-green-400 border border-green-500/30'
                     : 'bg-red-900/30 text-red-400 border border-red-500/30'
@@ -308,9 +312,15 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
             <span className="text-emerald-500">Buy-ins: {formatMoney(totals.buyin)}</span>
             <span className="text-red-500">Out: {formatMoney(totals.cashout)}</span>
           </div>
+          {tableBonus > 0 && (
+            <div className="flex justify-between text-sm font-mono">
+              <span className="text-orange-400">🎉 Bono mesa</span>
+              <span className="text-orange-400">+{formatMoney(tableBonus)}</span>
+            </div>
+          )}
           <div className="flex justify-between items-center pt-1 border-t border-gray-700">
             <span className="text-gray-400 text-xs uppercase tracking-wider">Balance neto</span>
-            <span className="font-mono font-bold text-white text-lg">{formatMoney(totals.balance)}</span>
+            <span className="font-mono font-bold text-white text-lg whitespace-nowrap">{formatMoney(totals.balance)}</span>
           </div>
         </div>
       )}
@@ -426,9 +436,9 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
                       {p.total_bonus > 0 && <div className="text-orange-400">+{formatMoney(p.total_bonus)} (Bono)</div>}
                     </td>
                     <td className="p-4 text-right">
-                      <span className={`font-mono font-bold px-3 py-1.5 rounded-lg text-lg ${
-                        p.current_balance >= 0 
-                          ? 'bg-green-900/30 text-green-400 border border-green-500/30' 
+                      <span className={`inline-block font-mono font-bold px-3 py-1.5 rounded-lg text-lg whitespace-nowrap ${
+                        p.current_balance >= 0
+                          ? 'bg-green-900/30 text-green-400 border border-green-500/30'
                           : 'bg-red-900/30 text-red-400 border border-red-500/30'
                       }`}>
                         {formatMoney(p.current_balance)}
@@ -547,8 +557,12 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
                </td>
                <td className="p-4 text-right text-emerald-500 font-mono text-lg">{formatMoney(totals.buyin)}</td>
                <td className="p-4 text-right text-red-500 font-mono text-lg">{formatMoney(totals.cashout)}</td>
-               <td className="p-4 text-right text-gray-500">-</td>
-               <td className="p-4 text-right text-white font-mono text-xl">{formatMoney(totals.balance)}</td>
+               <td className="p-4 text-right text-sm">
+                 {tableBonus > 0
+                   ? <div className="text-orange-400 whitespace-nowrap" title="Bono para toda la mesa (cortesía del club)">+{formatMoney(tableBonus)} <span className="text-[10px]">(Bono mesa)</span></div>
+                   : <span className="text-gray-500">-</span>}
+               </td>
+               <td className="p-4 text-right text-white font-mono text-xl whitespace-nowrap">{formatMoney(totals.balance)}</td>
              </tr>
           </tfoot>
         </table>

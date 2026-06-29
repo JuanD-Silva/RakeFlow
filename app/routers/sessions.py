@@ -123,7 +123,7 @@ async def get_active_sessions_summary(
 # ---------------------------------------------------------
 # 3. ESTADÍSTICAS / AUDITORÍA EN TIEMPO REAL
 # ---------------------------------------------------------
-async def _build_players_stats(db: AsyncSession, session: models.Session) -> list:
+async def _build_players_stats(db: AsyncSession, session: models.Session) -> dict:
     """Calcula los stats de jugadores y detalle de transacciones para una sesion dada."""
     # 1. SQL para TOTALES (Incluye la lógica de BONOS)
     sql = text("""
@@ -218,8 +218,17 @@ async def _build_players_stats(db: AsyncSession, session: models.Session) -> lis
             logger.warning("Error procesando transacción: %s", e)
             continue
 
-    # 6. Retornar lista
-    return list(players_map.values())
+    # 6. Bono de mesa: BONUS sin jugador (cortesía de toda la mesa, ej. pizza).
+    #    No entra en ningún jugador (join por player_id), lo exponemos aparte.
+    table_bonus = float((await db.execute(
+        select(func.sum(models.Transaction.amount)).where(
+            models.Transaction.session_id == session.id,
+            models.Transaction.type == models.TransactionType.BONUS,
+            models.Transaction.player_id.is_(None),
+        )
+    )).scalar() or 0)
+
+    return {"players": list(players_map.values()), "table_bonus": table_bonus}
 
 
 @router.get("/current/players-stats")
