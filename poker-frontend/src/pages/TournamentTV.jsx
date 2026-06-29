@@ -146,10 +146,10 @@ export default function TournamentTV() {
                 {level?.ante > 0 && (
                   <p className="text-violet-300/90 text-lg md:text-3xl font-bold mt-1 md:mt-2">ante {cop(level.ante)}</p>
                 )}
-                {data.starting_stack > 0 && (
-                  <p className="text-gray-500 text-xs md:text-lg font-bold mt-2 md:mt-3 uppercase tracking-widest">Stack inicial {cop(data.starting_stack)}</p>
-                )}
               </div>
+            )}
+            {data.starting_stack > 0 && (
+              <p className="text-gray-500 text-xs md:text-lg font-bold mt-1 uppercase tracking-widest">Stack inicial {cop(data.starting_stack)}</p>
             )}
           </>
         )}

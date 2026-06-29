@@ -31,25 +31,32 @@ export default function TournamentClock({ tournament }) {
   const [copiedTv, setCopiedTv] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editBlinds, setEditBlinds] = useState([]);
+  const [editStack, setEditStack] = useState(0);
   const [savingBlinds, setSavingBlinds] = useState(false);
+  const [editError, setEditError] = useState(null);
   const [, forceTick] = useState(0); // sólo para re-renderizar el contador local cada segundo
   const fetchedAtRef = useRef(0);
 
   const openEdit = () => {
     const current = tournament?.blind_structure?.length ? tournament.blind_structure : DEFAULT_BLINDS;
     setEditBlinds(current.map((l) => ({ ...l })));
+    setEditStack(tournament?.starting_stack || 0);
+    setEditError(null);
     setEditOpen(true);
   };
 
   const saveBlinds = async () => {
     if (savingBlinds || !tournament?.id) return;
+    if (!editBlinds.length) { setEditError('La estructura necesita al menos un nivel.'); return; }
     setSavingBlinds(true);
+    setEditError(null);
     try {
-      await tournamentService.updateBlinds(tournament.id, editBlinds);
+      await tournamentService.updateBlinds(tournament.id, editBlinds, Number(editStack) || 0);
       await load();          // refresca el reloj con la estructura nueva
       setEditOpen(false);
-    } catch { /* el modal queda abierto para reintentar */ }
-    finally { setSavingBlinds(false); }
+    } catch (err) {
+      setEditError(err.response?.data?.detail || 'No se pudo guardar la estructura.');
+    } finally { setSavingBlinds(false); }
   };
 
   const shareTv = async () => {
@@ -109,6 +116,9 @@ export default function TournamentClock({ tournament }) {
   const level = clock?.level;
   const running = clock?.clock_status === 'RUNNING';
   const isBreak = !!level?.is_break;
+  // Torneo sin estructura de blinds (ej. torneos viejos con []): no mostrar el
+  // reloj congelado en "Nivel 1 / 0"; invitar a configurarla con "Editar".
+  const noStructure = !level || (clock?.total_levels ?? 0) === 0;
 
   // Tiempo restante interpolado localmente desde el último estado servido.
   const driftSec = running ? (Date.now() - fetchedAtRef.current) / 1000 : 0;
@@ -153,6 +163,14 @@ export default function TournamentClock({ tournament }) {
         </div>
       </div>
 
+      {noStructure ? (
+        <div className="text-center py-10">
+          <p className="text-5xl mb-3">🎚️</p>
+          <p className="font-bold text-white">Sin estructura de blinds</p>
+          <p className="text-sm text-gray-400 mt-1">Tocá <span className="text-violet-300 font-bold">Editar</span> para configurar los niveles del reloj.</p>
+        </div>
+      ) : (
+      <>
       <div className="flex flex-col md:flex-row md:items-center gap-5">
         {/* Contador grande */}
         <div className="flex-1 text-center md:text-left">
@@ -225,6 +243,8 @@ export default function TournamentClock({ tournament }) {
           Nivel <ChevronRightIcon className="w-4 h-4" />
         </button>
       </div>
+      </>
+      )}
 
       <Modal isOpen={editOpen} onClose={() => setEditOpen(false)} title="Editar estructura de blinds">
         <div className="space-y-4">
@@ -232,7 +252,14 @@ export default function TournamentClock({ tournament }) {
             Editar mientras corre el torneo no reinicia el reloj. Si recortás la
             estructura, el nivel actual se acota al último disponible.
           </p>
+          <div>
+            <label className="block text-violet-300/80 text-[10px] font-bold uppercase mb-1">Stack inicial (fichas)</label>
+            <input type="number" min="0" inputMode="numeric" value={editStack}
+              onChange={(e) => setEditStack(e.target.value)}
+              className="w-full bg-gray-900 border border-gray-600 focus:border-violet-500 rounded-lg p-2 text-white font-mono outline-none" />
+          </div>
           <BlindStructureEditor value={editBlinds} onChange={setEditBlinds} />
+          {editError && <p className="text-red-400 text-xs font-bold">{editError}</p>}
           <div className="flex gap-2 pt-1">
             <button onClick={saveBlinds} disabled={savingBlinds}
               className="flex-1 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white font-bold py-2.5 rounded-lg text-xs uppercase">
