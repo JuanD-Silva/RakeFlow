@@ -227,9 +227,17 @@ async def accept_invitation(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    """Endpoint publico: el invitado acepta la invitacion y crea su contrasena."""
+    """Endpoint publico: el invitado acepta la invitacion y crea su contrasena.
+
+    NO sirve para dealers: sus cuentas usan un código OTP corto (en la misma
+    columna invitation_token) y se activan SOLO por POST /dealers/activate, que
+    tiene lockout por teléfono. Excluir DEALER acá evita que ese OTP de baja
+    entropía sea fuerza-bruteable por esta vía sin lockout."""
     user = (await db.execute(
-        select(models.User).where(models.User.invitation_token == data.token)
+        select(models.User).where(
+            models.User.invitation_token == data.token,
+            models.User.role != models.UserRole.DEALER,
+        )
     )).scalars().first()
 
     if not user:

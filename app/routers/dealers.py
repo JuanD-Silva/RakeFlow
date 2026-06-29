@@ -461,30 +461,33 @@ async def invite_dealer(
     if not phone:
         raise HTTPException(status_code=400, detail="Teléfono inválido")
 
-    # Teléfono único a nivel global de users (es la identidad de login).
-    other = (await db.execute(
+    # El teléfono nuevo no puede pertenecer a OTRA cuenta (es la identidad de login).
+    taken = (await db.execute(
         select(models.User).where(models.User.phone == phone)
     )).scalars().first()
-    # Permitimos re-invitar al MISMO dealer (regenera código si aún no activó).
-    if other and not (dealer.user_id and other.id == dealer.user_id):
+    if taken and not (dealer.user_id and taken.id == dealer.user_id):
         raise HTTPException(status_code=409, detail="Ese teléfono ya está registrado en otra cuenta")
 
     code = f"{secrets.randbelow(1000000):06d}"  # OTP 6 dígitos, fácil de tipear
     expires = datetime.utcnow() + timedelta(hours=24)
 
-    if dealer.user_id and other:
-        # Re-invitación: si ya activó, no re-emitir.
-        if other.hashed_password is not None:
+    if dealer.user_id:
+        # Re-invitación: regenera código y permite CORREGIR el teléfono mientras la
+        # cuenta siga pendiente (caso típico: se mandó el código a un número errado).
+        user = (await db.execute(
+            select(models.User).where(models.User.id == dealer.user_id)
+        )).scalars().first()
+        if user is None:
+            raise HTTPException(status_code=409, detail="La cuenta vinculada no existe; desactivá y recreá el dealer")
+        if user.hashed_password is not None:
             raise HTTPException(status_code=409, detail="Este dealer ya activó su cuenta")
-        user = other
         user.phone = phone
+        user.phone_verified = False
         user.invitation_token = code
         user.invitation_expires_at = expires
         user.invitation_sent_at = datetime.utcnow()
         user.invitation_attempts = 0  # reset del lockout en cada re-invitación
     else:
-        if dealer.user_id is not None:
-            raise HTTPException(status_code=409, detail="Este dealer ya tiene una cuenta")
         user = models.User(
             club_id=current_club.id,
             email=None,
