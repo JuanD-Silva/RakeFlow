@@ -595,6 +595,36 @@ class DealerInviteIn(BaseModel):
     name: Optional[str] = None  # si no viene, usa el nombre del dealer
 
 
+def _build_invite_response(dealer: models.Dealer, club_name: Optional[str], phone: str,
+                           code: str, user_id: int, reset: bool = False) -> dict:
+    """Arma el link wa.me + mensaje de WhatsApp para invitar/resetear un dealer.
+    RakeFlow NO envía nada: el front abre WhatsApp con esto."""
+    frontend = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
+    activate_url = f"{frontend}/activar-dealer"
+    if reset:
+        intro = f"Hola {dealer.name}! 🔐 Restablecimos tu acceso a RakeFlow."
+        action_line = f"Volvé a activar tu cuenta acá: {activate_url}"
+    else:
+        intro = f"Hola {dealer.name}! 🃏 {club_name or 'Tu club'} te invita a RakeFlow como dealer."
+        action_line = f"Activá tu cuenta acá: {activate_url}"
+    message = (
+        f"{intro}\n\n"
+        f"{action_line}\n"
+        f"Tu código de verificación es: {code}\n\n"
+        f"(Vence en 24 horas)"
+    )
+    wa_url = f"https://wa.me/{phone}?text={quote(message)}"
+    return {
+        "status": "reset" if reset else "invited",
+        "dealer_id": dealer.id,
+        "user_id": user_id,
+        "phone": phone,
+        "code": code,
+        "wa_url": wa_url,
+        "message": message,
+    }
+
+
 @router.post("/{dealer_id}/invite", status_code=201)
 async def invite_dealer(
     dealer_id: int,
@@ -674,24 +704,77 @@ async def invite_dealer(
     )
     await db.commit()
 
-    frontend = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
-    activate_url = f"{frontend}/activar-dealer"
-    message = (
-        f"Hola {dealer.name}! 🃏 {current_club.name or 'Tu club'} te invita a RakeFlow como dealer.\n\n"
-        f"Activá tu cuenta acá: {activate_url}\n"
-        f"Tu código de verificación es: {code}\n\n"
-        f"(Vence en 24 horas)"
+    return _build_invite_response(dealer, current_club.name, phone, code, user.id)
+
+
+class DealerResetIn(BaseModel):
+    phone: Optional[str] = Field(None, min_length=7, max_length=20)  # opcional: corregir el número
+
+
+@router.post("/{dealer_id}/reset-access", status_code=201)
+async def reset_dealer_access(
+    dealer_id: int,
+    data: DealerResetIn,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+    current_user: models.User = Depends(require_role([models.UserRole.OWNER, models.UserRole.MANAGER])),
+):
+    """Resetea el acceso de un dealer que YA activó su cuenta (caso típico: olvidó
+    la contraseña — no hay recuperación por email porque entra por teléfono).
+    Vuelve la cuenta a 'pendiente' y devuelve un nuevo link wa.me con OTP. NO borra
+    el dealer ni su historial: turnos/pagos/propinas cuelgan del dealer_id, no del
+    user. OWNER/MANAGER."""
+    dealer = (await db.execute(
+        select(models.Dealer).where(
+            models.Dealer.id == dealer_id,
+            models.Dealer.club_id == current_club.id,
+        )
+    )).scalars().first()
+    if not dealer:
+        raise HTTPException(status_code=404, detail="Dealer no encontrado")
+    if not dealer.user_id:
+        raise HTTPException(status_code=409, detail="Este dealer no tiene cuenta. Usá 'Invitar a la app'.")
+
+    user = (await db.execute(
+        select(models.User).where(models.User.id == dealer.user_id)
+    )).scalars().first()
+    if user is None:
+        raise HTTPException(status_code=409, detail="La cuenta vinculada no existe; desactivá y recreá el dealer")
+    if user.hashed_password is None:
+        # Aún pendiente: no hay nada que resetear, es una re-invitación.
+        raise HTTPException(status_code=409, detail="La cuenta aún no se activó; usá 'Re-invitar' para reenviar el código")
+
+    phone = normalize_phone(data.phone) if data.phone else user.phone
+    if not phone:
+        raise HTTPException(status_code=400, detail="Teléfono inválido")
+    # Si cambia el número, no puede pertenecer a otra cuenta (es la identidad de login).
+    if phone != user.phone:
+        taken = (await db.execute(
+            select(models.User).where(models.User.phone == phone)
+        )).scalars().first()
+        if taken and taken.id != user.id:
+            raise HTTPException(status_code=409, detail="Ese teléfono ya está registrado en otra cuenta")
+
+    code = f"{secrets.randbelow(1000000):06d}"  # OTP 6 dígitos
+    user.phone = phone
+    user.phone_verified = False
+    user.hashed_password = None      # vuelve a 'pendiente' y corta el login con la clave vieja
+    user.invitation_token = code
+    user.invitation_expires_at = datetime.utcnow() + timedelta(hours=24)
+    user.invitation_sent_at = datetime.utcnow()
+    user.invitation_attempts = 0     # reset del lockout OTP
+    user.is_active = True
+    dealer.phone = phone
+
+    await log_action(
+        db, request=request, club=current_club,
+        action="DEALER_RESET_ACCESS", entity_type="Dealer", entity_id=dealer.id,
+        meta={"phone": phone, "dealer_id": dealer.id, "user_id": user.id, "by": current_user.email},
     )
-    wa_url = f"https://wa.me/{phone}?text={quote(message)}"
-    return {
-        "status": "invited",
-        "dealer_id": dealer.id,
-        "user_id": user.id,
-        "phone": phone,
-        "code": code,
-        "wa_url": wa_url,
-        "message": message,
-    }
+    await db.commit()
+
+    return _build_invite_response(dealer, current_club.name, phone, code, user.id, reset=True)
 
 
 # ---------------------------------------------------------

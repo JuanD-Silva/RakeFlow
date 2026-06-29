@@ -24,6 +24,7 @@ export default function DealerManager() {
   const [inviteError, setInviteError] = useState(null);
   const [inviteBusy, setInviteBusy] = useState(false);
   const [inviteResult, setInviteResult] = useState(null); // {wa_url, message} para reenviar
+  const [resetMode, setResetMode] = useState(false);       // true = resetear acceso (cuenta ya activada)
 
   const load = async () => {
     setLoading(true);
@@ -84,11 +85,12 @@ export default function DealerManager() {
     }
   };
 
-  const startInvite = (dealer) => {
+  const startInvite = (dealer, reset = false) => {
     setInvitingId(dealer.id);
     setInvitePhone(dealer.phone || "");
     setInviteError(null);
     setInviteResult(null);
+    setResetMode(reset);
   };
 
   const doInvite = async (dealer) => {
@@ -97,12 +99,14 @@ export default function DealerManager() {
     if (phone.replace(/\D/g, '').length < 7) { setInviteError("Teléfono inválido."); return; }
     setInviteBusy(true);
     try {
-      const res = await dealerService.invite(dealer.id, phone);
+      const res = resetMode
+        ? await dealerService.resetAccess(dealer.id, phone)
+        : await dealerService.invite(dealer.id, phone);
       setInviteResult(res);            // guardamos wa_url para abrir/reenviar
       if (res.wa_url) window.open(res.wa_url, '_blank'); // abre WhatsApp con el código listo
       load();
     } catch (err) {
-      setInviteError(err.response?.data?.detail || "Error generando la invitación.");
+      setInviteError(err.response?.data?.detail || (resetMode ? "Error reseteando el acceso." : "Error generando la invitación."));
     } finally {
       setInviteBusy(false);
     }
@@ -246,6 +250,15 @@ export default function DealerManager() {
                           Invitar a la app
                         </button>
                       )}
+                      {d.is_active && d.has_account && !d.invitation_pending && (
+                        <button
+                          onClick={() => startInvite(d, true)}
+                          className="text-[10px] font-bold px-2.5 py-1.5 rounded-lg border text-amber-400 border-amber-500/30 hover:bg-amber-500/10 transition-all"
+                          title="Resetear acceso: el dealer vuelve a verificar su número y crea una nueva contraseña. No borra su historial."
+                        >
+                          Resetear acceso
+                        </button>
+                      )}
                       <button
                         onClick={() => startEdit(d)}
                         className="text-gray-400 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg p-2 transition-all"
@@ -277,7 +290,11 @@ export default function DealerManager() {
                 </div>
                 {invitingId === d.id && (
                   <div className="mt-3 pt-3 border-t border-gray-700/50 space-y-2">
-                    <p className="text-[11px] text-gray-400">Se abrirá WhatsApp con el código de verificación para enviar al número del dealer.</p>
+                    <p className="text-[11px] text-gray-400">
+                      {resetMode
+                        ? "Resetea el acceso: el dealer vuelve a verificar su número y crea una nueva contraseña. No borra su historial. Se abrirá WhatsApp con el nuevo código."
+                        : "Se abrirá WhatsApp con el código de verificación para enviar al número del dealer."}
+                    </p>
                     <input
                       type="tel"
                       inputMode="tel"
@@ -291,7 +308,7 @@ export default function DealerManager() {
                     {inviteError && <p className="text-red-400 text-xs">{inviteError}</p>}
                     {inviteResult ? (
                       <div className="space-y-2">
-                        <p className="text-emerald-400 text-xs font-bold">✓ Código generado. Si WhatsApp no abrió, tocá el botón:</p>
+                        <p className="text-emerald-400 text-xs font-bold">✓ {resetMode ? "Acceso reseteado. " : ""}Código generado. Si WhatsApp no abrió, tocá el botón:</p>
                         <div className="flex gap-2">
                           <a href={inviteResult.wa_url} target="_blank" rel="noreferrer" className="flex-1 text-center bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 rounded-lg text-xs uppercase">Abrir WhatsApp</a>
                           <button onClick={() => { setInvitingId(null); setInviteResult(null); }} className="flex-1 bg-gray-700 hover:bg-gray-600 text-gray-300 font-bold py-2 rounded-lg text-xs uppercase">Listo</button>
@@ -299,8 +316,8 @@ export default function DealerManager() {
                       </div>
                     ) : (
                       <div className="flex gap-2">
-                        <button onClick={() => doInvite(d)} disabled={inviteBusy} className="flex-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold py-2 rounded-lg text-xs uppercase">
-                          {inviteBusy ? 'Generando…' : 'Invitar por WhatsApp'}
+                        <button onClick={() => doInvite(d)} disabled={inviteBusy} className={`flex-1 disabled:opacity-50 text-white font-bold py-2 rounded-lg text-xs uppercase ${resetMode ? 'bg-amber-600 hover:bg-amber-500' : 'bg-emerald-600 hover:bg-emerald-500'}`}>
+                          {inviteBusy ? (resetMode ? 'Reseteando…' : 'Generando…') : (resetMode ? 'Resetear y enviar' : 'Invitar por WhatsApp')}
                         </button>
                         <button onClick={() => setInvitingId(null)} className="flex-1 bg-gray-700 hover:bg-gray-600 text-gray-300 font-bold py-2 rounded-lg text-xs uppercase">Cancelar</button>
                       </div>
