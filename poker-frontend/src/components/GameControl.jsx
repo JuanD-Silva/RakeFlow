@@ -12,6 +12,7 @@ import PlayerTable from './PlayerTable';
 import api from '../api/axios';
 import ConfirmModal from './ConfirmModal';
 import TournamentPlayerTable from './TournamentPlayerTable';
+import TournamentClock from './TournamentClock';
 import { useAuth } from '../context/AuthContext';
 import { formatMoney } from '../utils/formatters';
 
@@ -60,15 +61,6 @@ export default function GameControl() {
   const [selectedPlayerForHistory, setSelectedPlayerForHistory] = useState(null);
   const [viewMode, setViewMode] = useState("menu"); // "menu", "cash" o "tournament"
   const isFirstLoad = useRef(true);
-  const [newTournamentName, setNewTournamentName] = useState("");
-  const [tournamentCost, setTournamentCost] = useState({
-      buyin: 0,
-      tip: 0,
-      rebuy: 0,
-      doubleRebuy: 0,
-      addon: 0,
-      doubleAddon: 0
-  });
 
   // Modal "Nueva mesa": en este flujo, la sesion se crea junto con el
   // primer buy-in (no antes). Solo capturamos el nombre opcional.
@@ -462,10 +454,13 @@ const handleCreateTournament = async (formData) => {
                 </div>
             </div>
 
+            {/* RELOJ / NIVELES (T3) */}
+            <TournamentClock tournament={activeTournament} />
+
             {/* TABLA DE JUGADORES */}
-            <TournamentPlayerTable 
-                tournament={activeTournament} 
-                onUpdate={refresh} 
+            <TournamentPlayerTable
+                tournament={activeTournament}
+                onUpdate={refresh}
             />
         </div>
 

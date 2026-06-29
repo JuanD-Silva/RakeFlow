@@ -386,13 +386,25 @@ class Tournament(Base):
     bounty_amount = Column(Integer, default=0)     # Ej: 20.000 (Va directo al jugador que elimina)
     
     # Estado
-    status = Column(String, default="REGISTERING") 
-    
+    status = Column(String, default="REGISTERING")
+
+    # --- RELOJ / NIVELES (T3) ---
+    # blind_structure: lista de niveles [{level, small_blind, big_blind, ante,
+    #   duration_min, is_break}]. El reloj es server-authoritative (igual que el
+    #   elapsed del dealer): el cliente solo tickea local y resincroniza al pollear.
+    blind_structure = Column(JSON, default=list)        # niveles de blinds
+    current_level = Column(Integer, default=1)          # nivel activo (1-based en la estructura)
+    clock_status = Column(String, default="STOPPED")    # STOPPED | RUNNING | PAUSED
+    level_started_at = Column(DateTime, nullable=True)  # cuándo arrancó el reloj del nivel actual
+    clock_elapsed_seconds = Column(Integer, default=0)  # segundos acumulados antes de la última pausa
+    # Token del link público de la vista TV (rakeflow.site/torneo/{public_token}/tv)
+    public_token = Column(String, unique=True, index=True, nullable=True)
+
     # Relaciones
     club = relationship("Club", back_populates="tournaments")
     players = relationship("TournamentPlayer", back_populates="tournament", cascade="all, delete-orphan", lazy="selectin")
 
-    payout_structure = Column(JSON, default=[]) 
+    payout_structure = Column(JSON, default=[])
 
 class AuditLog(Base):
     """

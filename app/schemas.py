@@ -286,6 +286,15 @@ class InitialSetupRequest(BaseModel):
     partners: List[PartnerSetup] = []
 
 # --- TORNEOS ---
+class BlindLevel(BaseModel):
+    """Un nivel de la estructura de blinds. Los breaks son niveles is_break=True."""
+    level: int = Field(..., ge=1)
+    small_blind: int = Field(default=0, ge=0)
+    big_blind: int = Field(default=0, ge=0)
+    ante: int = Field(default=0, ge=0)
+    duration_min: int = Field(default=20, ge=0, le=600)
+    is_break: bool = False
+
 class TournamentCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     buyin_amount: int = Field(..., ge=0)
@@ -297,6 +306,12 @@ class TournamentCreate(BaseModel):
     double_rebuy_price: int = 0
     double_addon_price: int = 0
     payout_structure: List[int] = []
+    # Estructura de blinds (T3). Si no viene, el backend usa la plantilla default.
+    blind_structure: Optional[List[BlindLevel]] = None
+
+class BlindStructureUpdate(BaseModel):
+    """Editar la estructura de blinds de un torneo (T3)."""
+    blind_structure: List[BlindLevel]
 
 class TournamentPlayerSchema(BaseModel):
     id: int
@@ -333,6 +348,11 @@ class TournamentResponse(BaseModel):
     total_prize_pool: int = 0
     players: List[TournamentPlayerSchema] = []
     payout_structure: List[int] = []
+    # Reloj / niveles (T3). El estado vivo (elapsed/remaining) va en GET /clock.
+    blind_structure: List[BlindLevel] = []
+    current_level: int = 1
+    clock_status: str = "STOPPED"
+    public_token: Optional[str] = None
 
     class Config:
         from_attributes = True
