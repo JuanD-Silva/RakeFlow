@@ -152,9 +152,9 @@ async def _apply_clock_action(
     elif action == "pause":
         tournament_clock.pause_clock(tournament, now)
     elif action == "next":
-        tournament_clock.go_to_level(tournament, (tournament.current_level or 1) + 1, now)
+        tournament_clock.go_to_level(tournament, tournament_clock.effective_level(tournament) + 1, now)
     elif action == "prev":
-        tournament_clock.go_to_level(tournament, (tournament.current_level or 1) - 1, now)
+        tournament_clock.go_to_level(tournament, tournament_clock.effective_level(tournament) - 1, now)
     await log_action(
         db, request=request, club=current_club,
         action=AuditAction.TOURNAMENT_CLOCK, entity_type="Tournament", entity_id=tournament.id,
@@ -198,6 +198,9 @@ async def update_blind_structure(
     nivel actual quedó fuera de rango se acota al editar la próxima acción."""
     tournament = await _get_owned_tournament(db, tournament_id, current_club.id)
     tournament.blind_structure = [lvl.model_dump() for lvl in data.blind_structure]
+    # Si la estructura se encogió, acotar current_level para que no quede fuera de
+    # rango (evita que next/prev queden "trabados" hasta volver al rango).
+    tournament.current_level = tournament_clock.effective_level(tournament)
     await log_action(
         db, request=request, club=current_club,
         action=AuditAction.TOURNAMENT_BLINDS_UPDATE, entity_type="Tournament", entity_id=tournament.id,

@@ -43,6 +43,13 @@ def _clamp_level(tournament, level: int) -> int:
     return min(max(1, level), n) if n else 1
 
 
+def effective_level(tournament) -> int:
+    """Nivel efectivo = current_level acotado a la estructura actual. Si la
+    estructura se encogió por PATCH, current_level puede haber quedado fuera de
+    rango; este es el nivel que realmente se muestra/usa."""
+    return _clamp_level(tournament, tournament.current_level or 1)
+
+
 def clock_state(tournament, now: Optional[datetime] = None) -> dict:
     """Estado vivo del reloj para los clientes. elapsed/remaining se calculan
     server-side; `server_time` deja que el cliente compense el drift al tickear."""
@@ -71,7 +78,6 @@ def clock_state(tournament, now: Optional[datetime] = None) -> dict:
         "elapsed_seconds": elapsed,
         "remaining_seconds": remaining,
         "level_over": bool(duration_s) and elapsed >= duration_s,
-        "server_time": now.isoformat() + "Z",
     }
 
 
@@ -101,8 +107,14 @@ def pause_clock(tournament, now: Optional[datetime] = None) -> None:
 
 
 def go_to_level(tournament, level: int, now: Optional[datetime] = None) -> None:
-    """Salta a un nivel y reinicia el reloj de ese nivel. Mantiene RUNNING/PAUSED."""
+    """Salta a un nivel (acotado) y reinicia el reloj SÓLO si el nivel efectivo
+    cambia. Persiste el clamp siempre (corrige el desync de current_level si la
+    estructura se encogió). Mantiene RUNNING/PAUSED. Un salto en el borde (next en
+    el último, prev en el primero) no resetea el reloj del nivel actual."""
     now = now or datetime.utcnow()
-    tournament.current_level = _clamp_level(tournament, level)
-    tournament.clock_elapsed_seconds = 0
-    tournament.level_started_at = now if tournament.clock_status == "RUNNING" else None
+    base = effective_level(tournament)
+    target = _clamp_level(tournament, level)
+    tournament.current_level = target
+    if target != base:
+        tournament.clock_elapsed_seconds = 0
+        tournament.level_started_at = now if tournament.clock_status == "RUNNING" else None
