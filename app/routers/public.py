@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 
 from .. import models
 from ..dependencies import get_db
+from ..audit import log_action, AuditAction
 
 router = APIRouter(prefix="/public", tags=["Public"])
 
@@ -97,10 +98,10 @@ async def get_club_activity(public_token: str, db: AsyncSession = Depends(get_db
     # conteo y libera cupos). Un BUST implica buy-in previo => basta restarlos.
     cash_rows = (await db.execute(text("""
         SELECT s.id, s.name, s.start_time, s.max_players,
-            COALESCE(
+            GREATEST(0,
                 COUNT(DISTINCT t.player_id) FILTER (WHERE CAST(t.type AS TEXT) IN ('BUYIN','REBUY'))
-                - COUNT(DISTINCT t.player_id) FILTER (WHERE CAST(t.type AS TEXT) = 'BUST'),
-            0) AS players_count
+                - COUNT(DISTINCT t.player_id) FILTER (WHERE CAST(t.type AS TEXT) = 'BUST')
+            ) AS players_count
         FROM sessions s
         LEFT JOIN transactions t ON t.session_id = s.id
         WHERE s.club_id = :cid AND s.status = 'OPEN'
@@ -176,7 +177,7 @@ class DealerBustIn(BaseModel):
 
 
 @router.post("/dealer/{session_token}/bust")
-async def dealer_toggle_bust(session_token: str, data: DealerBustIn, db: AsyncSession = Depends(get_db)):
+async def dealer_toggle_bust(session_token: str, data: DealerBustIn, request: Request, db: AsyncSession = Depends(get_db)):
     """El dealer marca/desmarca que un jugador salió de la mesa (BUST).
     Reusa el mecanismo de quiebra: escribe un BUST con timestamp que congela el
     tiempo en mesa del jugador (rakeback/fidelidad), baja el conteo y libera el
@@ -186,6 +187,10 @@ async def dealer_toggle_bust(session_token: str, data: DealerBustIn, db: AsyncSe
     session = await _get_open_session_by_token(db, session_token)
     if session.status != models.SessionStatus.OPEN:
         raise HTTPException(status_code=409, detail="La mesa ya está cerrada")
+
+    # Club para auditar: esta es una mutación desde una superficie SIN auth (solo
+    # token), así que dejar rastro en audit_logs importa más que en el panel.
+    club = (await db.execute(select(models.Club).where(models.Club.id == session.club_id))).scalars().first()
 
     # Tenant safety (defensa en profundidad): el jugador debe pertenecer al club
     # de la sesión Y estar sentado en ESTA mesa (tener un buy-in aquí). Evita que
@@ -219,16 +224,34 @@ async def dealer_toggle_bust(session_token: str, data: DealerBustIn, db: AsyncSe
             models.Transaction.player_id == data.player_id,
             models.Transaction.type == models.TransactionType.BUST,
         ))
+        if club:
+            await log_action(
+                db, request=request, club=club,
+                action=AuditAction.TRANSACTION_BUST_TOGGLE,
+                entity_type="Transaction", actor_type="DEALER_PUBLIC",
+                meta={"player_id": data.player_id, "session_id": session.id,
+                      "is_busted": False, "undo": True, "source": "dealer_public_link"},
+            )
         await db.commit()
         return {"action": "undone", "is_busted": False}
 
-    db.add(models.Transaction(
+    new_tx = models.Transaction(
         session_id=session.id,
         player_id=data.player_id,
         type=models.TransactionType.BUST,
         amount=0.0,
         method="CASH",
-    ))
+    )
+    db.add(new_tx)
+    await db.flush()
+    if club:
+        await log_action(
+            db, request=request, club=club,
+            action=AuditAction.TRANSACTION_BUST_TOGGLE,
+            entity_type="Transaction", entity_id=new_tx.id, actor_type="DEALER_PUBLIC",
+            meta={"player_id": data.player_id, "session_id": session.id,
+                  "is_busted": True, "source": "dealer_public_link"},
+        )
     await db.commit()
     return {"action": "busted", "is_busted": True}
 

@@ -92,10 +92,10 @@ async def get_active_sessions_summary(
             CAST(s.status AS TEXT) AS status,
             -- Jugadores en mesa = con buy-in y SIN quebrar. Un BUST implica buy-in
             -- previo, así que los quebrados son un subconjunto: basta restarlos.
-            COALESCE(
+            GREATEST(0,
                 COUNT(DISTINCT t.player_id) FILTER (WHERE CAST(t.type AS TEXT) IN ('BUYIN', 'REBUY'))
-                - COUNT(DISTINCT t.player_id) FILTER (WHERE CAST(t.type AS TEXT) = 'BUST'),
-            0) AS players_count,
+                - COUNT(DISTINCT t.player_id) FILTER (WHERE CAST(t.type AS TEXT) = 'BUST')
+            ) AS players_count,
             COALESCE(SUM(CASE WHEN CAST(t.type AS TEXT) IN ('BUYIN', 'REBUY')
                               THEN t.amount ELSE 0 END), 0) AS total_buyin,
             COALESCE(SUM(CASE WHEN CAST(t.type AS TEXT) = 'CASHOUT'
