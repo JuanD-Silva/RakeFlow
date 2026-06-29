@@ -95,7 +95,17 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False, index=True)
 
-    email = Column(String, unique=True, index=True, nullable=False)
+    # email opcional: los dealers entran por teléfono (sin email). El índice único
+    # permite múltiples NULL en Postgres.
+    email = Column(String, unique=True, index=True, nullable=True)
+    # Teléfono = identidad/login del dealer (verificado por WhatsApp). La unicidad
+    # la da el índice ÚNICO PARCIAL de la migración (uq_users_phone WHERE NOT NULL);
+    # acá NO ponemos unique=True para que create_all no cree un índice total que
+    # contradiga al parcial.
+    phone = Column(String, index=True, nullable=True)
+    phone_verified = Column(Boolean, default=False)
+    # Intentos de activación fallidos: lockout anti-fuerza-bruta del OTP por teléfono.
+    invitation_attempts = Column(Integer, default=0)
     name = Column(String, nullable=True)
     hashed_password = Column(String, nullable=True)  # null hasta aceptar invitacion
     role = Column(SqEnum(UserRole), default=UserRole.CASHIER, nullable=False)

@@ -11,20 +11,24 @@ previos.
 El cierre es SOLO INFORMATIVO: no toca la distribución financiera ni
 registra gastos.
 """
+import os
 import secrets
-import threading
+import asyncio
+from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import func
+from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.future import select
 from typing import List, Optional
 from datetime import datetime, timedelta
 
-from .. import models, schemas, services, dealer_view
+from .. import models, schemas, services, dealer_view, auth_utils
 from ..dependencies import get_db, get_current_club, require_role
 from ..audit import log_action, AuditAction
-from ..email_service import send_invitation_email
+from ..phone_utils import normalize_phone
+from ..rate_limit import limiter
 
 router = APIRouter(prefix="/dealers", tags=["Dealers"])
 shifts_router = APIRouter(prefix="/sessions", tags=["DealerShifts"])
@@ -422,10 +426,13 @@ async def deactivate_dealer(
 
 
 # ---------------------------------------------------------
-# Cuenta del dealer: invitar a la app (vincula User rol DEALER al Dealer)
+# Cuenta del dealer: invitar por WhatsApp con código de verificación del número.
+# El dealer entra por TELÉFONO (sin email). El owner/manager toca "Invitar" y se
+# abre WhatsApp (wa.me) con el link de activación + el código; el dealer ingresa
+# el código (que llegó a SU número) => verifica el teléfono y crea su contraseña.
 # ---------------------------------------------------------
-class DealerInviteIn(schemas.BaseModel):
-    email: str
+class DealerInviteIn(BaseModel):
+    phone: str = Field(..., min_length=7, max_length=20)
     name: Optional[str] = None  # si no viene, usa el nombre del dealer
 
 
@@ -438,9 +445,9 @@ async def invite_dealer(
     current_club: models.Club = Depends(get_current_club),
     current_user: models.User = Depends(require_role([models.UserRole.OWNER, models.UserRole.MANAGER])),
 ):
-    """Crea una cuenta de usuario rol DEALER vinculada a este Dealer de nómina y
-    envía email de invitación. El dealer acepta (set password) por el flujo
-    estándar /users/accept-invitation. OWNER/MANAGER."""
+    """Crea (o re-invita) la cuenta rol DEALER vinculada a este dealer y devuelve
+    el link wa.me con el código de verificación para enviarlo por WhatsApp.
+    OWNER/MANAGER. No envía nada por sí mismo: el front abre WhatsApp."""
     dealer = (await db.execute(
         select(models.Dealer).where(
             models.Dealer.id == dealer_id,
@@ -449,50 +456,171 @@ async def invite_dealer(
     )).scalars().first()
     if not dealer:
         raise HTTPException(status_code=404, detail="Dealer no encontrado")
-    if dealer.user_id is not None:
-        raise HTTPException(status_code=409, detail="Este dealer ya tiene una cuenta")
 
-    email = data.email.strip().lower()
-    # Email único a nivel global de la tabla users (mismo criterio que /users/invite)
-    existing = (await db.execute(
-        select(models.User).where(models.User.email == email)
+    phone = normalize_phone(data.phone)
+    if not phone:
+        raise HTTPException(status_code=400, detail="Teléfono inválido")
+
+    # Teléfono único a nivel global de users (es la identidad de login).
+    other = (await db.execute(
+        select(models.User).where(models.User.phone == phone)
     )).scalars().first()
-    if existing and existing.club_id == current_club.id:
-        raise HTTPException(status_code=409, detail="Ese email ya pertenece a un usuario del club")
-    if existing:
-        raise HTTPException(status_code=409, detail="Ese email ya está registrado en otro club")
+    # Permitimos re-invitar al MISMO dealer (regenera código si aún no activó).
+    if other and not (dealer.user_id and other.id == dealer.user_id):
+        raise HTTPException(status_code=409, detail="Ese teléfono ya está registrado en otra cuenta")
 
-    token = secrets.token_urlsafe(32)
-    new_user = models.User(
-        club_id=current_club.id,
-        email=email,
-        name=(data.name or dealer.name),
-        role=models.UserRole.DEALER,
-        is_active=True,
-        hashed_password=None,
-        invitation_token=token,
-        invitation_expires_at=datetime.utcnow() + timedelta(days=7),
-        invitation_sent_at=datetime.utcnow(),
-        invited_by_user_id=current_user.id,
-    )
-    db.add(new_user)
-    await db.flush()
-    dealer.user_id = new_user.id  # vínculo 1:1 cuenta <-> nómina
+    code = f"{secrets.randbelow(1000000):06d}"  # OTP 6 dígitos, fácil de tipear
+    expires = datetime.utcnow() + timedelta(hours=24)
+
+    if dealer.user_id and other:
+        # Re-invitación: si ya activó, no re-emitir.
+        if other.hashed_password is not None:
+            raise HTTPException(status_code=409, detail="Este dealer ya activó su cuenta")
+        user = other
+        user.phone = phone
+        user.invitation_token = code
+        user.invitation_expires_at = expires
+        user.invitation_sent_at = datetime.utcnow()
+        user.invitation_attempts = 0  # reset del lockout en cada re-invitación
+    else:
+        if dealer.user_id is not None:
+            raise HTTPException(status_code=409, detail="Este dealer ya tiene una cuenta")
+        user = models.User(
+            club_id=current_club.id,
+            email=None,
+            phone=phone,
+            phone_verified=False,
+            name=(data.name or dealer.name),
+            role=models.UserRole.DEALER,
+            is_active=True,
+            hashed_password=None,
+            invitation_token=code,
+            invitation_expires_at=expires,
+            invitation_sent_at=datetime.utcnow(),
+            invited_by_user_id=current_user.id,
+        )
+        db.add(user)
+        await db.flush()
+        dealer.user_id = user.id  # vínculo 1:1 cuenta <-> nómina
+
+    dealer.phone = phone  # guardamos normalizado (igual que User.phone)
 
     await log_action(
         db, request=request, club=current_club,
         action="DEALER_INVITE", entity_type="Dealer", entity_id=dealer.id,
-        meta={"email": email, "dealer_id": dealer.id, "user_id": new_user.id, "by": current_user.email},
+        meta={"phone": phone, "dealer_id": dealer.id, "user_id": user.id, "by": current_user.email},
     )
     await db.commit()
 
-    threading.Thread(
-        target=send_invitation_email,
-        args=(email, token, current_user.name or current_user.email, current_club.name or "tu club", "dealer"),
-        daemon=True,
-    ).start()
+    frontend = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
+    activate_url = f"{frontend}/activar-dealer"
+    message = (
+        f"Hola {dealer.name}! 🃏 {current_club.name or 'Tu club'} te invita a RakeFlow como dealer.\n\n"
+        f"Activá tu cuenta acá: {activate_url}\n"
+        f"Tu código de verificación es: {code}\n\n"
+        f"(Vence en 24 horas)"
+    )
+    wa_url = f"https://wa.me/{phone}?text={quote(message)}"
+    return {
+        "status": "invited",
+        "dealer_id": dealer.id,
+        "user_id": user.id,
+        "phone": phone,
+        "code": code,
+        "wa_url": wa_url,
+        "message": message,
+    }
 
-    return {"status": "invited", "dealer_id": dealer.id, "user_id": new_user.id, "email": email}
+
+# ---------------------------------------------------------
+# Activación del dealer (PÚBLICO, sin auth): verifica número + crea contraseña.
+# ---------------------------------------------------------
+class DealerActivateIn(BaseModel):
+    phone: str = Field(..., min_length=7, max_length=20)
+    code: str = Field(..., min_length=4, max_length=10)
+    name: Optional[str] = Field(None, max_length=100)
+    password: str = Field(..., min_length=8, max_length=128)
+
+    @field_validator("password")
+    @classmethod
+    def password_strength(cls, v):
+        if not any(c.isupper() for c in v):
+            raise ValueError("La contraseña debe tener al menos una mayúscula")
+        if not any(c.islower() for c in v):
+            raise ValueError("La contraseña debe tener al menos una minúscula")
+        if not any(c.isdigit() for c in v):
+            raise ValueError("La contraseña debe tener al menos un número")
+        return v
+
+
+@router.post("/activate")
+@limiter.limit("8/hour")
+async def activate_dealer(
+    data: DealerActivateIn,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """El dealer verifica su número con el código que recibió por WhatsApp y crea
+    su contraseña. Devuelve el JWT (auto-login). Público (aún no tiene cuenta)."""
+    phone = normalize_phone(data.phone)
+    if not phone:
+        raise HTTPException(status_code=400, detail="Teléfono inválido")
+
+    user = (await db.execute(
+        select(models.User).where(
+            models.User.phone == phone,
+            models.User.role == models.UserRole.DEALER,
+        )
+    )).scalars().first()
+
+    # Cuenta inexistente / ya activada / sin código vigente => mensaje genérico
+    # (no filtra si el número existe).
+    if (not user or user.hashed_password is not None
+            or not user.invitation_token
+            or not user.invitation_expires_at
+            or user.invitation_expires_at < datetime.utcnow()):
+        raise HTTPException(status_code=400, detail="Código inválido o vencido")
+
+    # Lockout anti-fuerza-bruta POR TELÉFONO (además del rate limit por IP): tras
+    # 5 intentos fallidos invalidamos el código (hay que re-invitar).
+    if user.invitation_token != data.code.strip():
+        user.invitation_attempts = (user.invitation_attempts or 0) + 1
+        if user.invitation_attempts >= 5:
+            user.invitation_token = None
+            user.invitation_expires_at = None
+        await db.commit()
+        raise HTTPException(status_code=400, detail="Código inválido o vencido")
+
+    loop = asyncio.get_event_loop()
+    user.hashed_password = await loop.run_in_executor(None, auth_utils.get_password_hash, data.password)
+    if data.name:
+        user.name = data.name
+    user.phone_verified = True
+    user.invitation_token = None
+    user.invitation_expires_at = None
+    user.invitation_attempts = 0
+    user.last_login_at = datetime.utcnow()
+
+    club = (await db.execute(select(models.Club).where(models.Club.id == user.club_id))).scalars().first()
+    await log_action(
+        db, request=request, club=club,
+        action="DEALER_ACTIVATE", entity_type="User", entity_id=user.id, user=user,
+        meta={"phone": phone, "user_id": user.id},
+    )
+    await db.commit()
+
+    access_token = auth_utils.create_access_token(data={
+        "sub": user.phone,
+        "club_id": user.club_id,
+        "user_id": user.id,
+        "role": user.role.value if hasattr(user.role, "value") else str(user.role),
+    })
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "role": "dealer",
+        "user_name": user.name,
+    }
 
 
 # ---------------------------------------------------------

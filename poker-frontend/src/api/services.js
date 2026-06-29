@@ -9,6 +9,9 @@ export const publicService = {
         (await publicApi.post(`/public/dealer/${token}/alert`, { alert_type: alertType, message })).data,
     toggleBust: async (token, playerId) =>
         (await publicApi.post(`/public/dealer/${token}/bust`, { player_id: playerId })).data,
+    // Activación de cuenta de dealer (verifica número + crea contraseña)
+    activateDealer: async ({ phone, code, name, password }) =>
+        (await publicApi.post('/dealers/activate', { phone, code, name, password })).data,
 };
 
 // --- LINK PÚBLICO DEL CLUB + ALERTAS (lado staff, autenticado) ---
@@ -424,9 +427,10 @@ export const dealerService = {
         const res = await api.get(`/dealers/payouts?${params.toString()}`);
         return res.data;
     },
-    // Invitar a la app: crea cuenta rol DEALER vinculada a este dealer de nómina
-    invite: async (dealerId, email, name = null) => {
-        const res = await api.post(`/dealers/${dealerId}/invite`, { email, name });
+    // Invitar a la app por WhatsApp: genera código de verificación y devuelve el
+    // link wa.me para enviarlo al teléfono del dealer.
+    invite: async (dealerId, phone, name = null) => {
+        const res = await api.post(`/dealers/${dealerId}/invite`, { phone, name });
         return res.data;
     },
 };
