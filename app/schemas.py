@@ -51,6 +51,7 @@ class UserRoleEnum(str, Enum):
     OWNER = "owner"
     MANAGER = "manager"
     CASHIER = "cashier"
+    DEALER = "dealer"
 
 
 class UserInvite(BaseModel):
@@ -137,6 +138,9 @@ class DealerResponse(BaseSchema):
     hourly_rate_cop: float
     rake_pct: float
     is_active: bool
+    user_id: Optional[int] = None          # cuenta vinculada (rol DEALER), si tiene
+    has_account: bool = False              # True si user_id != None
+    invitation_pending: bool = False       # True si tiene cuenta pero aún no aceptó (sin password)
     created_at: Optional[datetime] = None
 
 class DealerShiftStart(BaseModel):

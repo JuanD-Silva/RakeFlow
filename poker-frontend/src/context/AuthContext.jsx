@@ -62,6 +62,7 @@ export function AuthProvider({ children }) {
   const isOwner = role === 'owner';
   const isManager = role === 'manager';
   const isCashier = role === 'cashier';
+  const isDealer = role === 'dealer';
   const canManageUsers = isOwner;
   const canSeeReports = isOwner || isManager;
 
@@ -69,7 +70,7 @@ export function AuthProvider({ children }) {
     <AuthContext.Provider value={{
       token, login, logout,
       role, userId, clubId, email,
-      isOwner, isManager, isCashier,
+      isOwner, isManager, isCashier, isDealer,
       canManageUsers, canSeeReports,
     }}>
       {children}

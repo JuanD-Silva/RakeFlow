@@ -28,6 +28,7 @@ import Privacy from './pages/Privacy';
 import AcceptInvitation from './pages/AcceptInvitation';
 import PublicClub from './pages/PublicClub';
 import DealerView from './pages/DealerView';
+import DealerWorkspace from './pages/DealerWorkspace';
 import AlertWatcher from './components/AlertWatcher';
 import TeamPanel from './components/TeamPanel';
 
@@ -174,15 +175,18 @@ function PokerManagerApp() {
 
 // --- RUTAS Y PROTECCION ---
 function AppRoutes() {
-  const { token } = useAuth();
+  const { token, isDealer } = useAuth();
+
+  // El dealer logueado va a su workspace dedicado, no al dashboard de gestión.
+  const homeForToken = isDealer ? "/dealer" : "/dashboard";
 
   return (
     <Routes>
       {/* Landing publica */}
-      <Route path="/" element={token ? <Navigate to="/dashboard" /> : <Landing />} />
+      <Route path="/" element={token ? <Navigate to={homeForToken} /> : <Landing />} />
 
       {/* Auth */}
-      <Route path="/login" element={token ? <Navigate to="/dashboard" /> : <Login />} />
+      <Route path="/login" element={token ? <Navigate to={homeForToken} /> : <Login />} />
       <Route path="/register" element={token ? <Navigate to="/setup" /> : <Register />} />
       <Route path="/forgot-password" element={token ? <Navigate to="/dashboard" /> : <ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
@@ -205,8 +209,11 @@ function AppRoutes() {
       {/* Configuracion Inicial */}
       <Route path="/setup" element={token ? <Setup /> : <Navigate to="/login" />} />
 
-      {/* Dashboard Protegido */}
-      <Route path="/dashboard/*" element={token ? <PokerManagerApp /> : <Navigate to="/" />} />
+      {/* Workspace del dealer (autenticado, rol DEALER) */}
+      <Route path="/dealer" element={token && isDealer ? <DealerWorkspace /> : <Navigate to="/" />} />
+
+      {/* Dashboard Protegido (el dealer no entra: lo mandamos a su workspace) */}
+      <Route path="/dashboard/*" element={token ? (isDealer ? <Navigate to="/dealer" /> : <PokerManagerApp />) : <Navigate to="/" />} />
 
       {/* Fallback */}
       <Route path="*" element={<Navigate to="/" />} />

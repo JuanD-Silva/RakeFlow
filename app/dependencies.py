@@ -84,6 +84,15 @@ async def get_current_club(
     Backwards compat: devuelve el Club al que pertenece el usuario autenticado.
     Mantenemos el nombre para no romper los routers existentes.
     """
+    # El rol DEALER opera EXCLUSIVAMENTE desde su panel (/dealer/*, que no usa
+    # esta dependencia). Bloquearlo acá lo excluye de un golpe de todos los
+    # endpoints operativos/financieros del club que solo dependen del club
+    # (sessions, transactions, stats, etc.), sin tener que gatear uno por uno.
+    if user.role == models.UserRole.DEALER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Los dealers operan desde su panel (/dealer)",
+        )
     club = (await db.execute(
         select(models.Club).where(models.Club.id == user.club_id)
     )).scalars().first()

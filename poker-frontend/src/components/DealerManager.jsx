@@ -19,6 +19,10 @@ export default function DealerManager() {
   const [draft, setDraft] = useState({});
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState(null);
+  const [invitingId, setInvitingId] = useState(null);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteError, setInviteError] = useState(null);
+  const [inviteBusy, setInviteBusy] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -76,6 +80,29 @@ export default function DealerManager() {
       load();
     } catch (err) {
       setError(err.response?.data?.detail || "Error guardando el dealer.");
+    }
+  };
+
+  const startInvite = (dealer) => {
+    setInvitingId(dealer.id);
+    setInviteEmail("");
+    setInviteError(null);
+  };
+
+  const doInvite = async (dealer) => {
+    setInviteError(null);
+    const email = inviteEmail.trim().toLowerCase();
+    if (!email || !email.includes('@')) { setInviteError("Email inválido."); return; }
+    setInviteBusy(true);
+    try {
+      await dealerService.invite(dealer.id, email);
+      setInvitingId(null);
+      setInviteEmail("");
+      load();
+    } catch (err) {
+      setInviteError(err.response?.data?.detail || "Error enviando la invitación.");
+    } finally {
+      setInviteBusy(false);
     }
   };
 
@@ -176,38 +203,74 @@ export default function DealerManager() {
             ) : (
               <div
                 key={d.id}
-                className={`bg-gray-900/40 border border-gray-700/50 rounded-xl p-3 flex items-center justify-between gap-3 ${!d.is_active ? 'opacity-50' : ''}`}
+                className={`bg-gray-900/40 border border-gray-700/50 rounded-xl p-3 ${!d.is_active ? 'opacity-50' : ''}`}
               >
-                <div className="min-w-0">
-                  <p className="text-white font-bold text-sm truncate flex items-center gap-2">
-                    {d.name}
-                    {!d.is_active && (
-                      <span className="text-[9px] bg-gray-700 text-gray-400 px-2 py-0.5 rounded-full uppercase font-bold">Inactivo</span>
-                    )}
-                  </p>
-                  <p className="text-gray-500 text-xs font-mono mt-0.5">
-                    {formatMoney(d.hourly_rate_cop)}/h · {d.rake_pct}% rake
-                  </p>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-white font-bold text-sm truncate flex items-center gap-2">
+                      {d.name}
+                      {!d.is_active && (
+                        <span className="text-[9px] bg-gray-700 text-gray-400 px-2 py-0.5 rounded-full uppercase font-bold">Inactivo</span>
+                      )}
+                      {d.invitation_pending ? (
+                        <span className="text-[9px] bg-amber-700/40 text-amber-300 px-2 py-0.5 rounded-full uppercase font-bold">Invitación pendiente</span>
+                      ) : d.has_account ? (
+                        <span className="text-[9px] bg-emerald-700/40 text-emerald-300 px-2 py-0.5 rounded-full uppercase font-bold">Con cuenta</span>
+                      ) : null}
+                    </p>
+                    <p className="text-gray-500 text-xs font-mono mt-0.5">
+                      {formatMoney(d.hourly_rate_cop)}/h · {d.rake_pct}% rake
+                    </p>
+                  </div>
+                  {canManage && (
+                    <div className="flex gap-1.5 shrink-0">
+                      {d.is_active && !d.has_account && (
+                        <button
+                          onClick={() => startInvite(d)}
+                          className="text-[10px] font-bold px-2.5 py-1.5 rounded-lg border text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10 transition-all"
+                          title="Crear cuenta para que el dealer use la app"
+                        >
+                          Invitar a la app
+                        </button>
+                      )}
+                      <button
+                        onClick={() => startEdit(d)}
+                        className="text-gray-400 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg p-2 transition-all"
+                        title="Editar"
+                      >
+                        <PencilSquareIcon className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => toggleActive(d)}
+                        className={`text-[10px] font-bold px-2.5 py-1.5 rounded-lg border transition-all ${
+                          d.is_active
+                            ? 'text-red-400 border-red-500/30 hover:bg-red-500/10'
+                            : 'text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10'
+                        }`}
+                      >
+                        {d.is_active ? 'Desactivar' : 'Activar'}
+                      </button>
+                    </div>
+                  )}
                 </div>
-                {canManage && (
-                  <div className="flex gap-1.5 shrink-0">
-                    <button
-                      onClick={() => startEdit(d)}
-                      className="text-gray-400 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg p-2 transition-all"
-                      title="Editar"
-                    >
-                      <PencilSquareIcon className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => toggleActive(d)}
-                      className={`text-[10px] font-bold px-2.5 py-1.5 rounded-lg border transition-all ${
-                        d.is_active
-                          ? 'text-red-400 border-red-500/30 hover:bg-red-500/10'
-                          : 'text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10'
-                      }`}
-                    >
-                      {d.is_active ? 'Desactivar' : 'Activar'}
-                    </button>
+                {invitingId === d.id && (
+                  <div className="mt-3 pt-3 border-t border-gray-700/50 space-y-2">
+                    <input
+                      type="email"
+                      value={inviteEmail}
+                      onChange={(e) => setInviteEmail(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') doInvite(d); }}
+                      className="w-full bg-gray-800 text-white border border-gray-600 rounded-lg py-2 px-3 focus:border-emerald-500 outline-none text-sm"
+                      placeholder="email del dealer"
+                      autoFocus
+                    />
+                    {inviteError && <p className="text-red-400 text-xs">{inviteError}</p>}
+                    <div className="flex gap-2">
+                      <button onClick={() => doInvite(d)} disabled={inviteBusy} className="flex-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold py-2 rounded-lg text-xs uppercase">
+                        {inviteBusy ? 'Enviando…' : 'Enviar invitación'}
+                      </button>
+                      <button onClick={() => setInvitingId(null)} className="flex-1 bg-gray-700 hover:bg-gray-600 text-gray-300 font-bold py-2 rounded-lg text-xs uppercase">Cancelar</button>
+                    </div>
                   </div>
                 )}
               </div>
