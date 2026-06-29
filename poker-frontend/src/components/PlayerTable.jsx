@@ -133,11 +133,19 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
   };
 
   if (loading) return <div className="text-gray-500 text-center py-10 animate-pulse">Cargando mesa...</div>;
-  if (error) return <div className="text-red-400 text-center py-10 bg-red-900/10 rounded-xl border border-red-500/20">{error}</div>;
+  // Solo mostramos el error a pantalla completa si NO hay datos previos. Si ya
+  // teníamos la mesa cargada, mantenemos los datos y el próximo refresh (timer o
+  // al volver a la pestaña) reintenta solo: un fallo transitorio no la borra.
+  if (error && players.length === 0) return <div className="text-red-400 text-center py-10 bg-red-900/10 rounded-xl border border-red-500/20">{error}</div>;
   if (players.length === 0) return <div className="text-gray-500 text-center py-10 italic bg-gray-800 rounded-xl border border-gray-700">Mesa vacía. Esperando jugadores...</div>;
 
   return (
     <div className="bg-gray-800 rounded-xl shadow-2xl border border-gray-700 overflow-hidden mt-6 animate-fade-in">
+      {error && (
+        <div className="text-amber-300 text-xs text-center py-1.5 bg-amber-900/20 border-b border-amber-500/20">
+          ⚠ Reconectando… mostrando últimos datos
+        </div>
+      )}
       {/* MOVIL: cards apiladas */}
       <div className="md:hidden divide-y divide-gray-700">
         {players.map((p) => {

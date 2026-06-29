@@ -148,6 +148,19 @@ useEffect(() => {
     return () => clearInterval(id);
   }, [isModalOpen]);
 
+  // Al volver a la pestaña/ventana (tras dejarla quieta mucho rato, el navegador
+  // suspende los timers), recargar de inmediato: equivale a refrescar la página
+  // a mano, pero automático. Evita quedarse pegado en "Error al cargar ...".
+  useEffect(() => {
+    const onWake = () => { if (document.visibilityState === 'visible') setRefreshKey(prev => prev + 1); };
+    document.addEventListener('visibilitychange', onWake);
+    window.addEventListener('focus', onWake);
+    return () => {
+      document.removeEventListener('visibilitychange', onWake);
+      window.removeEventListener('focus', onWake);
+    };
+  }, []);
+
   // 2. INICIAR MESA DE CASH (multi-mesa: pide nombre opcional y crea inmediatamente)
   const [pendingSessionOpen, setPendingSessionOpen] = useState(false);
 
