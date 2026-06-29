@@ -387,6 +387,15 @@ async def update_dealer(
     for field, value in changes.items():
         setattr(dealer, field, value)
 
+    # Si se cambia el estado, sincronizar la cuenta del dealer y deactivated_at.
+    if "is_active" in changes:
+        if changes["is_active"]:
+            dealer.deactivated_at = None
+            await _set_linked_user_active(db, dealer, True)
+        else:
+            dealer.deactivated_at = datetime.utcnow()
+            await _set_linked_user_active(db, dealer, False)
+
     await log_action(
         db, request=request, club=current_club,
         action=AuditAction.DEALER_UPDATE, entity_type="Dealer", entity_id=dealer.id,
@@ -397,6 +406,37 @@ async def update_dealer(
     return dealer
 
 
+async def _set_linked_user_active(db: AsyncSession, dealer: models.Dealer, active: bool):
+    """Sincroniza el estado de la cuenta del dealer con el del dealer: desactivar
+    el dealer le corta el login; reactivarlo se lo devuelve."""
+    if not dealer.user_id:
+        return
+    user = (await db.execute(
+        select(models.User).where(models.User.id == dealer.user_id)
+    )).scalars().first()
+    if user:
+        user.is_active = active
+
+
+async def _dealer_has_history(db: AsyncSession, dealer_id: int) -> bool:
+    """True si el dealer tiene turnos, pagos o propinas asociados (borrar rompería
+    el historial financiero). Los dealers con historial NO se eliminan: se archivan."""
+    shifts = (await db.execute(
+        select(models.DealerShift.id).where(models.DealerShift.dealer_id == dealer_id).limit(1)
+    )).first()
+    if shifts:
+        return True
+    payouts = (await db.execute(
+        select(models.DealerPayout.id).where(models.DealerPayout.dealer_id == dealer_id).limit(1)
+    )).first()
+    if payouts:
+        return True
+    txs = (await db.execute(
+        select(models.Transaction.id).where(models.Transaction.dealer_id == dealer_id).limit(1)
+    )).first()
+    return bool(txs)
+
+
 @router.delete("/{dealer_id}", status_code=204)
 async def deactivate_dealer(
     dealer_id: int,
@@ -405,7 +445,8 @@ async def deactivate_dealer(
     current_club: models.Club = Depends(get_current_club),
     _: models.User = Depends(require_role([models.UserRole.OWNER, models.UserRole.MANAGER])),
 ):
-    """Soft delete: los turnos históricos referencian al dealer."""
+    """Soft delete: los turnos históricos referencian al dealer. Además corta el
+    login de su cuenta y marca cuándo se desactivó (para la purga a 60 días)."""
     result = await db.execute(
         select(models.Dealer).where(
             models.Dealer.id == dealer_id,
@@ -417,12 +458,130 @@ async def deactivate_dealer(
         raise HTTPException(status_code=404, detail="Dealer no encontrado")
 
     dealer.is_active = False
+    dealer.deactivated_at = datetime.utcnow()
+    await _set_linked_user_active(db, dealer, False)  # le corta el login
     await log_action(
         db, request=request, club=current_club,
         action=AuditAction.DEALER_DEACTIVATE, entity_type="Dealer", entity_id=dealer.id,
         meta={"name": dealer.name},
     )
     await db.commit()
+
+
+async def _hard_delete_dealer(db: AsyncSession, dealer: models.Dealer):
+    """Borra el dealer y su cuenta vinculada. SOLO llamar tras verificar que no
+    tiene historial. Se borra el dealer primero (libera el FK user_id) y luego el
+    user. audit_logs.actor_id no es FK, así que el user es borrable."""
+    user_id = dealer.user_id
+    await db.delete(dealer)
+    await db.flush()
+    if user_id:
+        user = (await db.execute(
+            select(models.User).where(models.User.id == user_id)
+        )).scalars().first()
+        if user:
+            await db.delete(user)
+
+
+@router.delete("/{dealer_id}/permanent", status_code=204)
+async def delete_dealer_permanent(
+    dealer_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+    _: models.User = Depends(require_role([models.UserRole.OWNER, models.UserRole.MANAGER])),
+):
+    """Elimina DEFINITIVAMENTE un dealer (y su cuenta), solo si NO tiene historial
+    (turnos/pagos/propinas). Si tiene historial, se conserva archivado (desactivado)
+    para no romper la contabilidad. OWNER/MANAGER."""
+    dealer = (await db.execute(
+        select(models.Dealer).where(
+            models.Dealer.id == dealer_id,
+            models.Dealer.club_id == current_club.id,
+        )
+    )).scalars().first()
+    if not dealer:
+        raise HTTPException(status_code=404, detail="Dealer no encontrado")
+
+    if await _dealer_has_history(db, dealer.id):
+        raise HTTPException(
+            status_code=409,
+            detail="Este dealer tiene historial (turnos/pagos). No se puede eliminar; quedó desactivado.",
+        )
+
+    name = dealer.name
+    await log_action(
+        db, request=request, club=current_club,
+        action="DEALER_DELETE", entity_type="Dealer", entity_id=dealer.id,
+        meta={"name": name, "had_account": bool(dealer.user_id)},
+    )
+    await _hard_delete_dealer(db, dealer)
+    try:
+        await db.commit()
+    except IntegrityError:
+        # Backstop: la cuenta vinculada quedó referenciada por otra fila (FK).
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="No se pudo eliminar: la cuenta del dealer tiene referencias. Quedó desactivada.")
+
+
+# ---------------------------------------------------------
+# Purga automática: dealers desactivados hace +60 días y SIN historial.
+# Llamado por el cron diario (GitHub Actions) con X-Internal-Token.
+# Los dealers con historial se conservan archivados (borrarlos rompería la
+# contabilidad); solo se purgan los "limpios".
+# ---------------------------------------------------------
+PURGE_AFTER_DAYS = 60
+
+
+def _verify_cron_token(request: Request) -> None:
+    expected = os.getenv("INTERNAL_CRON_TOKEN", "")
+    received = request.headers.get("x-internal-token", "")
+    if not expected or received != expected:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+@router.post("/purge-deactivated")
+async def purge_deactivated_dealers(
+    request: Request,
+    dry_run: bool = False,
+    db: AsyncSession = Depends(get_db),
+):
+    _verify_cron_token(request)
+    cutoff = datetime.utcnow() - timedelta(days=PURGE_AFTER_DAYS)
+    candidates = (await db.execute(
+        select(models.Dealer).where(
+            models.Dealer.is_active == False,  # noqa: E712
+            models.Dealer.deactivated_at.is_not(None),
+            models.Dealer.deactivated_at < cutoff,
+        )
+    )).scalars().all()
+
+    deleted, kept_with_history, failed = [], [], []
+    for dealer in candidates:
+        if await _dealer_has_history(db, dealer.id):
+            kept_with_history.append(dealer.id)
+            continue
+        if dry_run:
+            deleted.append(dealer.id)
+            continue
+        # Commit por dealer: si uno falla (FK colgante de su cuenta), no aborta
+        # la purga de los demás.
+        try:
+            await _hard_delete_dealer(db, dealer)
+            await db.commit()
+            deleted.append(dealer.id)
+        except IntegrityError:
+            await db.rollback()
+            failed.append(dealer.id)
+
+    return {
+        "cutoff_days": PURGE_AFTER_DAYS,
+        "dry_run": dry_run,
+        "deleted_count": len(deleted),
+        "deleted_ids": deleted,
+        "kept_with_history_ids": kept_with_history,
+        "failed_ids": failed,
+    }
 
 
 # ---------------------------------------------------------

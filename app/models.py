@@ -159,6 +159,8 @@ class Dealer(Base):
     hourly_rate_cop = Column(Float, default=0.0, nullable=False)  # tarifa por hora dealeada
     rake_pct = Column(Float, default=0.0, nullable=False)         # % del rake del turno (0-100)
     is_active = Column(Boolean, default=True)
+    # Cuándo se desactivó (para la purga automática a 60 días). NULL si está activo.
+    deactivated_at = Column(DateTime, nullable=True)
     # Vínculo 1:1 con una cuenta de usuario (rol DEALER). NULL = dealer sin cuenta
     # (usa el link público anónimo). Único parcial garantizado por la migración.
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True, unique=True, index=True)

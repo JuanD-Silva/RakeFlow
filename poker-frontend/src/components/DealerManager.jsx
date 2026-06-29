@@ -121,6 +121,17 @@ export default function DealerManager() {
     }
   };
 
+  const removeDealer = async (dealer) => {
+    setError(null);
+    if (!window.confirm(`¿Eliminar definitivamente a "${dealer.name}"? Esto borra su cuenta y no se puede deshacer. (Si tiene historial de turnos/pagos no se podrá eliminar; quedará archivado.)`)) return;
+    try {
+      await dealerService.remove(dealer.id);
+      load();
+    } catch (err) {
+      setError(err.response?.data?.detail || "No se pudo eliminar el dealer.");
+    }
+  };
+
   const editForm = (
     <div className="bg-gray-900/60 border border-amber-500/30 rounded-xl p-4 space-y-3">
       <input
@@ -252,6 +263,15 @@ export default function DealerManager() {
                       >
                         {d.is_active ? 'Desactivar' : 'Activar'}
                       </button>
+                      {!d.is_active && (
+                        <button
+                          onClick={() => removeDealer(d)}
+                          className="text-[10px] font-bold px-2.5 py-1.5 rounded-lg border text-red-400 border-red-500/40 hover:bg-red-500/15 transition-all"
+                          title="Eliminar definitivamente (solo si no tiene historial)"
+                        >
+                          Eliminar
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>

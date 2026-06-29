@@ -394,6 +394,10 @@ export const dealerService = {
     deactivate: async (dealerId) => {
         await api.delete(`/dealers/${dealerId}`);
     },
+    // Borrado definitivo (solo si no tiene historial; el backend lo valida)
+    remove: async (dealerId) => {
+        await api.delete(`/dealers/${dealerId}/permanent`);
+    },
     getShifts: async (sessionId) => {
         const res = await api.get(`/sessions/${sessionId}/dealer-shifts`);
         return res.data;
