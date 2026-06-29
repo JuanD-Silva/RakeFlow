@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { dealerService } from '../api/services';
 import Modal from './Modal';
 import DealerShiftForm from './DealerShiftForm';
-import { ClockIcon, ArrowsRightLeftIcon, PauseIcon } from '@heroicons/react/24/outline';
+import { ClockIcon, ArrowsRightLeftIcon, PauseIcon, LinkIcon, CheckIcon, ClipboardDocumentIcon } from '@heroicons/react/24/outline';
 
 function formatElapsed(minutes) {
   const h = Math.floor(minutes / 60);
@@ -126,9 +126,35 @@ export default function DealerPanel({ sessionId, publicToken, refreshTrigger }) 
       {publicToken && (
         <button
           onClick={copyDealerLink}
-          className="mt-1.5 w-full text-[11px] text-gray-500 hover:text-emerald-400 font-bold uppercase tracking-wider py-1.5 transition-colors flex items-center justify-center gap-1.5"
+          aria-label={copied ? 'Link del dealer copiado' : 'Copiar link del dealer'}
+          className={`group/link mt-2 w-full flex items-center gap-3 rounded-xl border px-3.5 py-2.5 transition-all active:scale-[0.99] ${
+            copied
+              ? 'bg-emerald-500/10 border-emerald-500/40'
+              : 'bg-gray-800/40 border-gray-700/60 hover:bg-gray-800/70 hover:border-emerald-500/40'
+          }`}
         >
-          🔗 {copied ? 'Link copiado ✓' : 'Copiar link del dealer'}
+          <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border transition-colors ${
+            copied
+              ? 'bg-emerald-500/15 border-emerald-500/40'
+              : 'bg-gray-900/60 border-gray-700 group-hover/link:border-emerald-500/40'
+          }`}>
+            {copied
+              ? <CheckIcon className="w-4 h-4 text-emerald-400" />
+              : <LinkIcon className="w-4 h-4 text-gray-400 group-hover/link:text-emerald-400 transition-colors" />}
+          </div>
+          <div className="text-left min-w-0 flex-1">
+            <p className={`text-xs font-bold leading-tight transition-colors ${copied ? 'text-emerald-300' : 'text-gray-200'}`}>
+              {copied ? '¡Link copiado!' : 'Link del dealer'}
+            </p>
+            <p className="text-[10px] leading-tight text-gray-500 truncate">
+              {copied ? 'Pégalo y compartilo con el dealer' : 'Lo abre sin login para avisar al staff'}
+            </p>
+          </div>
+          {!copied && (
+            <span className="shrink-0 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-gray-500 group-hover/link:text-emerald-400 transition-colors">
+              <ClipboardDocumentIcon className="w-3.5 h-3.5" /> Copiar
+            </span>
+          )}
         </button>
       )}
 
