@@ -1,13 +1,26 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { sessionService } from '../api/services';
 import { formatMoney } from '../utils/formatters';
 
 export default function CloseSessionForm({ sessionId, onSuccess }) {
   // Estados del formulario
   const [declaredRake, setDeclaredRake] = useState("");
-  const [declaredJackpot, setDeclaredJackpot] = useState(""); 
+  const [declaredJackpot, setDeclaredJackpot] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [preview, setPreview] = useState(null); // bruto/neto estimado antes de cerrar
+
+  // Preview en vivo del rake neto a medida que el cajero escribe el rake bruto.
+  // Debounce 500ms; read-only (no cierra nada).
+  useEffect(() => {
+    const rake = parseFloat(declaredRake) || 0;
+    if (!sessionId || rake <= 0) { setPreview(null); return; }
+    const t = setTimeout(async () => {
+      try { setPreview(await sessionService.closePreview(sessionId, rake)); }
+      catch { setPreview(null); }
+    }, 500);
+    return () => clearTimeout(t);
+  }, [declaredRake, sessionId]);
   
   // Estados para controlar el flujo visual
   const [auditMismatch, setAuditMismatch] = useState(null); // Alerta Roja
@@ -341,6 +354,31 @@ export default function CloseSessionForm({ sessionId, onSuccess }) {
           />
         </div>
       </div>
+
+      {/* PREVIEW: rake bruto → gastos → neto (estimado, antes de cerrar) */}
+      {preview && (preview.dealer_cost > 0 || preview.courtesy_cost > 0) && (
+        <div className="bg-gray-800/60 border border-gray-700 rounded-lg p-4 text-sm space-y-1.5 animate-fade-in">
+          <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-1">Vista previa (estimado)</p>
+          <div className="flex justify-between text-gray-300">
+            <span>Rake bruto</span><span className="font-mono">{formatMoney(preview.gross_rake)}</span>
+          </div>
+          {preview.dealer_cost > 0 && (
+            <div className="flex justify-between text-amber-400">
+              <span>(−) Salario dealers</span><span className="font-mono">{formatMoney(preview.dealer_cost)}</span>
+            </div>
+          )}
+          {preview.courtesy_cost > 0 && (
+            <div className="flex justify-between text-amber-400">
+              <span>(−) Cortesías (bonos)</span><span className="font-mono">{formatMoney(preview.courtesy_cost)}</span>
+            </div>
+          )}
+          <div className="flex justify-between border-t border-gray-700 pt-1.5 mt-1.5 font-bold">
+            <span className={preview.net_rake < 0 ? 'text-red-400' : 'text-emerald-400'}>(=) Rake neto</span>
+            <span className={`font-mono ${preview.net_rake < 0 ? 'text-red-400' : 'text-emerald-400'}`}>{formatMoney(preview.net_rake)}</span>
+          </div>
+          <p className="text-[9px] text-gray-600 italic pt-1">El neto definitivo se calcula al confirmar (cierra los turnos de dealer).</p>
+        </div>
+      )}
 
       {/* JACKPOT CASH */}
       <div>

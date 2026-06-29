@@ -52,6 +52,15 @@ export const sessionService = {
         return response.data;
     },
 
+    // Preview read-only del rake bruto vs neto antes de cerrar (no cierra nada)
+    closePreview: async (sessionId, declaredRake) => {
+        const res = await api.post(`/sessions/${sessionId}/close-preview`, {
+            declared_rake_cash: declaredRake,
+            declared_jackpot_cash: 0,
+        });
+        return res.data;
+    },
+
     getSessionDetails: async (sessionId) => {
         const response = await api.get(`/sessions/${sessionId}/details`);
         return response.data;

@@ -352,6 +352,66 @@ async def audit_current_session(
         "expected_cash_in_box": expected_cash
     }
 # ---------------------------------------------------------
+# 4.b PREVIEW DEL CIERRE (rake bruto vs neto, read-only, no cierra nada)
+# ---------------------------------------------------------
+@router.post("/{session_id}/close-preview")
+async def close_preview(
+    session_id: int,
+    input_data: schemas.SessionCloseRequest,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+):
+    """Calcula bruto/gastos/neto ANTES de cerrar, sin mutar nada. Usa la misma
+    lógica que el cierre (services.shift_payment) para que el preview cuadre."""
+    session = (await db.execute(
+        select(models.Session).where(
+            models.Session.id == session_id,
+            models.Session.club_id == current_club.id,
+        )
+    )).scalars().first()
+    if not session or session.status == models.SessionStatus.CLOSED:
+        raise HTTPException(status_code=400, detail="Sesión inválida o cerrada")
+
+    declared = float(input_data.declared_rake_cash or 0)
+
+    # Costo de dealers: réplica read-only del cierre. El turno abierto toma
+    # declared - Σ(turnos cerrados) como su rake (igual que el auto-cálculo).
+    shifts = (await db.execute(
+        select(models.DealerShift).where(
+            models.DealerShift.session_id == session.id,
+            models.DealerShift.club_id == current_club.id,
+        ).order_by(models.DealerShift.start_time)
+    )).scalars().all()
+    closed_sum = sum((s.declared_rake or 0.0) for s in shifts if s.end_time is not None)
+    now = datetime.utcnow()
+    dealer_cost = 0.0
+    for s in shifts:
+        if s.end_time is None:
+            rake_for_shift = declared - closed_sum
+            elapsed_min = max(0, int((now - s.start_time).total_seconds() // 60))
+        else:
+            rake_for_shift = s.declared_rake
+            elapsed_min = max(0, int((s.end_time - s.start_time).total_seconds() // 60))
+        hours = round(elapsed_min / 60.0, 2)
+        dealer_cost += services.shift_payment(hours, s.hourly_rate_cop or 0, s.rake_pct or 0, rake_for_shift)
+    dealer_cost = round(dealer_cost)
+
+    courtesy = float((await db.execute(
+        select(func.sum(models.Transaction.amount)).where(
+            models.Transaction.session_id == session_id,
+            models.Transaction.type == models.TransactionType.BONUS,
+        )
+    )).scalar() or 0)
+
+    return {
+        "gross_rake": declared,
+        "dealer_cost": dealer_cost,
+        "courtesy_cost": courtesy,
+        "net_rake": declared - dealer_cost - courtesy,
+    }
+
+
+# ---------------------------------------------------------
 # 5. CERRAR SESIÓN (Motor de Reglas SaaS + Fallback)
 # ---------------------------------------------------------
 @router.post("/{session_id}/close")
