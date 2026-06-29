@@ -13,6 +13,35 @@ router = APIRouter(
     tags=["Configuration"]
 )
 
+@router.get("/club-public")
+async def get_club_public(
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+):
+    """Datos del link público del club (token + anuncio). El front arma la URL
+    con su propio origin: {origin}/c/{public_token}."""
+    return {
+        "public_token": current_club.public_token,
+        "public_announcement": current_club.public_announcement,
+    }
+
+
+@router.patch("/club-public")
+async def update_club_public(
+    data: schemas.ClubPublicUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+    _: models.User = Depends(require_role([models.UserRole.OWNER, models.UserRole.MANAGER])),
+):
+    """Editar el anuncio 'Hoy se rompe' del link público."""
+    club = (await db.execute(
+        select(models.Club).where(models.Club.id == current_club.id)
+    )).scalars().first()
+    club.public_announcement = (data.public_announcement or "").strip() or None
+    await db.commit()
+    return {"public_announcement": club.public_announcement}
+
+
 @router.post("/initial-setup")
 async def initial_setup(
     setup_data: schemas.InitialSetupRequest,

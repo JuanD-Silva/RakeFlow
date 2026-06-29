@@ -17,12 +17,21 @@ function formatElapsed(minutes) {
  * El cronómetro usa elapsed_minutes que calcula el backend (no parsea
  * datetimes naive en el front) y tickea localmente cada 30s.
  */
-export default function DealerPanel({ sessionId, refreshTrigger }) {
+export default function DealerPanel({ sessionId, publicToken, refreshTrigger }) {
   const [openShift, setOpenShift] = useState(null);
   const [localMinutes, setLocalMinutes] = useState(0);
   const [modalMode, setModalMode] = useState(null); // "start" | "change" | "end" | null
   const [loadedAt, setLoadedAt] = useState(0);
   const [reloadKey, setReloadKey] = useState(0);
+  const [copied, setCopied] = useState(false);
+
+  const copyDealerLink = async () => {
+    if (!publicToken) return;
+    const url = `${window.location.origin}/mesa/${publicToken}/dealer`;
+    try { await navigator.clipboard.writeText(url); } catch { /* ignora */ }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   useEffect(() => {
     if (!sessionId) return;
@@ -110,6 +119,16 @@ export default function DealerPanel({ sessionId, refreshTrigger }) {
             </div>
           </div>
           <span className="text-amber-400 text-lg font-bold group-hover/assign:translate-x-0.5 transition-transform shrink-0">+</span>
+        </button>
+      )}
+
+      {/* Link público del dealer (lo abre el dealer sin login para avisar al staff) */}
+      {publicToken && (
+        <button
+          onClick={copyDealerLink}
+          className="mt-1.5 w-full text-[11px] text-gray-500 hover:text-emerald-400 font-bold uppercase tracking-wider py-1.5 transition-colors flex items-center justify-center gap-1.5"
+        >
+          🔗 {copied ? 'Link copiado ✓' : 'Copiar link del dealer'}
         </button>
       )}
 

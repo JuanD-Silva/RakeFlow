@@ -40,4 +40,12 @@ api.interceptors.response.use(
   }
 );
 
+// Instancia PÚBLICA (sin token, sin interceptor de 401→logout) para las
+// páginas públicas (link del club, vista dealer). El recurso se identifica por
+// un token imposible de adivinar en la URL, no por sesión autenticada.
+export const publicApi = axios.create({
+  baseURL: BASE_URL,
+  headers: { 'Content-Type': 'application/json' },
+});
+
 export default api;

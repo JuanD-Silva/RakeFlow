@@ -166,6 +166,10 @@ class DealerShiftResponse(BaseModel):
     payment: float
 
 
+class ClubPublicUpdate(BaseModel):
+    public_announcement: Optional[str] = Field(None, max_length=120)
+
+
 class DealerPayoutCreate(BaseModel):
     amount: float = Field(..., gt=0)
     method: Optional[str] = Field(None, max_length=30)
@@ -212,6 +216,7 @@ class SessionCloseRequest(BaseModel):
 class SessionResponse(BaseSchema):
     id: int
     name: Optional[str] = None
+    public_token: Optional[str] = None
     status: SessionStatus
     start_time: datetime
     end_time: Optional[datetime] = None

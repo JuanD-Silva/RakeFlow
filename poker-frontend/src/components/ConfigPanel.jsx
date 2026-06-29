@@ -14,6 +14,7 @@ import {
   ChevronDownIcon
 } from '@heroicons/react/24/outline';
 import DealerManager from './DealerManager';
+import ClubPublicLink from './ClubPublicLink';
 
 const RULE_OPTIONS = [
   {
@@ -389,6 +390,9 @@ export default function ConfigPanel() {
           )}
         </div>
       )}
+
+      {/* LINK PÚBLICO DEL CLUB (autocontenido) */}
+      <ClubPublicLink />
 
       {/* DEALERS Y TARIFAS (autocontenido: guarda por si mismo) */}
       <DealerManager />

@@ -70,6 +70,10 @@ class Club(Base):
     subscription_period_end = Column(DateTime, nullable=True)  # cuando expira el periodo actual
     # Precio personalizado para grandfathered customers; si null usa el default global
     subscription_price_cop = Column(Integer, nullable=True)
+    # Capa pública: token imposible de adivinar para el link público del club
+    # (rakeflow.site/c/{public_token}) y mensaje "Hoy se rompe".
+    public_token = Column(String, unique=True, index=True, nullable=True)
+    public_announcement = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relaciones
@@ -213,6 +217,8 @@ class Session(Base):
     club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False, index=True)
 
     name = Column(String, nullable=True)  # "Mesa VIP", "Mesa 1"... null => "Mesa #ID"
+    # Token del link público del dealer (rakeflow.site/mesa/{public_token}/dealer)
+    public_token = Column(String, unique=True, index=True, nullable=True)
 
     start_time = Column(DateTime, default=datetime.utcnow)
     end_time = Column(DateTime, nullable=True)
@@ -240,6 +246,29 @@ class Session(Base):
     club = relationship("Club", back_populates="sessions")
     transactions = relationship("Transaction", back_populates="session")
     distributions = relationship("FinancialDistribution", back_populates="session") # Agregado
+
+
+class DealerAlert(Base):
+    """
+    Alerta que el dealer envía al staff desde el link público de la mesa
+    (necesito fichas / mesero / director / urgencia). El staff la recibe por
+    polling y la marca resuelta. No es realtime: polling REST.
+    """
+    __tablename__ = "dealer_alerts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False, index=True)
+    session_id = Column(Integer, ForeignKey("sessions.id"), nullable=False, index=True)
+
+    alert_type = Column(String, nullable=False)   # CHIPS | WAITER | MANAGER | URGENT
+    message = Column(String, nullable=True)
+    dealer_name = Column(String, nullable=True)    # nombre del turno abierto al alertar
+    status = Column(String, nullable=False, default="PENDING", index=True)  # PENDING | RESOLVED
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    resolved_at = Column(DateTime, nullable=True)
+    resolved_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    session = relationship("Session")
 
 
 class Transaction(Base):

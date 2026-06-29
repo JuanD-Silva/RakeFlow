@@ -1,5 +1,24 @@
 // src/api/services.js
-import api from './axios';
+import api, { publicApi } from './axios';
+
+// --- CAPA PÚBLICA (sin auth) ---
+export const publicService = {
+    getClubActivity: async (token) => (await publicApi.get(`/public/clubs/${token}/activity`)).data,
+    getDealerView: async (token) => (await publicApi.get(`/public/dealer/${token}`)).data,
+    sendDealerAlert: async (token, alertType, message = null) =>
+        (await publicApi.post(`/public/dealer/${token}/alert`, { alert_type: alertType, message })).data,
+};
+
+// --- LINK PÚBLICO DEL CLUB + ALERTAS (lado staff, autenticado) ---
+export const clubPublicService = {
+    get: async () => (await api.get('/config/club-public')).data,
+    updateAnnouncement: async (text) => (await api.patch('/config/club-public', { public_announcement: text })).data,
+};
+
+export const alertService = {
+    listPending: async () => (await api.get('/dealer-alerts?status=PENDING')).data,
+    resolve: async (id) => (await api.post(`/dealer-alerts/${id}/resolve`)).data,
+};
 
 // --- GESTIÓN DE MESAS ---
 export const sessionService = {

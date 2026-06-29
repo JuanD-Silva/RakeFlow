@@ -51,6 +51,7 @@ async def register_club(request: Request, club_data: schemas.ClubCreate, db: Asy
         plan_type="BASIC",
         is_active=True,
         email_verification_token=verification_token,
+        public_token=secrets.token_urlsafe(16),  # link público del club
         terms_accepted_at=datetime.utcnow()
     )
     db.add(new_club)

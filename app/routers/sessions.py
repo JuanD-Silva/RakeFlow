@@ -7,6 +7,7 @@ from sqlalchemy import func, case, text, delete
 from typing import List
 from decimal import Decimal
 from datetime import datetime, date
+import secrets
 import traceback
 import logging
 
@@ -44,6 +45,7 @@ async def create_session(
         start_time=datetime.utcnow(),
         club_id=current_club.id,
         name=(session_in.name or None) if session_in else None,
+        public_token=secrets.token_urlsafe(12),  # link público del dealer
     )
     db.add(new_session)
     await db.commit()
@@ -83,6 +85,7 @@ async def get_active_sessions_summary(
         SELECT
             s.id,
             s.name,
+            s.public_token,
             s.start_time,
             CAST(s.status AS TEXT) AS status,
             COALESCE(COUNT(DISTINCT t.player_id) FILTER (
@@ -105,6 +108,7 @@ async def get_active_sessions_summary(
         {
             "id": r.id,
             "name": r.name,
+            "public_token": r.public_token,
             "status": r.status,
             "start_time": r.start_time.isoformat() if r.start_time else None,
             "players_count": int(r.players_count or 0),

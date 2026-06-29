@@ -26,6 +26,9 @@ import PaymentCallback from './pages/PaymentCallback';
 import Terms from './pages/Terms';
 import Privacy from './pages/Privacy';
 import AcceptInvitation from './pages/AcceptInvitation';
+import PublicClub from './pages/PublicClub';
+import DealerView from './pages/DealerView';
+import AlertWatcher from './components/AlertWatcher';
 import TeamPanel from './components/TeamPanel';
 
 // --- COMPONENTE PRINCIPAL (Dashboard Protegido) ---
@@ -100,6 +103,9 @@ function PokerManagerApp() {
 
       {/* Wizard de onboarding */}
       {showWizard && <OnboardingWizard onComplete={() => setShowWizard(false)} />}
+
+      {/* Alertas dealer→staff (polling) */}
+      <AlertWatcher />
 
       <Navigation
         currentView={currentView}
@@ -191,6 +197,10 @@ function AppRoutes() {
 
       {/* Aceptar invitacion (publica) */}
       <Route path="/accept-invitation" element={<AcceptInvitation />} />
+
+      {/* Capa publica (sin auth): link del club + vista dealer */}
+      <Route path="/c/:token" element={<PublicClub />} />
+      <Route path="/mesa/:token/dealer" element={<DealerView />} />
 
       {/* Configuracion Inicial */}
       <Route path="/setup" element={token ? <Setup /> : <Navigate to="/login" />} />

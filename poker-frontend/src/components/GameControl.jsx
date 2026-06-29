@@ -454,7 +454,7 @@ const handleCreateTournament = async (formData) => {
            <ActionButton color="yellow" label="🤝 Propina Dealer" onClick={() => handleOpenModal("tip", "Registrar Propina")} />
 
            <div className="col-span-2 md:col-span-3 mt-2">
-              <DealerPanel sessionId={activeSession?.id} refreshTrigger={refreshKey} />
+              <DealerPanel sessionId={activeSession?.id} publicToken={activeSession?.public_token} refreshTrigger={refreshKey} />
            </div>
 
            <div className="col-span-2 md:col-span-3 mt-2">

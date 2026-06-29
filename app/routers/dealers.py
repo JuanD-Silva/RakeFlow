@@ -25,6 +25,62 @@ from ..audit import log_action, AuditAction
 
 router = APIRouter(prefix="/dealers", tags=["Dealers"])
 shifts_router = APIRouter(prefix="/sessions", tags=["DealerShifts"])
+alerts_router = APIRouter(prefix="/dealer-alerts", tags=["DealerAlerts"])
+
+
+# ---------------------------------------------------------
+# Alertas dealer→staff (recepción por el staff, polling)
+# ---------------------------------------------------------
+@alerts_router.get("")
+async def list_dealer_alerts(
+    status: str = "PENDING",
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+):
+    """Alertas del club (default pendientes). Cualquier usuario del club las ve
+    (el cajero en la mesa es quien atiende). Trae el nombre de la mesa."""
+    rows = (await db.execute(
+        select(models.DealerAlert, models.Session.name)
+        .join(models.Session, models.Session.id == models.DealerAlert.session_id)
+        .where(
+            models.DealerAlert.club_id == current_club.id,
+            models.DealerAlert.status == status.upper(),
+        )
+        .order_by(models.DealerAlert.created_at.desc())
+        .limit(50)
+    )).all()
+    return [{
+        "id": a.id,
+        "alert_type": a.alert_type,
+        "message": a.message,
+        "dealer_name": a.dealer_name,
+        "table_name": name or f"Mesa #{a.session_id}",
+        "session_id": a.session_id,
+        "created_at": a.created_at.isoformat() if a.created_at else None,
+    } for a, name in rows]
+
+
+@alerts_router.post("/{alert_id}/resolve")
+async def resolve_dealer_alert(
+    alert_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+    current_user: models.User = Depends(require_role([models.UserRole.OWNER, models.UserRole.MANAGER, models.UserRole.CASHIER])),
+):
+    """Marcar una alerta como atendida."""
+    alert = (await db.execute(
+        select(models.DealerAlert).where(
+            models.DealerAlert.id == alert_id,
+            models.DealerAlert.club_id == current_club.id,
+        )
+    )).scalars().first()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alerta no encontrada")
+    alert.status = "RESOLVED"
+    alert.resolved_at = datetime.utcnow()
+    alert.resolved_by_user_id = current_user.id
+    await db.commit()
+    return {"status": "RESOLVED"}
 
 
 # ---------------------------------------------------------
