@@ -424,8 +424,10 @@ async def create_bonus_all(
     db: AsyncSession = Depends(get_db),
     current_club: models.Club = Depends(get_current_club)
 ):
-    """Bono para TODA la mesa: crea un BONUS de `amount` para cada jugador activo
-    (con buy-in/rebuy) en la sesión. Así no hay que asignárselo a un jugador."""
+    """Bono para TODA la mesa: UN solo BONUS por el monto total (ej: pizza $53k
+    para todos), sin asignar a un jugador (player_id NULL). Cuenta como cortesía
+    del club (reduce el rake neto al cerrar) pero NO toca el saldo de ningún
+    jugador. NO es por jugador: es el total."""
     session = (await db.execute(select(models.Session).where(
         models.Session.id == tx_data.session_id,
         models.Session.club_id == current_club.id,
@@ -434,32 +436,24 @@ async def create_bonus_all(
     if not session:
         raise HTTPException(status_code=404, detail="Sesión no encontrada o cerrada")
 
-    rows = (await db.execute(
-        select(models.Transaction.player_id).where(
-            models.Transaction.session_id == session.id,
-            models.Transaction.type.in_([models.TransactionType.BUYIN, models.TransactionType.REBUY]),
-            models.Transaction.player_id.isnot(None),
-        ).distinct()
-    )).all()
-    player_ids = [r[0] for r in rows]
-    if not player_ids:
-        raise HTTPException(status_code=400, detail="No hay jugadores en la mesa")
-
-    now = datetime.utcnow()
-    for pid in player_ids:
-        db.add(models.Transaction(
-            session_id=session.id, player_id=pid, amount=tx_data.amount,
-            type=models.TransactionType.BONUS, method="CASH", timestamp=now,
-        ))
+    new_tx = models.Transaction(
+        session_id=session.id,
+        player_id=None,  # gasto/cortesía de mesa, no de un jugador
+        amount=tx_data.amount,
+        type=models.TransactionType.BONUS,
+        method="CASH",
+        timestamp=datetime.utcnow(),
+    )
+    db.add(new_tx)
     await db.flush()
     await log_action(
         db, request=request, club=current_club,
         action=AuditAction.TRANSACTION_CREATE,
-        entity_type="Session", entity_id=session.id,
-        meta={"type": "BONUS_ALL", "amount": float(tx_data.amount), "players": len(player_ids), "session_id": session.id},
+        entity_type="Transaction", entity_id=new_tx.id,
+        meta={"type": "BONUS_TABLE", "amount": float(tx_data.amount), "session_id": session.id},
     )
     await db.commit()
-    return {"count": len(player_ids), "amount": float(tx_data.amount), "total": float(tx_data.amount) * len(player_ids)}
+    return {"amount": float(tx_data.amount)}
 
 
 # ---------------------------------------------------------

@@ -263,7 +263,7 @@ export default function TransactionForm({ type, onSuccess, sessionId, createSess
           <div className="min-w-0">
             <p className="text-pink-200 font-bold text-sm">🎉 Bono para toda la mesa</p>
             <p className="text-pink-300/60 text-[11px]">
-              {bonusAll ? `Se dará a cada jugador en mesa (${players.length})` : 'Sin asignar a un jugador'}
+              {bonusAll ? 'Gasto único de la mesa (ej: pizza). El monto es el total, no por jugador.' : 'Sin asignar a un jugador'}
             </p>
           </div>
           <button
