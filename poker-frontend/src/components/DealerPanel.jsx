@@ -147,7 +147,7 @@ export default function DealerPanel({ sessionId, publicToken, refreshTrigger }) 
               {copied ? '¡Link copiado!' : 'Link del dealer'}
             </p>
             <p className="text-[10px] leading-tight text-gray-500 truncate">
-              {copied ? 'Pégalo y compartilo con el dealer' : 'Lo abre sin login para avisar al staff'}
+              {copied ? 'Pégalo y compártelo con el dealer' : 'Lo abre sin login para avisar al staff'}
             </p>
           </div>
           {!copied && (
