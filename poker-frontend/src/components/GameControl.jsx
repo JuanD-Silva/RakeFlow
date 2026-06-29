@@ -74,6 +74,8 @@ export default function GameControl() {
   // primer buy-in (no antes). Solo capturamos el nombre opcional.
   const [showNewTableModal, setShowNewTableModal] = useState(false);
   const [newTableName, setNewTableName] = useState("");
+  const [newTableMaxPlayers, setNewTableMaxPlayers] = useState(9);
+  const [pendingMaxPlayers, setPendingMaxPlayers] = useState(9);
   const [pendingTableName, setPendingTableName] = useState(null);
   
 
@@ -142,6 +144,7 @@ useEffect(() => {
 
   const handleStartSession = () => {
     setNewTableName("");
+    setNewTableMaxPlayers(9);
     setShowNewTableModal(true);
   };
 
@@ -149,6 +152,7 @@ useEffect(() => {
   // La mesa NO se crea hasta que se confirme el primer jugador.
   const handleConfirmTableName = () => {
     setPendingTableName(newTableName.trim() || null);
+    setPendingMaxPlayers(newTableMaxPlayers);
     setShowNewTableModal(false);
     setPendingSessionOpen(true);
     setModalType("buyin");
@@ -620,6 +624,7 @@ const handleCreateTournament = async (formData) => {
             sessionId={pendingSessionOpen ? null : activeSession?.id}
             createSessionFirst={pendingSessionOpen}
             pendingTableName={pendingTableName}
+            pendingMaxPlayers={pendingMaxPlayers}
           />
         )}
       </Modal>
@@ -683,6 +688,22 @@ const handleCreateTournament = async (formData) => {
                   autoFocus
                 />
                 <p className="text-xs text-gray-500 mt-2">Si lo dejas vacio se mostrara como "Mesa #ID". El siguiente paso registra el primer jugador.</p>
+              </div>
+              <div>
+                <label className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-2 block">
+                  Asientos de la mesa
+                </label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    min={2}
+                    max={12}
+                    value={newTableMaxPlayers}
+                    onChange={(e) => setNewTableMaxPlayers(Math.max(2, Math.min(12, parseInt(e.target.value) || 9)))}
+                    className="w-24 bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white text-center focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/30 focus:outline-none"
+                  />
+                  <span className="text-xs text-gray-500">Cupos para el link público (default 9).</span>
+                </div>
               </div>
               <div className="flex gap-2 pt-2">
                 <button

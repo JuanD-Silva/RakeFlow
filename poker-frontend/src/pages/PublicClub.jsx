@@ -10,8 +10,8 @@ function elapsed(startIso) {
 }
 
 const Badge = ({ children, tone = 'emerald' }) => (
-  <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full whitespace-nowrap ${
-    tone === 'emerald' ? 'bg-emerald-700/50 text-emerald-200' : 'bg-amber-700/50 text-amber-200'
+  <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full whitespace-nowrap ring-1 ${
+    tone === 'emerald' ? 'bg-emerald-500/15 text-emerald-300 ring-emerald-500/30' : 'bg-amber-500/15 text-amber-300 ring-amber-500/30'
   }`}>{children}</span>
 );
 
@@ -57,13 +57,19 @@ export default function PublicClub() {
   const empty = cash.length === 0 && tournaments.length === 0 && scheduled.length === 0;
 
   return (
-    <div className="min-h-screen bg-[#0a0f1a] text-gray-100 font-sans px-4 py-8">
+    <div className="min-h-screen bg-gradient-to-b from-[#0b1220] via-[#0a0f1a] to-black text-gray-100 font-sans px-4 py-8">
       <div className="max-w-md mx-auto space-y-6">
         {/* Header */}
         <div className="text-center">
           <p className="text-emerald-500 text-xs font-black tracking-[0.3em] uppercase">RakeFlow</p>
           <h1 className="text-3xl font-black text-white mt-1 leading-tight">{data.club_name}</h1>
-          <p className="text-gray-500 text-sm mt-1">Actividad en vivo</p>
+          <p className="inline-flex items-center gap-1.5 text-gray-400 text-sm mt-2">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+            </span>
+            Actividad en vivo
+          </p>
         </div>
 
         {/* Anuncio */}
@@ -86,15 +92,32 @@ export default function PublicClub() {
         {cash.length > 0 && (
           <section className="space-y-2">
             <p className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">Mesas de Cash</p>
-            {cash.map((c, i) => (
-              <div key={i} className="bg-gray-800/60 border border-gray-700/60 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-white font-bold truncate flex items-center gap-2">♠️ {c.name}</p>
-                  <p className="text-gray-400 text-xs mt-0.5">{c.players_count} jugando · {elapsed(c.start_time)} en juego</p>
+            {cash.map((c, i) => {
+              const seats = c.seats_available;
+              return (
+                <div key={i} className="bg-gray-800/60 border border-gray-700/60 rounded-xl px-4 py-3 hover:border-gray-600 transition-colors">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-white font-bold truncate flex items-center gap-2">♠️ {c.name}</p>
+                      <p className="text-gray-400 text-xs mt-0.5">
+                        {c.players_count} jugando
+                        {c.max_players ? ` · mesa de ${c.max_players}` : ''} · {elapsed(c.start_time)} en juego
+                      </p>
+                    </div>
+                    {seats != null
+                      ? <Badge tone={seats > 0 ? 'emerald' : 'amber'}>{seats > 0 ? `${seats} cupo${seats !== 1 ? 's' : ''}` : 'Llena'}</Badge>
+                      : <Badge>{c.status}</Badge>}
+                  </div>
+                  {c.max_players && (
+                    <div className="mt-2 h-1.5 rounded-full bg-gray-700/70 overflow-hidden flex gap-0.5">
+                      {Array.from({ length: c.max_players }).map((_, s) => (
+                        <div key={s} className={`flex-1 rounded-full ${s < c.players_count ? 'bg-emerald-500' : 'bg-gray-600/40'}`} />
+                      ))}
+                    </div>
+                  )}
                 </div>
-                <Badge>{c.status}</Badge>
-              </div>
-            ))}
+              );
+            })}
           </section>
         )}
 
@@ -103,7 +126,7 @@ export default function PublicClub() {
           <section className="space-y-2">
             <p className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">Torneos</p>
             {tournaments.map((t, i) => (
-              <div key={i} className="bg-gray-800/60 border border-gray-700/60 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+              <div key={i} className="bg-gray-800/60 border border-gray-700/60 rounded-xl px-4 py-3 flex items-center justify-between gap-3 hover:border-gray-600 transition-colors">
                 <div className="min-w-0">
                   <p className="text-white font-bold truncate flex items-center gap-2">🏆 {t.name}</p>
                   <p className="text-gray-400 text-xs mt-0.5">

@@ -79,6 +79,16 @@ async def create_buyin(
     """
     session = await get_active_session(db, current_club.id, tx.session_id)
 
+    # Si el jugador tenía un BUST (salió de la mesa) y vuelve a comprar fichas,
+    # está de vuelta en juego: borramos el BUST huérfano para que no subcuente
+    # el conteo/cupos ni congele su tiempo en mesa (rakeback).
+    if tx.player_id is not None:
+        await db.execute(delete(models.Transaction).where(
+            models.Transaction.session_id == session.id,
+            models.Transaction.player_id == tx.player_id,
+            models.Transaction.type == models.TransactionType.BUST,
+        ))
+
     new_tx = models.Transaction(
         session_id=session.id,
         player_id=tx.player_id,
