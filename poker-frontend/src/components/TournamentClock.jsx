@@ -1,8 +1,10 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { tournamentService } from '../api/services';
 import {
-  PlayIcon, PauseIcon, ChevronLeftIcon, ChevronRightIcon,
+  PlayIcon, PauseIcon, ChevronLeftIcon, ChevronRightIcon, PencilSquareIcon,
 } from '@heroicons/react/24/solid';
+import Modal from './Modal';
+import BlindStructureEditor, { DEFAULT_BLINDS } from './BlindStructureEditor';
 
 /**
  * Reloj del torneo (vista del director). El backend es la fuente de verdad del
@@ -27,8 +29,28 @@ export default function TournamentClock({ tournament }) {
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState(false);
   const [copiedTv, setCopiedTv] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editBlinds, setEditBlinds] = useState([]);
+  const [savingBlinds, setSavingBlinds] = useState(false);
   const [, forceTick] = useState(0); // sólo para re-renderizar el contador local cada segundo
   const fetchedAtRef = useRef(0);
+
+  const openEdit = () => {
+    const current = tournament?.blind_structure?.length ? tournament.blind_structure : DEFAULT_BLINDS;
+    setEditBlinds(current.map((l) => ({ ...l })));
+    setEditOpen(true);
+  };
+
+  const saveBlinds = async () => {
+    if (savingBlinds || !tournament?.id) return;
+    setSavingBlinds(true);
+    try {
+      await tournamentService.updateBlinds(tournament.id, editBlinds);
+      await load();          // refresca el reloj con la estructura nueva
+      setEditOpen(false);
+    } catch { /* el modal queda abierto para reintentar */ }
+    finally { setSavingBlinds(false); }
+  };
 
   const shareTv = async () => {
     const tk = tournament?.public_token;
@@ -106,6 +128,13 @@ export default function TournamentClock({ tournament }) {
       <div className="flex items-center justify-between mb-3">
         <span className="text-[11px] font-black uppercase tracking-[0.25em] text-violet-300">⏱ Reloj del torneo</span>
         <div className="flex items-center gap-2">
+          <button
+            onClick={openEdit}
+            title="Editar la estructura de blinds"
+            className="text-[10px] font-bold uppercase px-2.5 py-1 rounded-full border border-gray-600 text-gray-300 hover:bg-gray-700/50 transition-colors flex items-center gap-1"
+          >
+            <PencilSquareIcon className="w-3 h-3" /> Editar
+          </button>
           {tournament?.public_token && (
             <button
               onClick={shareTv}
@@ -196,6 +225,26 @@ export default function TournamentClock({ tournament }) {
           Nivel <ChevronRightIcon className="w-4 h-4" />
         </button>
       </div>
+
+      <Modal isOpen={editOpen} onClose={() => setEditOpen(false)} title="Editar estructura de blinds">
+        <div className="space-y-4">
+          <p className="text-[11px] text-gray-500">
+            Editar mientras corre el torneo no reinicia el reloj. Si recortás la
+            estructura, el nivel actual se acota al último disponible.
+          </p>
+          <BlindStructureEditor value={editBlinds} onChange={setEditBlinds} />
+          <div className="flex gap-2 pt-1">
+            <button onClick={saveBlinds} disabled={savingBlinds}
+              className="flex-1 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white font-bold py-2.5 rounded-lg text-xs uppercase">
+              {savingBlinds ? 'Guardando…' : 'Guardar estructura'}
+            </button>
+            <button onClick={() => setEditOpen(false)}
+              className="flex-1 bg-gray-700 hover:bg-gray-600 text-gray-300 font-bold py-2.5 rounded-lg text-xs uppercase">
+              Cancelar
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

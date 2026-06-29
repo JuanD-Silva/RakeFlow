@@ -393,6 +393,7 @@ class Tournament(Base):
     #   duration_min, is_break}]. El reloj es server-authoritative (igual que el
     #   elapsed del dealer): el cliente solo tickea local y resincroniza al pollear.
     blind_structure = Column(JSON, default=list)        # niveles de blinds
+    starting_stack = Column(Integer, default=0)         # fichas iniciales (informativo, se muestra en TV)
     current_level = Column(Integer, default=1)          # nivel activo (1-based en la estructura)
     clock_status = Column(String, default="STOPPED")    # STOPPED | RUNNING | PAUSED
     level_started_at = Column(DateTime, nullable=True)  # cuándo arrancó el reloj del nivel actual

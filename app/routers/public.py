@@ -156,6 +156,7 @@ async def get_tournament_tv(public_token: str, db: AsyncSession = Depends(get_db
         "players_active": active,
         "rebuys_total": rebuys,
         "addons_total": addons,
+        "starting_stack": t.starting_stack or 0,
         "clock": tournament_clock.clock_state(t),
     }
 
