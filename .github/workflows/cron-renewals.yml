@@ -53,9 +53,11 @@ jobs:
           fi
           QS=""
           if [ "$DRY_RUN" = "true" ]; then QS="?dry_run=true"; fi
-          set -e
+          # La purga NO es crítica: si falla, solo warning (el cobro ya corrió ok
+          # en el paso anterior). No tumbamos el job de billing por esto.
           RESP=$(curl -fsS -X POST \
             -H "X-Internal-Token: $TOKEN" \
             -H "Content-Type: application/json" \
-            "$API_URL/dealers/purge-deactivated$QS")
-          echo "$RESP" | python3 -m json.tool
+            "$API_URL/dealers/purge-deactivated$QS") \
+            && echo "$RESP" | python3 -m json.tool \
+            || echo "::warning::purga de dealers falló (no crítico)"
