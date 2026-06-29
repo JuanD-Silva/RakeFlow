@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.future import select
 from sqlalchemy import text, delete
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from pydantic import BaseModel, Field
 
@@ -49,6 +49,15 @@ async def _get_open_session_by_token(db: AsyncSession, token: str) -> models.Ses
     return session
 
 
+def _utc_iso(dt) -> Optional[str]:
+    """ISO con offset UTC (+00:00). Los timestamps se guardan como UTC naïve
+    (datetime.utcnow); sin el offset, el front los parsea como hora local y el
+    cálculo de tiempo en mesa sale mal (negativo => 0m para activos)."""
+    if dt is None:
+        return None
+    return dt.replace(tzinfo=timezone.utc).isoformat()
+
+
 async def _current_dealer_name(db: AsyncSession, session_id: int) -> Optional[str]:
     row = (await db.execute(
         select(models.Dealer.name)
@@ -80,8 +89,8 @@ async def _session_players(db: AsyncSession, session_id: int) -> list[dict]:
     return [{
         "player_id": r.id,
         "name": r.name,
-        "seated_at": r.seated_at.isoformat() if r.seated_at else None,
-        "busted_at": r.busted_at.isoformat() if r.busted_at else None,
+        "seated_at": _utc_iso(r.seated_at),
+        "busted_at": _utc_iso(r.busted_at),
         "is_busted": r.busted_at is not None,
     } for r in rows]
 
@@ -117,7 +126,7 @@ async def get_club_activity(public_token: str, db: AsyncSession = Depends(get_db
             "players_count": count,
             "max_players": cap,
             "seats_available": max(0, cap - count) if cap is not None else None,
-            "start_time": r.start_time.isoformat() if r.start_time else None,
+            "start_time": _utc_iso(r.start_time),
             "status": "Abierta",
         })
 

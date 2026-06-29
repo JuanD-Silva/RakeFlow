@@ -139,6 +139,15 @@ useEffect(() => {
 
   const refresh = () => setRefreshKey(prev => prev + 1);
 
+  // Auto-refresh: el dealer puede sacar jugadores desde su link público; el
+  // panel central debe reflejarlo sin recargar a mano. Pausa mientras hay un
+  // modal abierto para no interrumpir una transacción en curso.
+  useEffect(() => {
+    if (isModalOpen) return;
+    const id = setInterval(() => setRefreshKey(prev => prev + 1), 15000);
+    return () => clearInterval(id);
+  }, [isModalOpen]);
+
   // 2. INICIAR MESA DE CASH (multi-mesa: pide nombre opcional y crea inmediatamente)
   const [pendingSessionOpen, setPendingSessionOpen] = useState(false);
 
