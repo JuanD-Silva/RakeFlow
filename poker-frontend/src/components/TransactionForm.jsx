@@ -19,6 +19,7 @@ export default function TransactionForm({ type, onSuccess, sessionId, createSess
   const [playerId, setPlayerId] = useState("");
   const [amount, setAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("CASH");
+  const [bonusAll, setBonusAll] = useState(false); // bono para toda la mesa
 
   // --- ESTADOS DEL BUSCADOR ---
   const [searchTerm, setSearchTerm] = useState("");
@@ -48,6 +49,7 @@ export default function TransactionForm({ type, onSuccess, sessionId, createSess
     setIsCreatingNew(false);
     setAmount("");
     setPaymentMethod("CASH");
+    setBonusAll(false);
 
     if (type === 'tip') {
       setLoadingPlayers(false);
@@ -165,6 +167,21 @@ export default function TransactionForm({ type, onSuccess, sessionId, createSess
     e.preventDefault();
     setError(null);
 
+    // Bono para toda la mesa: no requiere jugador; aplica a todos los activos.
+    if (type === 'bonus' && bonusAll) {
+      if (!amount || amount <= 0) return setError("El monto debe ser mayor a 0.");
+      setLoading(true);
+      try {
+        await transactionService.bonusAll(parseFloat(amount), sessionId);
+        onSuccess();
+      } catch (err) {
+        setError(err.response?.data?.detail || err.message || "Error al procesar.");
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     if (type !== 'tip') {
       if (!isCreatingNew && !playerId) return setError("Selecciona un jugador de la lista.");
       if (isCreatingNew && !newPlayerName.trim()) return setError("El nombre es obligatorio.");
@@ -240,10 +257,30 @@ export default function TransactionForm({ type, onSuccess, sessionId, createSess
         </div>
       )}
 
-      {/* --- SECCIÓN 1: JUGADOR (Si no es propina) --- */}
-      {type !== 'tip' && (
+      {/* --- BONO PARA TODA LA MESA (toggle) --- */}
+      {type === 'bonus' && (
+        <div className="flex items-center justify-between bg-pink-900/15 border border-pink-500/30 rounded-xl px-4 py-3">
+          <div className="min-w-0">
+            <p className="text-pink-200 font-bold text-sm">🎉 Bono para toda la mesa</p>
+            <p className="text-pink-300/60 text-[11px]">
+              {bonusAll ? `Se dará a cada jugador en mesa (${players.length})` : 'Sin asignar a un jugador'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => { setBonusAll(!bonusAll); setError(null); }}
+            aria-pressed={bonusAll}
+            className={`relative w-12 h-6 rounded-full transition-colors shrink-0 ${bonusAll ? 'bg-pink-600' : 'bg-gray-700'}`}
+          >
+            <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${bonusAll ? 'translate-x-6' : ''}`} />
+          </button>
+        </div>
+      )}
+
+      {/* --- SECCIÓN 1: JUGADOR (Si no es propina ni bono a toda la mesa) --- */}
+      {type !== 'tip' && !(type === 'bonus' && bonusAll) && (
         <div className="space-y-2" ref={wrapperRef}>
-          <div className="flex justify-between items-center px-1">
+          <div className="flex justify-between items-center px-1 min-h-[34px]">
             <label className="text-gray-400 text-xs font-bold uppercase tracking-wider">
               {isCreatingNew ? "Registrar Nuevo Jugador" : "Buscar Jugador"}
             </label>

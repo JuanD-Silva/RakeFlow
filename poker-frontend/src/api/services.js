@@ -186,6 +186,14 @@ export const transactionService = {
         });
     },
 
+    // Bono para toda la mesa: un BONUS por cada jugador activo
+    bonusAll: async (amount, sessionId) => {
+        return await api.post('/transactions/bonus-all', {
+            amount,
+            session_id: sessionId
+        });
+    },
+
     togglePaid: async (playerId, sessionId, isPaid) => {
         return await api.post('/transactions/toggle-paid', {
             player_id: playerId,
