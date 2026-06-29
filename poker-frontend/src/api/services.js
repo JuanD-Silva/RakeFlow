@@ -7,6 +7,8 @@ export const publicService = {
     getDealerView: async (token) => (await publicApi.get(`/public/dealer/${token}`)).data,
     sendDealerAlert: async (token, alertType, message = null) =>
         (await publicApi.post(`/public/dealer/${token}/alert`, { alert_type: alertType, message })).data,
+    toggleBust: async (token, playerId) =>
+        (await publicApi.post(`/public/dealer/${token}/bust`, { player_id: playerId })).data,
 };
 
 // --- LINK PÚBLICO DEL CLUB + ALERTAS (lado staff, autenticado) ---
@@ -36,8 +38,10 @@ export const sessionService = {
         }
     },
 
-    createSession: async (name = null) => {
-        const payload = name ? { name } : {};
+    createSession: async (name = null, maxPlayers = null) => {
+        const payload = {};
+        if (name) payload.name = name;
+        if (maxPlayers) payload.max_players = maxPlayers;
         const response = await api.post('/sessions/', payload);
         return response.data;
     },

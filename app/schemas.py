@@ -207,6 +207,7 @@ class SessionCreate(BaseSchema):
     blind_level: str = "500/1000"
     default_rake_per_hour: Decimal = Decimal(0)
     name: Optional[str] = Field(None, max_length=100)
+    max_players: int = Field(9, ge=2, le=12)
 
 class SessionCloseRequest(BaseModel):
     declared_rake_cash: Decimal = Field(..., ge=0)
@@ -217,6 +218,7 @@ class SessionResponse(BaseSchema):
     id: int
     name: Optional[str] = None
     public_token: Optional[str] = None
+    max_players: Optional[int] = 9
     status: SessionStatus
     start_time: datetime
     end_time: Optional[datetime] = None

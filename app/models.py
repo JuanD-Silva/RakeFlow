@@ -219,6 +219,8 @@ class Session(Base):
     name = Column(String, nullable=True)  # "Mesa VIP", "Mesa 1"... null => "Mesa #ID"
     # Token del link público del dealer (rakeflow.site/mesa/{public_token}/dealer)
     public_token = Column(String, unique=True, index=True, nullable=True)
+    # Capacidad de asientos de la mesa (para mostrar cupos disponibles en el link público)
+    max_players = Column(Integer, default=9)
 
     start_time = Column(DateTime, default=datetime.utcnow)
     end_time = Column(DateTime, nullable=True)

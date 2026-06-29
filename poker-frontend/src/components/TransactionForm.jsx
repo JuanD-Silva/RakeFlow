@@ -13,7 +13,7 @@ import {
   CheckBadgeIcon
 } from '@heroicons/react/24/outline';
 
-export default function TransactionForm({ type, onSuccess, sessionId, createSessionFirst = false, pendingTableName = null }) {
+export default function TransactionForm({ type, onSuccess, sessionId, createSessionFirst = false, pendingTableName = null, pendingMaxPlayers = null }) {
   // --- ESTADOS DE DATOS ---
   const [players, setPlayers] = useState([]);
   const [playerId, setPlayerId] = useState("");
@@ -198,7 +198,7 @@ export default function TransactionForm({ type, onSuccess, sessionId, createSess
       // Si es apertura de mesa, crear la sesión primero (con nombre opcional)
       let createdSessionId = null;
       if (createSessionFirst && !sessionId) {
-        const newSession = await sessionService.createSession(pendingTableName || null);
+        const newSession = await sessionService.createSession(pendingTableName || null, pendingMaxPlayers || null);
         activeSessionId = newSession.id;
         createdSessionId = newSession.id;
       }

@@ -46,6 +46,7 @@ async def create_session(
         club_id=current_club.id,
         name=(session_in.name or None) if session_in else None,
         public_token=secrets.token_urlsafe(12),  # link público del dealer
+        max_players=(session_in.max_players if session_in else 9),
     )
     db.add(new_session)
     await db.commit()
@@ -86,11 +87,15 @@ async def get_active_sessions_summary(
             s.id,
             s.name,
             s.public_token,
+            s.max_players,
             s.start_time,
             CAST(s.status AS TEXT) AS status,
-            COALESCE(COUNT(DISTINCT t.player_id) FILTER (
-                WHERE CAST(t.type AS TEXT) IN ('BUYIN', 'REBUY')
-            ), 0) AS players_count,
+            -- Jugadores en mesa = con buy-in y SIN quebrar. Un BUST implica buy-in
+            -- previo, así que los quebrados son un subconjunto: basta restarlos.
+            GREATEST(0,
+                COUNT(DISTINCT t.player_id) FILTER (WHERE CAST(t.type AS TEXT) IN ('BUYIN', 'REBUY'))
+                - COUNT(DISTINCT t.player_id) FILTER (WHERE CAST(t.type AS TEXT) = 'BUST')
+            ) AS players_count,
             COALESCE(SUM(CASE WHEN CAST(t.type AS TEXT) IN ('BUYIN', 'REBUY')
                               THEN t.amount ELSE 0 END), 0) AS total_buyin,
             COALESCE(SUM(CASE WHEN CAST(t.type AS TEXT) = 'CASHOUT'
@@ -100,7 +105,7 @@ async def get_active_sessions_summary(
         LEFT JOIN transactions t ON t.session_id = s.id
         WHERE s.club_id = :cid
           AND s.status = 'OPEN'
-        GROUP BY s.id, s.name, s.start_time, s.status
+        GROUP BY s.id, s.name, s.max_players, s.start_time, s.status
         ORDER BY s.id DESC
     """)
     rows = (await db.execute(sql, {"cid": current_club.id})).fetchall()
@@ -109,6 +114,8 @@ async def get_active_sessions_summary(
             "id": r.id,
             "name": r.name,
             "public_token": r.public_token,
+            "max_players": int(r.max_players) if r.max_players else None,
+            "seats_available": max(0, int(r.max_players) - int(r.players_count or 0)) if r.max_players else None,
             "status": r.status,
             "start_time": r.start_time.isoformat() if r.start_time else None,
             "players_count": int(r.players_count or 0),
