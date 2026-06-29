@@ -10,6 +10,7 @@ from sqlalchemy.future import select
 from sqlalchemy import delete
 from pydantic import BaseModel
 from .. import models, schemas, auth_utils
+from ..phone_utils import normalize_phone
 from ..dependencies import get_db, get_current_club, get_current_user, require_role
 from ..email_service import send_password_reset_email, send_verification_email
 from ..rate_limit import limiter
@@ -102,12 +103,18 @@ async def login(request: Request, db: AsyncSession = Depends(get_db)):
         username = form.get("username", "")
         password = form.get("password", "")
 
-    # Buscar User por email (multi-usuario). Si no hay match, fallback al Club
-    # para casos de tokens viejos. Pero priorizamos User.
-    user_result = await db.execute(
+    # Buscar User por email primero (match exacto). Si no hay y el input no parece
+    # email, caer a teléfono (los dealers entran por número). Priorizar email
+    # evita ambigüedad si dos filas distintas matchean por vías distintas.
+    user = (await db.execute(
         select(models.User).where(models.User.email == username)
-    )
-    user = user_result.scalars().first()
+    )).scalars().first()
+    if not user and "@" not in username:
+        norm_phone = normalize_phone(username)
+        if norm_phone:
+            user = (await db.execute(
+                select(models.User).where(models.User.phone == norm_phone)
+            )).scalars().first()
 
     if not user or not user.is_active or user.hashed_password is None:
         logger.info("login_failed_unknown_or_pending email=%s", username)
@@ -141,7 +148,7 @@ async def login(request: Request, db: AsyncSession = Depends(get_db)):
 
     access_token = auth_utils.create_access_token(
         data={
-            "sub": user.email,
+            "sub": user.email or user.phone,
             "club_id": club.id,
             "user_id": user.id,
             "role": user.role.value if hasattr(user.role, "value") else str(user.role),

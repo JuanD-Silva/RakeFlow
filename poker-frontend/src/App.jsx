@@ -29,6 +29,7 @@ import AcceptInvitation from './pages/AcceptInvitation';
 import PublicClub from './pages/PublicClub';
 import DealerView from './pages/DealerView';
 import DealerWorkspace from './pages/DealerWorkspace';
+import DealerActivate from './pages/DealerActivate';
 import AlertWatcher from './components/AlertWatcher';
 import TeamPanel from './components/TeamPanel';
 
@@ -201,6 +202,9 @@ function AppRoutes() {
 
       {/* Aceptar invitacion (publica) */}
       <Route path="/accept-invitation" element={<AcceptInvitation />} />
+
+      {/* Activar cuenta de dealer por código WhatsApp (publica) */}
+      <Route path="/activar-dealer" element={<DealerActivate />} />
 
       {/* Capa publica (sin auth): link del club + vista dealer */}
       <Route path="/c/:token" element={<PublicClub />} />

@@ -84,19 +84,19 @@ export default function Login() {
           <form onSubmit={handleLogin} className="space-y-5">
             <div>
               <label className="block text-gray-400 text-xs font-bold mb-2 ml-1 uppercase tracking-wider">
-                Correo Electronico
+                Correo o teléfono
               </label>
               <div className="relative group">
                 <EnvelopeIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500 group-focus-within:text-emerald-400 transition-colors" />
                 <input
-                  type="email"
+                  type="text"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full bg-gray-900/60 text-white border border-gray-700 rounded-xl py-3.5 pl-12 pr-4
                              placeholder-gray-600 transition-all duration-300
                              focus:outline-none focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/10
                              hover:border-gray-600"
-                  placeholder="admin@pokerclub.com"
+                  placeholder="email o teléfono (dealers)"
                   required
                 />
               </div>

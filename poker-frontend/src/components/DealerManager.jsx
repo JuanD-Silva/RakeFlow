@@ -20,9 +20,10 @@ export default function DealerManager() {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState(null);
   const [invitingId, setInvitingId] = useState(null);
-  const [inviteEmail, setInviteEmail] = useState("");
+  const [invitePhone, setInvitePhone] = useState("");
   const [inviteError, setInviteError] = useState(null);
   const [inviteBusy, setInviteBusy] = useState(false);
+  const [inviteResult, setInviteResult] = useState(null); // {wa_url, message} para reenviar
 
   const load = async () => {
     setLoading(true);
@@ -85,22 +86,23 @@ export default function DealerManager() {
 
   const startInvite = (dealer) => {
     setInvitingId(dealer.id);
-    setInviteEmail("");
+    setInvitePhone(dealer.phone || "");
     setInviteError(null);
+    setInviteResult(null);
   };
 
   const doInvite = async (dealer) => {
     setInviteError(null);
-    const email = inviteEmail.trim().toLowerCase();
-    if (!email || !email.includes('@')) { setInviteError("Email inválido."); return; }
+    const phone = invitePhone.trim();
+    if (phone.replace(/\D/g, '').length < 7) { setInviteError("Teléfono inválido."); return; }
     setInviteBusy(true);
     try {
-      await dealerService.invite(dealer.id, email);
-      setInvitingId(null);
-      setInviteEmail("");
+      const res = await dealerService.invite(dealer.id, phone);
+      setInviteResult(res);            // guardamos wa_url para abrir/reenviar
+      if (res.wa_url) window.open(res.wa_url, '_blank'); // abre WhatsApp con el código listo
       load();
     } catch (err) {
-      setInviteError(err.response?.data?.detail || "Error enviando la invitación.");
+      setInviteError(err.response?.data?.detail || "Error generando la invitación.");
     } finally {
       setInviteBusy(false);
     }
@@ -255,22 +257,34 @@ export default function DealerManager() {
                 </div>
                 {invitingId === d.id && (
                   <div className="mt-3 pt-3 border-t border-gray-700/50 space-y-2">
+                    <p className="text-[11px] text-gray-400">Se abrirá WhatsApp con el código de verificación para enviar al número del dealer.</p>
                     <input
-                      type="email"
-                      value={inviteEmail}
-                      onChange={(e) => setInviteEmail(e.target.value)}
+                      type="tel"
+                      inputMode="tel"
+                      value={invitePhone}
+                      onChange={(e) => setInvitePhone(e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Enter') doInvite(d); }}
                       className="w-full bg-gray-800 text-white border border-gray-600 rounded-lg py-2 px-3 focus:border-emerald-500 outline-none text-sm"
-                      placeholder="email del dealer"
+                      placeholder="Teléfono (ej. 300 123 4567)"
                       autoFocus
                     />
                     {inviteError && <p className="text-red-400 text-xs">{inviteError}</p>}
-                    <div className="flex gap-2">
-                      <button onClick={() => doInvite(d)} disabled={inviteBusy} className="flex-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold py-2 rounded-lg text-xs uppercase">
-                        {inviteBusy ? 'Enviando…' : 'Enviar invitación'}
-                      </button>
-                      <button onClick={() => setInvitingId(null)} className="flex-1 bg-gray-700 hover:bg-gray-600 text-gray-300 font-bold py-2 rounded-lg text-xs uppercase">Cancelar</button>
-                    </div>
+                    {inviteResult ? (
+                      <div className="space-y-2">
+                        <p className="text-emerald-400 text-xs font-bold">✓ Código generado. Si WhatsApp no abrió, tocá el botón:</p>
+                        <div className="flex gap-2">
+                          <a href={inviteResult.wa_url} target="_blank" rel="noreferrer" className="flex-1 text-center bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 rounded-lg text-xs uppercase">Abrir WhatsApp</a>
+                          <button onClick={() => { setInvitingId(null); setInviteResult(null); }} className="flex-1 bg-gray-700 hover:bg-gray-600 text-gray-300 font-bold py-2 rounded-lg text-xs uppercase">Listo</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex gap-2">
+                        <button onClick={() => doInvite(d)} disabled={inviteBusy} className="flex-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold py-2 rounded-lg text-xs uppercase">
+                          {inviteBusy ? 'Generando…' : 'Invitar por WhatsApp'}
+                        </button>
+                        <button onClick={() => setInvitingId(null)} className="flex-1 bg-gray-700 hover:bg-gray-600 text-gray-300 font-bold py-2 rounded-lg text-xs uppercase">Cancelar</button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
