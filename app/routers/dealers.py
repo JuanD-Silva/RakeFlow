@@ -512,7 +512,7 @@ async def delete_dealer_permanent(
     name = dealer.name
     await log_action(
         db, request=request, club=current_club,
-        action="DEALER_DELETE", entity_type="Dealer", entity_id=dealer.id,
+        action=AuditAction.DEALER_DELETE, entity_type="Dealer", entity_id=dealer.id,
         meta={"name": name, "had_account": bool(dealer.user_id)},
     )
     await _hard_delete_dealer(db, dealer)
@@ -699,7 +699,7 @@ async def invite_dealer(
 
     await log_action(
         db, request=request, club=current_club,
-        action="DEALER_INVITE", entity_type="Dealer", entity_id=dealer.id,
+        action=AuditAction.DEALER_INVITE, entity_type="Dealer", entity_id=dealer.id,
         meta={"phone": phone, "dealer_id": dealer.id, "user_id": user.id, "by": current_user.email},
     )
     await db.commit()
@@ -769,7 +769,7 @@ async def reset_dealer_access(
 
     await log_action(
         db, request=request, club=current_club,
-        action="DEALER_RESET_ACCESS", entity_type="Dealer", entity_id=dealer.id,
+        action=AuditAction.DEALER_RESET_ACCESS, entity_type="Dealer", entity_id=dealer.id,
         meta={"phone": phone, "dealer_id": dealer.id, "user_id": user.id, "by": current_user.email},
     )
     await db.commit()
