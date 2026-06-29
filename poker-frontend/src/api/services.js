@@ -437,6 +437,12 @@ export const dealerService = {
         const res = await api.post(`/dealers/${dealerId}/invite`, { phone, name });
         return res.data;
     },
+    // Resetear acceso de un dealer YA activado (olvidó la contraseña): vuelve la
+    // cuenta a pendiente y devuelve un nuevo link wa.me con OTP. No borra historial.
+    resetAccess: async (dealerId, phone = null) => {
+        const res = await api.post(`/dealers/${dealerId}/reset-access`, { phone });
+        return res.data;
+    },
 };
 
 // --- PORTAL DEL DEALER (autenticado, rol DEALER) ---
