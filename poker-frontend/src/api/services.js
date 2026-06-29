@@ -12,6 +12,8 @@ export const publicService = {
     // Activación de cuenta de dealer (verifica número + crea contraseña)
     activateDealer: async ({ phone, code, name, password }) =>
         (await publicApi.post('/dealers/activate', { phone, code, name, password })).data,
+    // Vista TV pública del torneo (reloj + blinds + conteos, sin login)
+    getTournamentTV: async (token) => (await publicApi.get(`/public/tournaments/${token}/tv`)).data,
 };
 
 // --- LINK PÚBLICO DEL CLUB + ALERTAS (lado staff, autenticado) ---

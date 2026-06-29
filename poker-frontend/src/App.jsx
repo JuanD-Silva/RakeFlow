@@ -28,6 +28,7 @@ import Privacy from './pages/Privacy';
 import AcceptInvitation from './pages/AcceptInvitation';
 import PublicClub from './pages/PublicClub';
 import DealerView from './pages/DealerView';
+import TournamentTV from './pages/TournamentTV';
 import DealerWorkspace from './pages/DealerWorkspace';
 import DealerActivate from './pages/DealerActivate';
 import AlertWatcher from './components/AlertWatcher';
@@ -206,9 +207,10 @@ function AppRoutes() {
       {/* Activar cuenta de dealer por código WhatsApp (publica) */}
       <Route path="/activar-dealer" element={<DealerActivate />} />
 
-      {/* Capa publica (sin auth): link del club + vista dealer */}
+      {/* Capa publica (sin auth): link del club + vista dealer + TV de torneo */}
       <Route path="/c/:token" element={<PublicClub />} />
       <Route path="/mesa/:token/dealer" element={<DealerView />} />
+      <Route path="/torneo/:token/tv" element={<TournamentTV />} />
 
       {/* Configuracion Inicial */}
       <Route path="/setup" element={token ? <Setup /> : <Navigate to="/login" />} />
