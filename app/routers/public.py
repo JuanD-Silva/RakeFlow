@@ -144,12 +144,18 @@ async def get_tournament_tv(public_token: str, db: AsyncSession = Depends(get_db
     t, club = await _get_tournament_by_token(db, public_token)
     registered = len(t.players)
     active = sum(1 for p in t.players if p.status == "ACTIVE")
+    # Totales de rebuys/addons (rebuys_count/addons_count ya incluyen single+double).
+    # Son conteos de jugadas, no plata: OK para la capa pública.
+    rebuys = sum(p.rebuys_count or 0 for p in t.players)
+    addons = sum(p.addons_count or 0 for p in t.players)
     return {
         "club_name": club.name,
         "tournament_name": t.name,
         "status": t.status,
         "players_registered": registered,
         "players_active": active,
+        "rebuys_total": rebuys,
+        "addons_total": addons,
         "clock": tournament_clock.clock_state(t),
     }
 
