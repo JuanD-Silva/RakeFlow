@@ -1,5 +1,5 @@
 # app/models.py
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Boolean, Enum as SqEnum, JSON
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Boolean, Enum as SqEnum, JSON, Index, text
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
@@ -267,6 +267,16 @@ class DealerAlert(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     resolved_at = Column(DateTime, nullable=True)
     resolved_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    # Una sola alerta PENDING por (mesa, tipo): backstop anti-flood. Declarado
+    # también acá para que metadata.create_all lo replique en DBs nuevas
+    # (no solo vía migración).
+    __table_args__ = (
+        Index(
+            "uq_dealer_alerts_pending", "session_id", "alert_type",
+            unique=True, postgresql_where=text("status = 'PENDING'"),
+        ),
+    )
 
     session = relationship("Session")
 
