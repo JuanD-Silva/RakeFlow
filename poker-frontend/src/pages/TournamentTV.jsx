@@ -66,6 +66,9 @@ export default function TournamentTV() {
   const level = clock.level;
   const running = clock.clock_status === 'RUNNING';
   const isBreak = !!level?.is_break;
+  // Torneo sin estructura de blinds configurada (ej. torneos viejos): no mostrar
+  // "Nivel 1 / 0 — 0/0", sino un estado neutro de "por iniciar".
+  const noStructure = !level || (clock.total_levels ?? 0) === 0;
 
   // Reloj corriendo: cuenta regresiva contra endsAt. Pausado/detenido: estático.
   const remaining = running && endsAt != null
@@ -97,6 +100,14 @@ export default function TournamentTV() {
 
       {/* Centro: reloj + blinds */}
       <main className="flex-1 flex flex-col items-center justify-center px-4 gap-4 md:gap-8">
+        {noStructure ? (
+          <div className="text-center">
+            <p className="font-black text-gray-200 leading-none" style={{ fontSize: 'clamp(2.5rem, 10vw, 7rem)' }}>⏳</p>
+            <p className="text-2xl md:text-5xl font-black text-gray-200 mt-4">Torneo por iniciar</p>
+            <p className="text-sm md:text-2xl text-gray-500 mt-3">El reloj aparece cuando el director arranca los niveles.</p>
+          </div>
+        ) : (
+        <>
         <p className="text-sm md:text-2xl font-bold uppercase tracking-[0.3em] text-gray-400">
           {isBreak ? 'Descanso' : `Nivel ${clock.current_level}`}
           <span className="text-gray-600"> / {clock.total_levels}</span>
@@ -120,6 +131,8 @@ export default function TournamentTV() {
               <p className="text-violet-300/90 text-lg md:text-3xl font-bold mt-1 md:mt-2">ante {cop(level.ante)}</p>
             )}
           </div>
+        )}
+        </>
         )}
       </main>
 

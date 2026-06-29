@@ -123,7 +123,7 @@ async def get_club_activity(public_token: str, db: AsyncSession = Depends(get_db
 # Sólo datos no sensibles: nombre del club/torneo, reloj, blinds y conteo de
 # jugadores. NUNCA plata, rake, premios ni jugadores nominales.
 # ---------------------------------------------------------
-async def _get_tournament_by_token(db: AsyncSession, token: str) -> models.Tournament:
+async def _get_tournament_by_token(db: AsyncSession, token: str) -> tuple[models.Tournament, models.Club]:
     tournament = (await db.execute(
         select(models.Tournament).where(models.Tournament.public_token == token)
     )).scalars().first()
@@ -134,19 +134,18 @@ async def _get_tournament_by_token(db: AsyncSession, token: str) -> models.Tourn
     )).scalars().first()
     if not club or not club.is_active:
         raise HTTPException(status_code=404, detail="Torneo no encontrado")
-    tournament._club = club  # para el nombre, sin segunda query en el endpoint
-    return tournament
+    return tournament, club
 
 
 @router.get("/tournaments/{public_token}/tv")
 async def get_tournament_tv(public_token: str, db: AsyncSession = Depends(get_db)):
     """Estado para la pantalla TV del torneo: reloj + blinds + conteo de jugadores.
     Cero datos sensibles."""
-    t = await _get_tournament_by_token(db, public_token)
+    t, club = await _get_tournament_by_token(db, public_token)
     registered = len(t.players)
     active = sum(1 for p in t.players if p.status == "ACTIVE")
     return {
-        "club_name": t._club.name,
+        "club_name": club.name,
         "tournament_name": t.name,
         "status": t.status,
         "players_registered": registered,
