@@ -642,6 +642,8 @@ const handleCreateTournament = async (formData) => {
         }}
         title="¿Cerrar caja definitivamente?"
         message={`Vas a cerrar la ${activeSession?.name ? `"${activeSession.name}"` : `Sesión #${activeSession?.id}`} y aplicar la distribución de utilidades.\n\nAsegúrate de haber registrado todos los buy-ins, cashouts y propinas. Una vez cerrada no se puede modificar.`}
+        confirmText="Sí, cerrar caja"
+        loadingText="Cerrando..."
       />
 
       <ConfirmModal
@@ -653,6 +655,8 @@ const handleCreateTournament = async (formData) => {
         }}
         title="¿Cerrar sesión del sistema?"
         message={`Vas a salir de RakeFlow. Las mesas y torneos abiertos seguirán activos para la próxima vez que entres.\n\n¿Confirmas?`}
+        confirmText="Sí, salir"
+        loadingText="Saliendo..."
       />
 
       {/* MODAL NUEVA MESA */}
