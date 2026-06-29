@@ -310,6 +310,9 @@ class TournamentCreate(BaseModel):
     # default; si viene, debe tener al menos 1 nivel (una vacía rompería el reloj).
     blind_structure: Optional[List[BlindLevel]] = Field(default=None, min_length=1)
     starting_stack: Optional[int] = Field(default=0, ge=0)  # fichas iniciales (T4)
+    # Ventanas de rebuy/addon (T4): nivel hasta el cual están disponibles. None = sin límite.
+    rebuy_until_level: Optional[int] = Field(default=None, ge=1)
+    addon_until_level: Optional[int] = Field(default=None, ge=1)
 
 class BlindStructureUpdate(BaseModel):
     """Editar la estructura de blinds (y opcionalmente el stack inicial) de un torneo."""
@@ -354,6 +357,8 @@ class TournamentResponse(BaseModel):
     # Reloj / niveles (T3). El estado vivo (elapsed/remaining) va en GET /clock.
     blind_structure: List[BlindLevel] = []
     starting_stack: int = 0
+    rebuy_until_level: Optional[int] = None
+    addon_until_level: Optional[int] = None
     current_level: int = 1
     clock_status: str = "STOPPED"
     public_token: Optional[str] = None

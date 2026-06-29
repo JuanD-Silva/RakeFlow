@@ -73,6 +73,8 @@ async def create_tournament(
         start_time=datetime.utcnow(),
         blind_structure=blinds,
         starting_stack=tournament_data.starting_stack or 0,
+        rebuy_until_level=tournament_data.rebuy_until_level,
+        addon_until_level=tournament_data.addon_until_level,
         current_level=1,
         clock_status="STOPPED",
         clock_elapsed_seconds=0,
@@ -367,6 +369,16 @@ async def pay_late_dealer_tip(
 
 
 # 6. REGISTRAR REBUY (Sencillo o Doble)
+def _ensure_window_open(tournament: models.Tournament, until_level, label: str) -> None:
+    """Ventana de rebuy/addon (T4): si hay un nivel límite y el reloj ya lo pasó,
+    rechaza. NULL/0 = sin límite. Usa el nivel EFECTIVO (acotado a la estructura)."""
+    if until_level and tournament_clock.effective_level(tournament) > until_level:
+        raise HTTPException(
+            status_code=400,
+            detail=f"El período de {label} cerró (disponible hasta el nivel {until_level}).",
+        )
+
+
 @router.post("/{tournament_id}/rebuy", response_model=schemas.TournamentPlayerSchema)
 async def register_rebuy(
     tournament_id: int,
@@ -391,6 +403,8 @@ async def register_rebuy(
 
     if not tournament or not t_player:
         raise HTTPException(status_code=404, detail="Torneo o Jugador no encontrado")
+
+    _ensure_window_open(tournament, tournament.rebuy_until_level, "rebuys")
 
     # 2. Determinar precio según el tipo
     amount = 0
@@ -453,6 +467,8 @@ async def register_addon(
 
     if not tournament or not t_player:
         raise HTTPException(status_code=404, detail="Datos no encontrados")
+
+    _ensure_window_open(tournament, tournament.addon_until_level, "add-ons")
 
     amount = 0
     desc = ""

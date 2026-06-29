@@ -394,6 +394,8 @@ class Tournament(Base):
     #   elapsed del dealer): el cliente solo tickea local y resincroniza al pollear.
     blind_structure = Column(JSON, default=list)        # niveles de blinds
     starting_stack = Column(Integer, default=0)         # fichas iniciales (informativo, se muestra en TV)
+    rebuy_until_level = Column(Integer, nullable=True)  # rebuys disponibles hasta este nivel (NULL = sin límite)
+    addon_until_level = Column(Integer, nullable=True)  # add-ons disponibles hasta este nivel (NULL = sin límite)
     current_level = Column(Integer, default=1)          # nivel activo (1-based en la estructura)
     clock_status = Column(String, default="STOPPED")    # STOPPED | RUNNING | PAUSED
     level_started_at = Column(DateTime, nullable=True)  # cuándo arrancó el reloj del nivel actual

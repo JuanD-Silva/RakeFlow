@@ -55,6 +55,11 @@ export default function TournamentPlayerTable({ tournament, onUpdate }) {
         rake: Number(tournament.rake_percentage) || 0
     };
 
+    // Ventanas de rebuy/addon (T4): cerradas si el reloj pasó el nivel límite.
+    const curLevel = tournament.current_level || 1;
+    const rebuysClosed = !!tournament.rebuy_until_level && curLevel > tournament.rebuy_until_level;
+    const addonsClosed = !!tournament.addon_until_level && curLevel > tournament.addon_until_level;
+
     const playersWithStats = (tournament.players || []).map(p => {
         const totalRebuys = Number(p.rebuys_count) || 0;
         const doubleRebuys = Number(p.double_rebuys_count) || 0;
@@ -110,7 +115,7 @@ export default function TournamentPlayerTable({ tournament, onUpdate }) {
                 try {
                     if(isRebuy) await tournamentService.addRebuy(tournament.id, actionPlayer.player_id, type); else await tournamentService.addAddon(tournament.id, actionPlayer.player_id, type);
                     onUpdate(); setActionPlayer(null); showToast("Transacción exitosa");
-                } catch(e) { showToast("Error", "error"); } finally { setLoading(false); setConfirmModal(prev=>({...prev, isOpen:false})); }
+                } catch(e) { showToast(e.response?.data?.detail || "Error", "error"); } finally { setLoading(false); setConfirmModal(prev=>({...prev, isOpen:false})); }
             }
         });
     };
@@ -427,7 +432,7 @@ export default function TournamentPlayerTable({ tournament, onUpdate }) {
             )}
             
             {isRegisterOpen && <RegisterModal onClose={() => setIsRegisterOpen(false)} onConfirm={handleRegister} activeTab={activeTab} setActiveTab={setActiveTab} availablePlayers={allPlayers.filter(ap => !tournament.players?.find(tp => tp.player_id === ap.id))} selectedPlayerId={selectedPlayerId} setSelectedPlayerId={setSelectedPlayerId} newPlayerName={newPlayerName} setNewPlayerName={setNewPlayerName} newPlayerPhone={newPlayerPhone} setNewPlayerPhone={setNewPlayerPhone} regOptions={regOptions} setRegOptions={setRegOptions} prices={prices} loading={loading} />}
-            {actionPlayer && <ActionModal player={actionPlayer} playerName={getPlayerName(actionPlayer.player_id)} onClose={() => setActionPlayer(null)} onRebuy={(t) => handleTransaction("Rebuy", t)} onAddon={(t) => handleTransaction("Addon", t)} onUndo={(action, type) => { setConfirmModal({ isOpen: true, title: "Deshacer", message: `¿Deshacer ${action} ${type}?`, type: "danger", onConfirm: async () => { setLoading(true); try { await tournamentService.undoAction(tournament.id, actionPlayer.player_id, action, type); setActionPlayer(null); onUpdate(); showToast("Deshecho"); } catch(e) { showToast(e.response?.data?.detail || "Error", "error"); } finally { setLoading(false); setConfirmModal(prev => ({...prev, isOpen: false})); } } }); }} onPayTip={() => { handlePayTip(actionPlayer.player_id); }} prices={prices} loading={loading} />}
+            {actionPlayer && <ActionModal player={actionPlayer} playerName={getPlayerName(actionPlayer.player_id)} rebuysClosed={rebuysClosed} addonsClosed={addonsClosed} rebuyUntil={tournament.rebuy_until_level} addonUntil={tournament.addon_until_level} onClose={() => setActionPlayer(null)} onRebuy={(t) => handleTransaction("Rebuy", t)} onAddon={(t) => handleTransaction("Addon", t)} onUndo={(action, type) => { setConfirmModal({ isOpen: true, title: "Deshacer", message: `¿Deshacer ${action} ${type}?`, type: "danger", onConfirm: async () => { setLoading(true); try { await tournamentService.undoAction(tournament.id, actionPlayer.player_id, action, type); setActionPlayer(null); onUpdate(); showToast("Deshecho"); } catch(e) { showToast(e.response?.data?.detail || "Error", "error"); } finally { setLoading(false); setConfirmModal(prev => ({...prev, isOpen: false})); } } }); }} onPayTip={() => { handlePayTip(actionPlayer.player_id); }} prices={prices} loading={loading} />}
         </div>
     );
 }
@@ -750,7 +755,7 @@ function RegisterModal({ onClose, onConfirm, activeTab, setActiveTab, availableP
     );
 }
 
-function ActionModal({ player, playerName, onClose, onRebuy, onAddon, onUndo, onPayTip, prices, loading }) {
+function ActionModal({ player, playerName, onClose, onRebuy, onAddon, onUndo, onPayTip, prices, loading, rebuysClosed, addonsClosed, rebuyUntil, addonUntil }) {
     const singleRebuys = (player.rebuys_count || 0) - (player.double_rebuys_count || 0);
     const singleAddons = (player.addons_count || 0) - (player.double_addons_count || 0);
 
@@ -802,10 +807,11 @@ function ActionModal({ player, playerName, onClose, onRebuy, onAddon, onUndo, on
                         <label className="text-blue-400 text-xs font-bold uppercase tracking-widest mb-3 block px-1 flex items-center gap-2">
                             <ArrowPathIcon className="w-4 h-4" /> Recompras (Rebuy)
                             {player.rebuys_count > 0 && <span className="bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded text-[10px]">{player.rebuys_count} total</span>}
+                            {rebuysClosed && <span className="bg-red-500/20 text-red-300 px-2 py-0.5 rounded text-[10px]">Cerrado · hasta nivel {rebuyUntil}</span>}
                         </label>
                         <div className="grid grid-cols-2 gap-3">
                             <div className="space-y-2">
-                                <button onClick={()=>onRebuy("SINGLE")} disabled={loading || prices.rebuyS <= 0} className="w-full bg-blue-900/20 border border-blue-500/30 hover:border-blue-400 hover:bg-blue-900/40 text-white p-4 rounded-xl text-center transition-all active:scale-[0.97] disabled:opacity-30 disabled:cursor-not-allowed">
+                                <button onClick={()=>onRebuy("SINGLE")} disabled={loading || prices.rebuyS <= 0 || rebuysClosed} className="w-full bg-blue-900/20 border border-blue-500/30 hover:border-blue-400 hover:bg-blue-900/40 text-white p-4 rounded-xl text-center transition-all active:scale-[0.97] disabled:opacity-30 disabled:cursor-not-allowed">
                                     <div className="text-xs font-bold uppercase tracking-wider text-blue-300 mb-1">+ Sencillo</div>
                                     <div className="text-xl font-black font-mono">{formatMoney(prices.rebuyS)}</div>
                                 </button>
@@ -816,7 +822,7 @@ function ActionModal({ player, playerName, onClose, onRebuy, onAddon, onUndo, on
                                 )}
                             </div>
                             <div className="space-y-2">
-                                <button onClick={()=>onRebuy("DOUBLE")} disabled={loading || prices.rebuyD <= 0} className="w-full bg-blue-900/20 border border-blue-500/30 hover:border-blue-400 hover:bg-blue-900/40 text-white p-4 rounded-xl text-center transition-all active:scale-[0.97] disabled:opacity-30 disabled:cursor-not-allowed">
+                                <button onClick={()=>onRebuy("DOUBLE")} disabled={loading || prices.rebuyD <= 0 || rebuysClosed} className="w-full bg-blue-900/20 border border-blue-500/30 hover:border-blue-400 hover:bg-blue-900/40 text-white p-4 rounded-xl text-center transition-all active:scale-[0.97] disabled:opacity-30 disabled:cursor-not-allowed">
                                     <div className="text-xs font-bold uppercase tracking-wider text-blue-300 mb-1">+ Doble</div>
                                     <div className="text-xl font-black font-mono">{formatMoney(prices.rebuyD)}</div>
                                 </button>
@@ -834,10 +840,11 @@ function ActionModal({ player, playerName, onClose, onRebuy, onAddon, onUndo, on
                         <label className="text-orange-400 text-xs font-bold uppercase tracking-widest mb-3 block px-1 flex items-center gap-2">
                             <PlusCircleIcon className="w-4 h-4" /> Add-ons
                             {player.addons_count > 0 && <span className="bg-orange-500/20 text-orange-300 px-2 py-0.5 rounded text-[10px]">{player.addons_count} total</span>}
+                            {addonsClosed && <span className="bg-red-500/20 text-red-300 px-2 py-0.5 rounded text-[10px]">Cerrado · hasta nivel {addonUntil}</span>}
                         </label>
                         <div className="grid grid-cols-2 gap-3">
                             <div className="space-y-2">
-                                <button onClick={()=>onAddon("SINGLE")} disabled={loading || prices.addonS <= 0} className="w-full bg-orange-900/20 border border-orange-500/30 hover:border-orange-400 hover:bg-orange-900/40 text-white p-4 rounded-xl text-center transition-all active:scale-[0.97] disabled:opacity-30 disabled:cursor-not-allowed">
+                                <button onClick={()=>onAddon("SINGLE")} disabled={loading || prices.addonS <= 0 || addonsClosed} className="w-full bg-orange-900/20 border border-orange-500/30 hover:border-orange-400 hover:bg-orange-900/40 text-white p-4 rounded-xl text-center transition-all active:scale-[0.97] disabled:opacity-30 disabled:cursor-not-allowed">
                                     <div className="text-xs font-bold uppercase tracking-wider text-orange-300 mb-1">+ Sencillo</div>
                                     <div className="text-xl font-black font-mono">{formatMoney(prices.addonS)}</div>
                                 </button>
@@ -848,7 +855,7 @@ function ActionModal({ player, playerName, onClose, onRebuy, onAddon, onUndo, on
                                 )}
                             </div>
                             <div className="space-y-2">
-                                <button onClick={()=>onAddon("DOUBLE")} disabled={loading || prices.addonD <= 0} className="w-full bg-orange-900/20 border border-orange-500/30 hover:border-orange-400 hover:bg-orange-900/40 text-white p-4 rounded-xl text-center transition-all active:scale-[0.97] disabled:opacity-30 disabled:cursor-not-allowed">
+                                <button onClick={()=>onAddon("DOUBLE")} disabled={loading || prices.addonD <= 0 || addonsClosed} className="w-full bg-orange-900/20 border border-orange-500/30 hover:border-orange-400 hover:bg-orange-900/40 text-white p-4 rounded-xl text-center transition-all active:scale-[0.97] disabled:opacity-30 disabled:cursor-not-allowed">
                                     <div className="text-xs font-bold uppercase tracking-wider text-orange-300 mb-1">+ Doble</div>
                                     <div className="text-xl font-black font-mono">{formatMoney(prices.addonD)}</div>
                                 </button>

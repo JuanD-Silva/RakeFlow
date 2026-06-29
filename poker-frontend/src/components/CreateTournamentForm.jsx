@@ -10,6 +10,9 @@ export default function CreateTournamentForm({ onSuccess, onCancel }) {
     const [blinds, setBlinds] = useState(DEFAULT_BLINDS);
     const [startingStack, setStartingStack] = useState(0);
     const [showBlinds, setShowBlinds] = useState(false);
+    // Ventanas de rebuy/addon (T4): hasta qué nivel están disponibles (vacío = sin límite)
+    const [rebuyUntil, setRebuyUntil] = useState('');
+    const [addonUntil, setAddonUntil] = useState('');
     
     // Costos
     const [costs, setCosts] = useState({
@@ -73,7 +76,9 @@ export default function CreateTournamentForm({ onSuccess, onCancel }) {
             payout_structure: payouts,
             bounty_amount: 0,
             blind_structure: blinds,
-            starting_stack: Number(startingStack) || 0
+            starting_stack: Number(startingStack) || 0,
+            rebuy_until_level: rebuyUntil ? Number(rebuyUntil) : null,
+            addon_until_level: addonUntil ? Number(addonUntil) : null
         };
 
         try {
@@ -154,11 +159,18 @@ export default function CreateTournamentForm({ onSuccess, onCancel }) {
                                         type="number" 
                                         className="w-full bg-blue-900/20 border border-blue-500/50 focus:border-blue-400 rounded-lg p-2.5 pl-7 text-white text-base font-mono outline-none transition-colors"
                                         placeholder="0" 
-                                        value={costs.doubleRebuy} 
-                                        onChange={(e) => setCosts({...costs, doubleRebuy: e.target.value})} 
+                                        value={costs.doubleRebuy}
+                                        onChange={(e) => setCosts({...costs, doubleRebuy: e.target.value})}
                                     />
                                 </div>
                             </div>
+                        </div>
+                        <div className="flex items-center gap-2 mt-2 px-1">
+                            <span className="text-[10px] text-blue-300/70 font-bold uppercase">Disponible hasta nivel</span>
+                            <input type="number" min="1" inputMode="numeric" placeholder="∞"
+                                className="w-16 bg-gray-800 border border-gray-600 focus:border-blue-500 rounded p-1 text-center text-white text-sm font-mono outline-none"
+                                value={rebuyUntil} onChange={(e) => setRebuyUntil(e.target.value)} />
+                            <span className="text-[10px] text-gray-600">(vacío = sin límite)</span>
                         </div>
                     </div>
 
@@ -194,11 +206,18 @@ export default function CreateTournamentForm({ onSuccess, onCancel }) {
                                         type="number" 
                                         className="w-full bg-orange-900/20 border border-orange-500/50 focus:border-orange-400 rounded-lg p-2.5 pl-7 text-white text-base font-mono outline-none transition-colors"
                                         placeholder="0" 
-                                        value={costs.doubleAddon} 
-                                        onChange={(e) => setCosts({...costs, doubleAddon: e.target.value})} 
+                                        value={costs.doubleAddon}
+                                        onChange={(e) => setCosts({...costs, doubleAddon: e.target.value})}
                                     />
                                 </div>
                             </div>
+                        </div>
+                        <div className="flex items-center gap-2 mt-2 px-1">
+                            <span className="text-[10px] text-orange-300/70 font-bold uppercase">Disponible hasta nivel</span>
+                            <input type="number" min="1" inputMode="numeric" placeholder="∞"
+                                className="w-16 bg-gray-800 border border-gray-600 focus:border-orange-500 rounded p-1 text-center text-white text-sm font-mono outline-none"
+                                value={addonUntil} onChange={(e) => setAddonUntil(e.target.value)} />
+                            <span className="text-[10px] text-gray-600">(vacío = sin límite)</span>
                         </div>
                     </div>
                 </div>
