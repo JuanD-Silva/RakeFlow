@@ -65,6 +65,11 @@ async def invite_user(
     if data.role == schemas.UserRoleEnum.OWNER:
         raise HTTPException(status_code=400, detail="No se puede invitar a otro OWNER. Cambia el rol de un usuario existente si necesitas transferir propiedad.")
 
+    # Las cuentas de dealer se crean por el flujo dedicado (POST /dealers/{id}/invite)
+    # que las vincula a una entidad Dealer; por acá quedarían huérfanas (sin turnos).
+    if data.role == schemas.UserRoleEnum.DEALER:
+        raise HTTPException(status_code=400, detail="Para crear una cuenta de dealer usá 'Invitar a la app' desde la gestión de dealers.")
+
     # Verificar que el email no este en uso (a nivel global de la tabla users)
     existing = (await db.execute(
         select(models.User).where(models.User.email == email)
@@ -85,6 +90,7 @@ async def invite_user(
         schemas.UserRoleEnum.OWNER: models.UserRole.OWNER,
         schemas.UserRoleEnum.MANAGER: models.UserRole.MANAGER,
         schemas.UserRoleEnum.CASHIER: models.UserRole.CASHIER,
+        schemas.UserRoleEnum.DEALER: models.UserRole.DEALER,
     }
 
     token = secrets.token_urlsafe(32)
@@ -141,10 +147,16 @@ async def update_user(
     if target.id == current_user.id and data.role and data.role != schemas.UserRoleEnum.OWNER:
         raise HTTPException(status_code=400, detail="No puedes cambiar tu propio rol de OWNER. Transfiere primero a otro usuario.")
 
+    # No se asciende a DEALER por acá: esas cuentas se crean vinculadas a una
+    # entidad Dealer vía POST /dealers/{id}/invite.
+    if data.role == schemas.UserRoleEnum.DEALER and target.role != models.UserRole.DEALER:
+        raise HTTPException(status_code=400, detail="No se puede cambiar el rol a DEALER aquí; creá la cuenta desde la gestión de dealers.")
+
     role_map = {
         schemas.UserRoleEnum.OWNER: models.UserRole.OWNER,
         schemas.UserRoleEnum.MANAGER: models.UserRole.MANAGER,
         schemas.UserRoleEnum.CASHIER: models.UserRole.CASHIER,
+        schemas.UserRoleEnum.DEALER: models.UserRole.DEALER,
     }
 
     changes = {}

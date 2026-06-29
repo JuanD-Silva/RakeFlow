@@ -11,17 +11,20 @@ previos.
 El cierre es SOLO INFORMATIVO: no toca la distribución financiera ni
 registra gastos.
 """
+import secrets
+import threading
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.future import select
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from .. import models, schemas, services
+from .. import models, schemas, services, dealer_view
 from ..dependencies import get_db, get_current_club, require_role
 from ..audit import log_action, AuditAction
+from ..email_service import send_invitation_email
 
 router = APIRouter(prefix="/dealers", tags=["Dealers"])
 shifts_router = APIRouter(prefix="/sessions", tags=["DealerShifts"])
@@ -98,7 +101,7 @@ def _shift_to_dict(shift: models.DealerShift, dealer_name: str, now: Optional[da
     server-side para que el front no parsee datetimes naive (bug de TZ)."""
     end = shift.end_time or now or datetime.utcnow()
     elapsed_minutes = max(0, int((end - shift.start_time).total_seconds() // 60))
-    hours = round(elapsed_minutes / 60.0, 2)
+    hours = dealer_view.shift_hours(shift.start_time, end)
     return {
         "id": shift.id,
         "dealer_id": shift.dealer_id,
@@ -296,11 +299,23 @@ async def list_dealers(
     db: AsyncSession = Depends(get_db),
     current_club: models.Club = Depends(get_current_club),
 ):
-    query = select(models.Dealer).where(models.Dealer.club_id == current_club.id)
+    # LEFT JOIN a users para exponer estado de cuenta (sin cuenta / invitación
+    # pendiente / activa) por dealer, para el botón "Invitar a la app".
+    query = (
+        select(models.Dealer, models.User.hashed_password)
+        .outerjoin(models.User, models.User.id == models.Dealer.user_id)
+        .where(models.Dealer.club_id == current_club.id)
+    )
     if not include_inactive:
         query = query.where(models.Dealer.is_active == True)  # noqa: E712
-    result = await db.execute(query.order_by(models.Dealer.name))
-    return result.scalars().all()
+    rows = (await db.execute(query.order_by(models.Dealer.name))).all()
+    out = []
+    for dealer, hashed_password in rows:
+        resp = schemas.DealerResponse.model_validate(dealer)
+        resp.has_account = dealer.user_id is not None
+        resp.invitation_pending = dealer.user_id is not None and hashed_password is None
+        out.append(resp)
+    return out
 
 
 @router.post("/", response_model=schemas.DealerResponse, status_code=201)
@@ -404,6 +419,80 @@ async def deactivate_dealer(
         meta={"name": dealer.name},
     )
     await db.commit()
+
+
+# ---------------------------------------------------------
+# Cuenta del dealer: invitar a la app (vincula User rol DEALER al Dealer)
+# ---------------------------------------------------------
+class DealerInviteIn(schemas.BaseModel):
+    email: str
+    name: Optional[str] = None  # si no viene, usa el nombre del dealer
+
+
+@router.post("/{dealer_id}/invite", status_code=201)
+async def invite_dealer(
+    dealer_id: int,
+    data: DealerInviteIn,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+    current_user: models.User = Depends(require_role([models.UserRole.OWNER, models.UserRole.MANAGER])),
+):
+    """Crea una cuenta de usuario rol DEALER vinculada a este Dealer de nómina y
+    envía email de invitación. El dealer acepta (set password) por el flujo
+    estándar /users/accept-invitation. OWNER/MANAGER."""
+    dealer = (await db.execute(
+        select(models.Dealer).where(
+            models.Dealer.id == dealer_id,
+            models.Dealer.club_id == current_club.id,
+        )
+    )).scalars().first()
+    if not dealer:
+        raise HTTPException(status_code=404, detail="Dealer no encontrado")
+    if dealer.user_id is not None:
+        raise HTTPException(status_code=409, detail="Este dealer ya tiene una cuenta")
+
+    email = data.email.strip().lower()
+    # Email único a nivel global de la tabla users (mismo criterio que /users/invite)
+    existing = (await db.execute(
+        select(models.User).where(models.User.email == email)
+    )).scalars().first()
+    if existing and existing.club_id == current_club.id:
+        raise HTTPException(status_code=409, detail="Ese email ya pertenece a un usuario del club")
+    if existing:
+        raise HTTPException(status_code=409, detail="Ese email ya está registrado en otro club")
+
+    token = secrets.token_urlsafe(32)
+    new_user = models.User(
+        club_id=current_club.id,
+        email=email,
+        name=(data.name or dealer.name),
+        role=models.UserRole.DEALER,
+        is_active=True,
+        hashed_password=None,
+        invitation_token=token,
+        invitation_expires_at=datetime.utcnow() + timedelta(days=7),
+        invitation_sent_at=datetime.utcnow(),
+        invited_by_user_id=current_user.id,
+    )
+    db.add(new_user)
+    await db.flush()
+    dealer.user_id = new_user.id  # vínculo 1:1 cuenta <-> nómina
+
+    await log_action(
+        db, request=request, club=current_club,
+        action="DEALER_INVITE", entity_type="Dealer", entity_id=dealer.id,
+        meta={"email": email, "dealer_id": dealer.id, "user_id": new_user.id, "by": current_user.email},
+    )
+    await db.commit()
+
+    threading.Thread(
+        target=send_invitation_email,
+        args=(email, token, current_user.name or current_user.email, current_club.name or "tu club", "dealer"),
+        daemon=True,
+    ).start()
+
+    return {"status": "invited", "dealer_id": dealer.id, "user_id": new_user.id, "email": email}
 
 
 # ---------------------------------------------------------

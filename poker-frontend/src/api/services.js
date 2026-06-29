@@ -424,6 +424,22 @@ export const dealerService = {
         const res = await api.get(`/dealers/payouts?${params.toString()}`);
         return res.data;
     },
+    // Invitar a la app: crea cuenta rol DEALER vinculada a este dealer de nómina
+    invite: async (dealerId, email, name = null) => {
+        const res = await api.post(`/dealers/${dealerId}/invite`, { email, name });
+        return res.data;
+    },
+};
+
+// --- PORTAL DEL DEALER (autenticado, rol DEALER) ---
+export const dealerSelfService = {
+    getMyTable: async () => (await api.get('/dealer/my-table')).data,
+    toggleBust: async (playerId) => (await api.post('/dealer/my-table/bust', { player_id: playerId })).data,
+    sendAlert: async (alertType, message = null) =>
+        (await api.post('/dealer/my-table/alert', { alert_type: alertType, message })).data,
+    getMyShift: async () => (await api.get('/dealer/my-shift')).data,
+    getMyHistory: async (limit = 50) => (await api.get(`/dealer/my-history?limit=${limit}`)).data,
+    getMySummary: async () => (await api.get('/dealer/my-summary')).data,
 };
 
 // --- USUARIOS (multi-usuario por club) ---
