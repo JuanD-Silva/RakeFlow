@@ -306,12 +306,15 @@ class TournamentCreate(BaseModel):
     double_rebuy_price: int = 0
     double_addon_price: int = 0
     payout_structure: List[int] = []
-    # Estructura de blinds (T3). Si no viene, el backend usa la plantilla default.
-    blind_structure: Optional[List[BlindLevel]] = None
+    # Estructura de blinds (T3). Si no viene (None), el backend usa la plantilla
+    # default; si viene, debe tener al menos 1 nivel (una vacía rompería el reloj).
+    blind_structure: Optional[List[BlindLevel]] = Field(default=None, min_length=1)
+    starting_stack: Optional[int] = Field(default=0, ge=0)  # fichas iniciales (T4)
 
 class BlindStructureUpdate(BaseModel):
-    """Editar la estructura de blinds de un torneo (T3)."""
-    blind_structure: List[BlindLevel]
+    """Editar la estructura de blinds (y opcionalmente el stack inicial) de un torneo."""
+    blind_structure: List[BlindLevel] = Field(..., min_length=1)  # al menos 1 nivel
+    starting_stack: Optional[int] = Field(default=None, ge=0)
 
 class TournamentPlayerSchema(BaseModel):
     id: int
@@ -350,6 +353,7 @@ class TournamentResponse(BaseModel):
     payout_structure: List[int] = []
     # Reloj / niveles (T3). El estado vivo (elapsed/remaining) va en GET /clock.
     blind_structure: List[BlindLevel] = []
+    starting_stack: int = 0
     current_level: int = 1
     clock_status: str = "STOPPED"
     public_token: Optional[str] = None

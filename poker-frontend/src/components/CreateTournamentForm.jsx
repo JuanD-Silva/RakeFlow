@@ -1,9 +1,15 @@
 import { useState, useEffect } from 'react';
-import { ChartPieIcon, CalculatorIcon } from '@heroicons/react/24/solid';
+import { ChartPieIcon, ClockIcon, ChevronDownIcon } from '@heroicons/react/24/solid';
+import BlindStructureEditor, { DEFAULT_BLINDS } from './BlindStructureEditor';
 
 export default function CreateTournamentForm({ onSuccess, onCancel }) {
     const [name, setName] = useState("");
     const [loading, setLoading] = useState(false); // <--- NUEVO ESTADO DE CARGA
+
+    // Estructura de blinds + stack inicial (T4)
+    const [blinds, setBlinds] = useState(DEFAULT_BLINDS);
+    const [startingStack, setStartingStack] = useState(0);
+    const [showBlinds, setShowBlinds] = useState(false);
     
     // Costos
     const [costs, setCosts] = useState({
@@ -65,7 +71,9 @@ export default function CreateTournamentForm({ onSuccess, onCancel }) {
             double_addon_price: Number(costs.doubleAddon),
             rake_percentage: Number(rake),
             payout_structure: payouts,
-            bounty_amount: 0
+            bounty_amount: 0,
+            blind_structure: blinds,
+            starting_stack: Number(startingStack) || 0
         };
 
         try {
@@ -229,6 +237,38 @@ export default function CreateTournamentForm({ onSuccess, onCancel }) {
                     )}
                     {!payoutError && (
                         <p className="text-green-500 text-[10px] mt-2 text-center">✅ Distribución correcta (100%)</p>
+                    )}
+                </div>
+
+                <div className="h-px bg-gray-700 my-2"></div>
+
+                {/* 5. RELOJ: STACK INICIAL + ESTRUCTURA DE BLINDS (T4) */}
+                <div className="bg-gray-900/30 p-4 rounded-lg border border-gray-700/50 space-y-3">
+                    <div className="flex items-center gap-2">
+                        <ClockIcon className="w-4 h-4 text-violet-400" />
+                        <h4 className="text-white text-xs font-bold uppercase tracking-wider flex-1">Reloj del torneo</h4>
+                    </div>
+
+                    <div>
+                        <label className="block text-violet-300/80 text-[10px] font-bold uppercase mb-1">Stack inicial (fichas)</label>
+                        <input type="number" min="0" inputMode="numeric"
+                            className="w-full bg-gray-800 border border-gray-600 focus:border-violet-500 rounded-lg p-2.5 text-white font-mono outline-none"
+                            placeholder="Ej: 20000" value={startingStack}
+                            onChange={(e) => setStartingStack(e.target.value)} />
+                    </div>
+
+                    <button type="button" onClick={() => setShowBlinds((s) => !s)}
+                        className="w-full flex items-center justify-between text-left bg-gray-800/60 hover:bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 transition-colors">
+                        <span className="text-xs font-bold text-gray-200">
+                            Estructura de blinds <span className="text-gray-500">· {blinds.length} niveles</span>
+                        </span>
+                        <ChevronDownIcon className={`w-4 h-4 text-gray-400 transition-transform ${showBlinds ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {showBlinds && (
+                        <div className="pt-1">
+                            <BlindStructureEditor value={blinds} onChange={setBlinds} />
+                        </div>
                     )}
                 </div>
 

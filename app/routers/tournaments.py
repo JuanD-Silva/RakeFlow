@@ -72,6 +72,7 @@ async def create_tournament(
         status="REGISTERING",
         start_time=datetime.utcnow(),
         blind_structure=blinds,
+        starting_stack=tournament_data.starting_stack or 0,
         current_level=1,
         clock_status="STOPPED",
         clock_elapsed_seconds=0,
@@ -198,6 +199,8 @@ async def update_blind_structure(
     nivel actual quedó fuera de rango se acota al editar la próxima acción."""
     tournament = await _get_owned_tournament(db, tournament_id, current_club.id)
     tournament.blind_structure = [lvl.model_dump() for lvl in data.blind_structure]
+    if data.starting_stack is not None:
+        tournament.starting_stack = data.starting_stack
     # Si la estructura se encogió, acotar current_level para que no quede fuera de
     # rango (evita que next/prev queden "trabados" hasta volver al rango).
     tournament.current_level = tournament_clock.effective_level(tournament)

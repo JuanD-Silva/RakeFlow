@@ -367,8 +367,11 @@ endTournament: async (tournamentId) => {
   clockPause: async (tournamentId) => (await api.post(`/tournaments/${tournamentId}/clock/pause`)).data,
   clockNextLevel: async (tournamentId) => (await api.post(`/tournaments/${tournamentId}/clock/next-level`)).data,
   clockPrevLevel: async (tournamentId) => (await api.post(`/tournaments/${tournamentId}/clock/prev-level`)).data,
-  updateBlinds: async (tournamentId, blindStructure) =>
-    (await api.patch(`/tournaments/${tournamentId}/blinds`, { blind_structure: blindStructure })).data,
+  updateBlinds: async (tournamentId, blindStructure, startingStack = null) =>
+    (await api.patch(`/tournaments/${tournamentId}/blinds`, {
+      blind_structure: blindStructure,
+      ...(startingStack != null ? { starting_stack: startingStack } : {}),
+    })).data,
 };
 
 export const historyService = {

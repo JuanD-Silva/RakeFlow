@@ -148,6 +148,9 @@ export default function TournamentTV() {
                 )}
               </div>
             )}
+            {data.starting_stack > 0 && (
+              <p className="text-gray-500 text-xs md:text-lg font-bold mt-1 uppercase tracking-widest">Stack inicial {cop(data.starting_stack)}</p>
+            )}
           </>
         )}
       </main>
