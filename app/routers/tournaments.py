@@ -205,6 +205,20 @@ async def _get_owned_tournament(db: AsyncSession, tournament_id: int, club_id: i
 # Ocupación de una mesa = jugadores ACTIVE con ese table_id (eliminar libera cupo).
 # ---------------------------------------------------------------------------
 
+async def _close_open_dealer_shifts(db, tournament_id, now=None) -> int:
+    """Cierra todos los turnos de dealer ABIERTOS del torneo (al terminar/finalizar),
+    para que no queden colgados (el dealer quedaría 'ocupado' y su pago sin cerrar)."""
+    now = now or datetime.utcnow()
+    shifts = (await db.execute(
+        select(models.TournamentDealerShift)
+        .where(models.TournamentDealerShift.tournament_id == tournament_id)
+        .where(models.TournamentDealerShift.end_time.is_(None))
+    )).scalars().all()
+    for s in shifts:
+        s.end_time = now
+    return len(shifts)
+
+
 async def _get_owned_table(db, tournament_id, table_id, club_id) -> models.TournamentTable:
     result = await db.execute(
         select(models.TournamentTable)
@@ -545,6 +559,7 @@ async def assign_table_dealer(
     # ¿El dealer ya tiene otra mesa de torneo abierta?
     other = (await db.execute(
         select(models.TournamentDealerShift)
+        .where(models.TournamentDealerShift.club_id == current_club.id)
         .where(models.TournamentDealerShift.dealer_id == dealer.id)
         .where(models.TournamentDealerShift.end_time.is_(None))
         .where(models.TournamentDealerShift.table_id != table_id)
@@ -557,6 +572,7 @@ async def assign_table_dealer(
     # Cerrar el turno abierto de ESTA mesa (reemplazo de dealer).
     cur = (await db.execute(
         select(models.TournamentDealerShift)
+        .where(models.TournamentDealerShift.club_id == current_club.id)
         .where(models.TournamentDealerShift.table_id == table_id)
         .where(models.TournamentDealerShift.end_time.is_(None))
     )).scalars().first()
@@ -576,8 +592,9 @@ async def assign_table_dealer(
     try:
         await db.commit()
     except IntegrityError:
+        # Índice único (mesa o dealer abiertos): hubo asignación simultánea.
         await db.rollback()
-        raise HTTPException(status_code=409, detail="La mesa ya tiene un dealer asignándose. Reintentá.")
+        raise HTTPException(status_code=409, detail="Hubo una asignación simultánea de dealer. Reintentá.")
     return await _tables_response(db, tournament_id)
 
 
@@ -594,6 +611,7 @@ async def end_table_dealer(
     await _get_owned_table(db, tournament_id, table_id, current_club.id)
     cur = (await db.execute(
         select(models.TournamentDealerShift)
+        .where(models.TournamentDealerShift.club_id == current_club.id)
         .where(models.TournamentDealerShift.table_id == table_id)
         .where(models.TournamentDealerShift.end_time.is_(None))
     )).scalars().first()
@@ -720,6 +738,7 @@ async def end_tournament(
 
     tournament.status = "FINISHED"
     tournament.end_time = datetime.utcnow()
+    await _close_open_dealer_shifts(db, tournament.id, tournament.end_time)
 
     await db.commit()
     await db.refresh(tournament)
@@ -1186,6 +1205,7 @@ async def finalize_tournament(
     # 4. Cerrar Torneo
     tournament.status = "COMPLETED"
     tournament.end_time = datetime.utcnow()
+    await _close_open_dealer_shifts(db, tournament.id, tournament.end_time)
 
     await log_action(
         db, request=request, club=current_club,

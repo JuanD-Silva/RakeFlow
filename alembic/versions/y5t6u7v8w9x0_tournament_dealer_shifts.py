@@ -39,6 +39,8 @@ def upgrade() -> None:
     op.execute("CREATE INDEX IF NOT EXISTS ix_tournament_dealer_shifts_dealer_id ON tournament_dealer_shifts (dealer_id)")
     # Un solo turno abierto por mesa de torneo.
     op.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_tournament_dealer_shift_open ON tournament_dealer_shifts (table_id) WHERE end_time IS NULL")
+    # Un solo turno abierto por dealer (no puede estar en dos mesas a la vez).
+    op.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_tournament_dealer_shift_dealer_open ON tournament_dealer_shifts (dealer_id) WHERE end_time IS NULL")
 
 
 def downgrade() -> None:

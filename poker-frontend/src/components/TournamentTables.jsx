@@ -42,10 +42,22 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
     setMoveFor(null);
     return v;
   });
-  const assignDealer = (tableId, dealerId, force = false) => act(async () => {
-    const v = await tournamentService.assignTableDealer(tId, tableId, dealerId, force);
-    setDealerFor(null);
-    return v;
+  // Asignar: primero sin force; si el dealer ya está en otra mesa (409), confirmar
+  // antes de moverlo (no mover en silencio).
+  const assignDealer = (tableId, dealerId) => act(async () => {
+    try {
+      const v = await tournamentService.assignTableDealer(tId, tableId, dealerId, false);
+      setDealerFor(null);
+      return v;
+    } catch (e) {
+      if (e?.response?.status === 409) {
+        if (!window.confirm('Ese dealer ya está en otra mesa. ¿Moverlo a esta?')) return null;
+        const v = await tournamentService.assignTableDealer(tId, tableId, dealerId, true);
+        setDealerFor(null);
+        return v;
+      }
+      throw e;
+    }
   });
   const removeDealer = (tableId) => act(async () => {
     const v = await tournamentService.endTableDealer(tId, tableId);
@@ -198,7 +210,7 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
             <div className="max-h-[40vh] overflow-y-auto space-y-1.5">
               {dealers.length === 0 && <p className="text-gray-600 text-xs italic py-2">No hay dealers. Creá uno en Configuración.</p>}
               {dealers.map((d) => (
-                <button key={d.id} type="button" disabled={busy} onClick={() => assignDealer(dealerFor.table_id, d.id, true)}
+                <button key={d.id} type="button" disabled={busy} onClick={() => assignDealer(dealerFor.table_id, d.id)}
                   className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl border text-left ${dealerFor.dealer_id === d.id ? 'border-amber-500/50 bg-amber-950/30 text-amber-200' : 'border-gray-700 text-white hover:bg-amber-500/10'}`}>
                   <IdentificationIcon className="w-4 h-4 shrink-0 text-amber-300" />
                   <span className="flex-1 text-sm truncate">{d.name}</span>

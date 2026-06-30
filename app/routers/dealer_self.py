@@ -93,7 +93,10 @@ async def _my_open_tournament_shift(db: AsyncSession, dealer: models.Dealer, clu
     if not shift:
         return None, None, None
     table = (await db.execute(
-        select(models.TournamentTable).where(models.TournamentTable.id == shift.table_id)
+        select(models.TournamentTable).where(
+            models.TournamentTable.id == shift.table_id,
+            models.TournamentTable.club_id == club_id,
+        )
     )).scalars().first()
     tournament = (await db.execute(
         select(models.Tournament).where(

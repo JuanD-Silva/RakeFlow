@@ -533,10 +533,15 @@ class TournamentDealerShift(Base):
     pero para torneos: paga sólo horas × tarifa de torneo (sin %rake). end_time
     NULL => turno abierto. La tarifa se snapshotea al iniciar."""
     __tablename__ = "tournament_dealer_shifts"
-    # Un solo turno abierto por mesa de torneo (red de seguridad anti doble-tap).
+    # Un solo turno abierto por mesa Y un solo turno abierto por dealer (red de
+    # seguridad anti carrera: el dealer no puede quedar en dos mesas a la vez).
     __table_args__ = (
         Index(
             "uq_tournament_dealer_shift_open", "table_id", unique=True,
+            postgresql_where=text("end_time IS NULL"),
+        ),
+        Index(
+            "uq_tournament_dealer_shift_dealer_open", "dealer_id", unique=True,
             postgresql_where=text("end_time IS NULL"),
         ),
     )
