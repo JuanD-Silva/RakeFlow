@@ -89,11 +89,13 @@ async def get_club_activity(public_token: str, db: AsyncSession = Depends(get_db
             "status": "Abierta",
         })
 
-    # Torneos activos (no COMPLETED, sin end_time) con inscritos/activos
+    # Torneos EN JUEGO (no COMPLETED, no SCHEDULED, sin end_time). Los SCHEDULED
+    # van aparte en scheduled[]; sin excluirlos acá aparecerían duplicados.
     tourneys = (await db.execute(
         select(models.Tournament).where(
             models.Tournament.club_id == club.id,
             models.Tournament.status != "COMPLETED",
+            models.Tournament.status != "SCHEDULED",
             models.Tournament.end_time.is_(None),
         ).order_by(models.Tournament.id.desc())
     )).scalars().all()
