@@ -381,12 +381,9 @@ class TournamentResponse(BaseModel):
     @computed_field
     @property
     def average_stack(self) -> int:
+        # total_chips no lo consume ningún cliente; sólo exponemos el promedio
+        # (una sola pasada de chip_stats por serialización).
         return tournament_chips.chip_stats(self)["average_stack"]
-
-    @computed_field
-    @property
-    def total_chips(self) -> int:
-        return tournament_chips.chip_stats(self)["total_chips"]
 
     class Config:
         from_attributes = True
