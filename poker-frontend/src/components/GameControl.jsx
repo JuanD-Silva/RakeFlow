@@ -13,6 +13,7 @@ import api from '../api/axios';
 import ConfirmModal from './ConfirmModal';
 import TournamentPlayerTable from './TournamentPlayerTable';
 import TournamentClock from './TournamentClock';
+import TournamentTables from './TournamentTables';
 import { useAuth } from '../context/AuthContext';
 import { formatMoney } from '../utils/formatters';
 
@@ -486,6 +487,13 @@ const handleCreateTournament = async (formData) => {
 
             {/* RELOJ / NIVELES (T3) */}
             <TournamentClock tournament={activeTournament} />
+
+            {/* MESAS DEL TORNEO (Fase 1a) */}
+            <TournamentTables
+                tournament={activeTournament}
+                refreshTrigger={refreshKey}
+                onUpdate={refresh}
+            />
 
             {/* TABLA DE JUGADORES */}
             <TournamentPlayerTable

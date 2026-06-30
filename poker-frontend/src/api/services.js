@@ -380,6 +380,17 @@ endTournament: async (tournamentId) => {
       blind_structure: blindStructure,
       ...(startingStack != null ? { starting_stack: startingStack } : {}),
     })).data,
+  // Mesas de torneo (Fase 1a)
+  getTables: async (tournamentId) => (await api.get(`/tournaments/${tournamentId}/tables`)).data,
+  createTables: async (tournamentId, { max_seats = 9, count = 1 }) =>
+    (await api.post(`/tournaments/${tournamentId}/tables`, { max_seats, count })).data,
+  updateTable: async (tournamentId, tableId, payload) =>
+    (await api.patch(`/tournaments/${tournamentId}/tables/${tableId}`, payload)).data,
+  deleteTable: async (tournamentId, tableId) =>
+    (await api.delete(`/tournaments/${tournamentId}/tables/${tableId}`)).data,
+  autoSeat: async (tournamentId) => (await api.post(`/tournaments/${tournamentId}/tables/auto-seat`)).data,
+  movePlayer: async (tournamentId, playerId, tableId) =>
+    (await api.post(`/tournaments/${tournamentId}/players/${playerId}/move`, { table_id: tableId })).data,
 };
 
 // Biblioteca de estructuras de blinds (PR3): presets fijos + plantillas del club.
