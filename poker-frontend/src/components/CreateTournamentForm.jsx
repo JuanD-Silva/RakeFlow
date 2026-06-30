@@ -183,20 +183,14 @@ export default function CreateTournamentForm({ onSuccess, onCancel }) {
                 {/* PASO 2 — COSTOS */}
                 {step === 2 && (
                     <div className="space-y-4 animate-fade-in">
-                        <div className="grid grid-cols-2 gap-3">
-                            <div>
-                                <label className="block text-green-400 text-[10px] font-bold uppercase mb-1">Buy-in</label>
+                        {/* BUY-IN — precio + fichas (las fichas son el stack inicial) */}
+                        <div>
+                            <label className="block text-green-400 text-[10px] font-bold uppercase mb-1">Buy-in · precio + fichas</label>
+                            <div className="grid grid-cols-2 gap-3">
                                 <MoneyInput value={costs.buyin} onChange={setCost('buyin')} />
-                                <p className="text-[10px] text-gray-600 mt-1 ml-1">Fichas = stack inicial (paso Reloj)</p>
+                                <ChipsInput value={startingStack} onChange={(e) => setStartingStack(e.target.value)} />
                             </div>
-                            <div>
-                                <label className="block text-violet-400 text-[10px] font-bold uppercase mb-1">Rake (%)</label>
-                                <div className="relative">
-                                    <input type="number" min="0" max="100" value={rake} onChange={(e) => setRake(e.target.value)}
-                                        className="w-full bg-gray-900 border border-violet-500/50 rounded-lg p-2.5 text-white font-bold outline-none focus:border-violet-400" />
-                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500">%</span>
-                                </div>
-                            </div>
+                            <p className="text-[10px] text-gray-600 mt-1 ml-1">Las fichas del buy-in son el stack inicial de cada jugador.</p>
                         </div>
 
                         {/* TIP */}
@@ -260,17 +254,13 @@ export default function CreateTournamentForm({ onSuccess, onCancel }) {
                 {step === 3 && (
                     <div className="space-y-4 animate-fade-in">
                         <div>
-                            <label className="block text-violet-300/80 text-xs font-bold uppercase mb-1.5">Stack inicial (fichas)</label>
-                            <input type="number" min="0" inputMode="numeric" placeholder="Ej: 20000" value={startingStack} onChange={(e) => setStartingStack(e.target.value)}
-                                className="w-full bg-gray-800 border border-gray-600 focus:border-violet-500 rounded-lg p-2.5 text-white font-mono outline-none" />
-                        </div>
-                        <div>
                             <p className="text-white text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-2"><ClockIcon className="w-4 h-4 text-violet-400" /> Estructura de blinds</p>
                             <BlindStructureEditor
                                 value={blinds} onChange={setBlinds}
                                 startingStack={Number(startingStack) || 0}
                                 onLoadTemplate={(tpl) => { if (tpl.starting_stack != null) setStartingStack(tpl.starting_stack); }}
                             />
+                            <p className="text-[10px] text-gray-600 mt-2">Stack inicial: <span className="text-violet-300 font-bold font-mono">{Number(startingStack) || 0}</span> fichas (se define en el buy-in, paso Costos). Cargar una plantilla también lo ajusta.</p>
                         </div>
                     </div>
                 )}
@@ -278,6 +268,17 @@ export default function CreateTournamentForm({ onSuccess, onCancel }) {
                 {/* PASO 4 — PREMIOS */}
                 {step === 4 && (
                     <div className="space-y-4 animate-fade-in">
+                        {/* RAKE DE LA CASA */}
+                        <div className="bg-gray-800 p-4 rounded-lg border border-gray-600">
+                            <label className="block text-violet-400 text-[10px] font-bold uppercase mb-1">Rake de la casa (%)</label>
+                            <div className="relative">
+                                <input type="number" min="0" max="100" value={rake} onChange={(e) => setRake(e.target.value)}
+                                    className="w-full bg-gray-900 border border-violet-500/50 rounded-lg p-2.5 text-white font-bold outline-none focus:border-violet-400" />
+                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500">%</span>
+                            </div>
+                            <p className="text-[10px] text-gray-600 mt-1">Lo que la casa retiene del pozo antes de repartir premios.</p>
+                        </div>
+
                         <div className="bg-gray-800 p-4 rounded-lg border border-gray-600">
                             <div className="flex justify-between items-center mb-3">
                                 <h4 className="text-white text-xs font-bold uppercase flex items-center gap-2"><ChartPieIcon className="w-4 h-4 text-pink-500" /> Distribución de premios</h4>
