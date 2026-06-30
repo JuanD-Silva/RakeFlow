@@ -416,6 +416,24 @@ class Tournament(Base):
 
     payout_structure = Column(JSON, default=[])
 
+
+class BlindTemplate(Base):
+    """Plantilla de estructura de blinds reutilizable, guardada por club (PR3).
+    Los presets fijos (Estándar/Turbo/Deep/Hyper) NO viven acá: son constantes en
+    app/blind_presets.py. Esta tabla guarda solo las plantillas propias del club.
+    No toca plata: blind_structure son fichas/ciegas, starting_stack son fichas."""
+    __tablename__ = "blind_templates"
+
+    id = Column(Integer, primary_key=True, index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False, index=True)
+
+    name = Column(String, nullable=False)
+    blind_structure = Column(JSON, default=list)   # [{level, small_blind, big_blind, ante, duration_min, is_break}]
+    starting_stack = Column(Integer, default=0)    # fichas iniciales sugeridas por la plantilla
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 class AuditLog(Base):
     """
     Registro de acciones relevantes por club para trazabilidad legal y operativa.

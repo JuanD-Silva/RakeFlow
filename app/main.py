@@ -32,7 +32,7 @@ if _sentry_dsn:
     )
 
 # Importamos todos los módulos donde distribuimos la lógica
-from app.routers import auth, players, sessions, transactions, stats, config, tournaments, history, payments, audit, users, dealers, public, dealer_self
+from app.routers import auth, players, sessions, transactions, stats, config, tournaments, history, payments, audit, users, dealers, public, dealer_self, blind_templates
 
 setup_logging(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("rakeflow")
@@ -139,7 +139,8 @@ app.include_router(sessions.router)
 app.include_router(transactions.router)  
 app.include_router(stats.router)         
 app.include_router(config.router)   
-app.include_router(tournaments.router) 
+app.include_router(tournaments.router)
+app.include_router(blind_templates.router)
 app.include_router(history.router)
 app.include_router(payments.router)
 app.include_router(audit.router)
