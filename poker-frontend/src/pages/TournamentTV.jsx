@@ -25,11 +25,11 @@ export default function TournamentTV() {
   // Si el reloj corre, guardamos el instante (epoch ms) en que termina el nivel;
   // así el render es puro (resta now − endsAt, sin Date ni refs en render).
   const [endsAt, setEndsAt] = useState(null);
-  // endsAt en ref + marca de "ya recargué para este endsAt": al llegar a 0 dispara
-  // un refetch inmediato (el server ya auto-avanzó) → el cambio de nivel se ve
-  // sub-segundo en vez de esperar al poll de 5s.
+  // endsAt en ref + timestamp del último refetch de borde: al llegar a 0 dispara un
+  // refetch inmediato (debounce 2s) → el cambio de nivel se ve sub-segundo en vez
+  // de esperar al poll de 5s, sin ráfaga por skew de reloj y reintentando si falló.
   const endsAtRef = useRef(null);
-  const reloadedForRef = useRef(0);
+  const lastEdgeReloadRef = useRef(0);
 
   const load = useCallback(async () => {
     try {
@@ -65,8 +65,8 @@ export default function TournamentTV() {
       // Nivel vencido: refetch inmediato (una sola vez por endsAt) para ver el
       // auto-avance del server al toque, sin esperar al poll.
       const ea = endsAtRef.current;
-      if (ea && Date.now() >= ea && reloadedForRef.current !== ea) {
-        reloadedForRef.current = ea;
+      if (ea && Date.now() >= ea && Date.now() - lastEdgeReloadRef.current > 2000) {
+        lastEdgeReloadRef.current = Date.now();
         load();
       }
     }, 1000);

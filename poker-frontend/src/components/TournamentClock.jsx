@@ -36,10 +36,12 @@ export default function TournamentClock({ tournament }) {
   const [editError, setEditError] = useState(null);
   const [, forceTick] = useState(0); // sólo para re-renderizar el contador local cada segundo
   const fetchedAtRef = useRef(0);
-  // Instante (epoch ms) en que vence el nivel actual + marca de "ya recargué": al
-  // llegar a 0 dispara un refetch inmediato para ver el auto-avance al toque.
+  // Instante (epoch ms) en que vence el nivel actual + timestamp del último refetch
+  // de borde: al llegar a 0 dispara un refetch inmediato (debounce 2s) para ver el
+  // auto-avance al toque, sin ráfaga si el reloj del cliente está sucio y
+  // reintentando si el refetch del borde falló.
   const endsAtRef = useRef(null);
-  const reloadedForRef = useRef(0);
+  const lastEdgeReloadRef = useRef(0);
 
   const openEdit = () => {
     const current = tournament?.blind_structure?.length ? tournament.blind_structure : DEFAULT_BLINDS;
@@ -105,8 +107,8 @@ export default function TournamentClock({ tournament }) {
     const id = setInterval(() => {
       forceTick((t) => t + 1);
       const ea = endsAtRef.current;
-      if (ea && Date.now() >= ea && reloadedForRef.current !== ea) {
-        reloadedForRef.current = ea;
+      if (ea && Date.now() >= ea && Date.now() - lastEdgeReloadRef.current > 2000) {
+        lastEdgeReloadRef.current = Date.now();
         load();
       }
     }, 1000);
