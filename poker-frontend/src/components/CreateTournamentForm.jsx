@@ -13,6 +13,8 @@ export default function CreateTournamentForm({ onSuccess, onCancel }) {
     // Ventanas de rebuy/addon (T4): hasta qué nivel están disponibles (vacío = sin límite)
     const [rebuyUntil, setRebuyUntil] = useState('');
     const [addonUntil, setAddonUntil] = useState('');
+    // Programación (T4): fecha/hora de inicio. Vacío = arranca ahora (en juego).
+    const [scheduledStart, setScheduledStart] = useState('');
     
     // Costos
     const [costs, setCosts] = useState({
@@ -78,7 +80,8 @@ export default function CreateTournamentForm({ onSuccess, onCancel }) {
             blind_structure: blinds,
             starting_stack: Number(startingStack) || 0,
             rebuy_until_level: rebuyUntil ? Number(rebuyUntil) : null,
-            addon_until_level: addonUntil ? Number(addonUntil) : null
+            addon_until_level: addonUntil ? Number(addonUntil) : null,
+            scheduled_start: scheduledStart || null
         };
 
         try {
@@ -101,6 +104,13 @@ export default function CreateTournamentForm({ onSuccess, onCancel }) {
                 <div>
                     <label className="block text-gray-400 text-sm font-bold mb-1">Nombre del Evento</label>
                     <input type="text" autoFocus className="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-white focus:border-violet-500 outline-none" placeholder="Ej: Torneo Jueves Express" value={name} onChange={(e) => setName(e.target.value)} />
+                </div>
+
+                {/* PROGRAMAR (opcional): si se setea, el torneo queda como programado */}
+                <div>
+                    <label className="block text-gray-400 text-sm font-bold mb-1">📅 Programar para <span className="text-gray-600 font-normal">(opcional)</span></label>
+                    <input type="datetime-local" className="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-white focus:border-violet-500 outline-none" value={scheduledStart} onChange={(e) => setScheduledStart(e.target.value)} />
+                    <p className="text-[11px] text-gray-600 mt-1">Vacío = arranca ahora. Con fecha = queda en "Programados" hasta que lo abras.</p>
                 </div>
 
                 {/* 2. COSTOS BÁSICOS & RAKE */}
@@ -294,7 +304,7 @@ export default function CreateTournamentForm({ onSuccess, onCancel }) {
                 {/* BOTONES */}
                 <div className="flex gap-3 pt-2">
                     <button type="button" onClick={onCancel} className="flex-1 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-bold">Cancelar</button>
-                    <button type="submit" className="flex-1 py-3 bg-violet-600 hover:bg-violet-500 text-white rounded-lg font-bold shadow-lg shadow-violet-900/20">Crear Torneo</button>
+                    <button type="submit" className="flex-1 py-3 bg-violet-600 hover:bg-violet-500 text-white rounded-lg font-bold shadow-lg shadow-violet-900/20">{scheduledStart ? 'Programar Torneo' : 'Crear Torneo'}</button>
                 </div>
             </form>
         </div>

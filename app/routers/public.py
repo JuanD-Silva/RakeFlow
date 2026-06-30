@@ -89,11 +89,13 @@ async def get_club_activity(public_token: str, db: AsyncSession = Depends(get_db
             "status": "Abierta",
         })
 
-    # Torneos activos (no COMPLETED, sin end_time) con inscritos/activos
+    # Torneos EN JUEGO (no COMPLETED, no SCHEDULED, sin end_time). Los SCHEDULED
+    # van aparte en scheduled[]; sin excluirlos acá aparecerían duplicados.
     tourneys = (await db.execute(
         select(models.Tournament).where(
             models.Tournament.club_id == club.id,
             models.Tournament.status != "COMPLETED",
+            models.Tournament.status != "SCHEDULED",
             models.Tournament.end_time.is_(None),
         ).order_by(models.Tournament.id.desc())
     )).scalars().all()
@@ -108,12 +110,27 @@ async def get_club_activity(public_token: str, db: AsyncSession = Depends(get_db
             "status": "En juego" if t.status not in ("REGISTERING",) else "Por iniciar",
         })
 
+    # Torneos PROGRAMADOS (status SCHEDULED). Excepción deliberada a la regla de
+    # "no plata": se expone el buyin porque es info que el jugador necesita para
+    # decidir si va (decisión de Juan). Nada de rake/socios/jugadores nominales.
+    scheduled_rows = (await db.execute(
+        select(models.Tournament).where(
+            models.Tournament.club_id == club.id,
+            models.Tournament.status == "SCHEDULED",
+        ).order_by(models.Tournament.scheduled_start.asc().nullslast())
+    )).scalars().all()
+    scheduled = [{
+        "name": t.name,
+        "scheduled_start": t.scheduled_start.isoformat() if t.scheduled_start else None,
+        "buyin": t.buyin_amount,
+    } for t in scheduled_rows]
+
     return {
         "club_name": club.name,
         "announcement": club.public_announcement or None,
         "cash": cash,
         "tournaments": tournaments,
-        "scheduled": [],  # torneos programados: pendiente T4 (no hay scheduled_start)
+        "scheduled": scheduled,
         "updated_at": datetime.utcnow().isoformat(),
     }
 

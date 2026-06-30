@@ -139,13 +139,25 @@ export default function PublicClub() {
           </section>
         )}
 
-        {/* Programados (placeholder hasta T4) */}
+        {/* Programados */}
         {scheduled.length > 0 && (
           <section className="space-y-2">
             <p className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">Programados</p>
             {scheduled.map((s, i) => (
-              <div key={i} className="bg-gray-800/40 border border-gray-700/50 rounded-xl px-4 py-3">
-                <p className="text-white font-bold">📅 {s.name}</p>
+              <div key={i} className="bg-gray-800/40 border border-gray-700/50 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-white font-bold truncate">📅 {s.name}</p>
+                  {s.scheduled_start && (
+                    <p className="text-violet-300/80 text-xs mt-0.5 capitalize">
+                      {new Date(s.scheduled_start).toLocaleString('es-CO', { weekday: 'long', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  )}
+                </div>
+                {s.buyin > 0 && (
+                  <span className="shrink-0 text-emerald-300 font-bold text-sm whitespace-nowrap">
+                    ${Number(s.buyin).toLocaleString('es-CO')}
+                  </span>
+                )}
               </div>
             ))}
           </section>

@@ -313,6 +313,8 @@ class TournamentCreate(BaseModel):
     # Ventanas de rebuy/addon (T4): nivel hasta el cual están disponibles. None = sin límite.
     rebuy_until_level: Optional[int] = Field(default=None, ge=1)
     addon_until_level: Optional[int] = Field(default=None, ge=1)
+    # Programación (T4): si viene, el torneo se crea como SCHEDULED (no cuenta como activo).
+    scheduled_start: Optional[datetime] = None
 
 class BlindStructureUpdate(BaseModel):
     """Editar la estructura de blinds (y opcionalmente el stack inicial) de un torneo."""
@@ -350,6 +352,7 @@ class TournamentResponse(BaseModel):
     double_addon_price: int
     start_time: datetime
     end_time: Optional[datetime] = None
+    scheduled_start: Optional[datetime] = None
     total_players: int = 0
     total_prize_pool: int = 0
     players: List[TournamentPlayerSchema] = []

@@ -318,6 +318,14 @@ export const tournamentService = {
     return response.data;
   },
 
+  // Programados (T4): listar y lanzar (SCHEDULED -> REGISTERING)
+  getScheduled: async () => {
+    try { return (await api.get('/tournaments/scheduled')).data; }
+    catch (e) { console.error("Error listando programados:", e); return []; }
+  },
+  openScheduled: async (tournamentId) => (await api.post(`/tournaments/${tournamentId}/open`)).data,
+  deleteTournament: async (tournamentId) => (await api.delete(`/tournaments/${tournamentId}`)).data,
+
 endTournament: async (tournamentId) => {
     // Asumimos que crearás este endpoint en el backend pronto
     // OJO: Si aún no tienes el endpoint DELETE o PUT para cerrar, 
