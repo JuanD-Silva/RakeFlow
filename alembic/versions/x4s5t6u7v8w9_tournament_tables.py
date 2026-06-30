@@ -37,9 +37,17 @@ def upgrade() -> None:
     op.execute("ALTER TABLE tournament_players ADD COLUMN IF NOT EXISTS table_id INTEGER REFERENCES tournament_tables(id)")
     op.execute("ALTER TABLE tournament_players ADD COLUMN IF NOT EXISTS seat_number INTEGER")
     op.execute("CREATE INDEX IF NOT EXISTS ix_tournament_players_table_id ON tournament_players (table_id)")
+    # Un solo jugador ACTIVE por (mesa, asiento): evita asientos duplicados bajo
+    # concurrencia (la segunda escritura choca → 409, no corrompe el estado).
+    op.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_tournament_player_seat
+        ON tournament_players (table_id, seat_number)
+        WHERE status = 'ACTIVE' AND table_id IS NOT NULL AND seat_number IS NOT NULL
+    """)
 
 
 def downgrade() -> None:
+    op.execute("DROP INDEX IF EXISTS uq_tournament_player_seat")
     op.execute("DROP INDEX IF EXISTS ix_tournament_players_table_id")
     op.execute("ALTER TABLE tournament_players DROP COLUMN IF EXISTS seat_number")
     op.execute("ALTER TABLE tournament_players DROP COLUMN IF EXISTS table_id")

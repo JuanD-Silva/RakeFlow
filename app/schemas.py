@@ -411,7 +411,7 @@ class TournamentTablesView(BaseModel):
 class MovePlayerRequest(BaseModel):
     """Mover un jugador a otra mesa (reasiento manual). table_id None = sacar de mesa."""
     table_id: Optional[int] = None
-    seat_number: Optional[int] = None
+    seat_number: Optional[int] = Field(default=None, ge=1, le=12)
 
 class TournamentResponse(BaseModel):
     id: int

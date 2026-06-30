@@ -463,6 +463,15 @@ class AuditLog(Base):
 
 class TournamentPlayer(Base):
     __tablename__ = "tournament_players"
+    # Un solo jugador ACTIVE por (mesa, asiento): red de seguridad contra carreras
+    # al sentar/mover (mismo patrón que el turno único por mesa cash). Parcial:
+    # sólo aplica a sentados activos (los eliminados/sin mesa tienen NULLs).
+    __table_args__ = (
+        Index(
+            "uq_tournament_player_seat", "table_id", "seat_number", unique=True,
+            postgresql_where=text("status = 'ACTIVE' AND table_id IS NOT NULL AND seat_number IS NOT NULL"),
+        ),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     tournament_id = Column(Integer, ForeignKey("tournaments.id"), index=True)

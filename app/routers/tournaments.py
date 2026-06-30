@@ -4,6 +4,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, delete, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from app import models, schemas
 from datetime import datetime
@@ -389,10 +390,14 @@ async def delete_tournament_table(
 ):
     await _get_owned_tournament(db, tournament_id, current_club.id)
     table = await _get_owned_table(db, tournament_id, table_id, current_club.id)
-    # Desentar a sus jugadores (vuelven al pool, se pueden auto-sentar de nuevo).
+    # Desentar a sus jugadores ACTIVE (vuelven al pool, se pueden auto-sentar de
+    # nuevo). Filtra por tournament_id también (autodefensivo) y por status para
+    # no contar de más (los eliminados ya tienen table_id NULL).
     seated = (await db.execute(
         select(models.TournamentPlayer)
+        .where(models.TournamentPlayer.tournament_id == tournament_id)
         .where(models.TournamentPlayer.table_id == table_id)
+        .where(models.TournamentPlayer.status == "ACTIVE")
     )).scalars().all()
     for tp in seated:
         tp.table_id = None
@@ -449,7 +454,12 @@ async def auto_seat_players(
         db, request=request, club=current_club, action=AuditAction.TOURNAMENT_PLAYER_SEAT,
         entity_type="Tournament", entity_id=tournament_id, meta={"auto_seated": seated_n},
     )
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        # Carrera con otro registro/movimiento. Reintentá (los asientos se recalculan).
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Hubo movimiento simultáneo de asientos. Reintentá.")
     return await _tables_response(db, tournament_id)
 
 
@@ -490,7 +500,12 @@ async def move_player_to_table(
         entity_type="TournamentPlayer", entity_id=t_player.id,
         meta={"player_id": player_id, "table_id": data.table_id},
     )
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        # Carrera: otro movimiento tomó el asiento (índice único). Reintentá.
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="El asiento se ocupó al mismo tiempo. Reintentá.")
     return await _tables_response(db, tournament_id)
 
 
@@ -678,12 +693,20 @@ async def register_player(
         tips_count=tips_count,
     )
     db.add(new_player)
-
-    # Auto-sentar en la mesa OPEN más vacía con cupo (no-op si no hay mesas).
-    await _auto_seat_one(db, tournament.id, new_player)
-
     await db.commit()
     await db.refresh(new_player)
+
+    # Auto-sentar en la mesa OPEN más vacía con cupo (no-op si no hay mesas). Es
+    # best-effort y va en commit aparte: si una carrera choca el asiento (índice
+    # único), el jugador queda sin mesa (el staff usa "Auto-sentar"), pero el
+    # registro NUNCA falla por esto.
+    try:
+        if await _auto_seat_one(db, tournament.id, new_player):
+            await db.commit()
+            await db.refresh(new_player)
+    except IntegrityError:
+        await db.rollback()
+        await db.refresh(new_player)
 
     return new_player
 
