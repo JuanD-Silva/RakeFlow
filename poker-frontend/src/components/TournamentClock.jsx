@@ -9,7 +9,7 @@ import BlindStructureEditor, { DEFAULT_BLINDS } from './BlindStructureEditor';
 /**
  * Reloj del torneo (vista del director). El backend es la fuente de verdad del
  * tiempo (elapsed/remaining); acá sólo tickeamos localmente cada segundo a partir
- * del último estado servido y resincronizamos con un poll cada 10s. Mismo espíritu
+ * del último estado servido y resincronizamos con un poll cada 5s. Mismo espíritu
  * que el cronómetro del dealer: nunca confiamos en el reloj del navegador como
  * fuente, sólo para interpolar entre polls.
  */
@@ -36,6 +36,12 @@ export default function TournamentClock({ tournament }) {
   const [editError, setEditError] = useState(null);
   const [, forceTick] = useState(0); // sólo para re-renderizar el contador local cada segundo
   const fetchedAtRef = useRef(0);
+  // Instante (epoch ms) en que vence el nivel actual + timestamp del último refetch
+  // de borde: al llegar a 0 dispara un refetch inmediato (debounce 2s) para ver el
+  // auto-avance al toque, sin ráfaga si el reloj del cliente está sucio y
+  // reintentando si el refetch del borde falló.
+  const endsAtRef = useRef(null);
+  const lastEdgeReloadRef = useRef(0);
 
   const openEdit = () => {
     const current = tournament?.blind_structure?.length ? tournament.blind_structure : DEFAULT_BLINDS;
@@ -71,6 +77,10 @@ export default function TournamentClock({ tournament }) {
   const apply = useCallback((state) => {
     setClock(state);
     fetchedAtRef.current = Date.now();
+    // endsAt solo si corre y queda tiempo (>0); en el último nivel en overtime
+    // queda null para no recargar en loop.
+    endsAtRef.current = (state?.clock_status === 'RUNNING' && (state?.remaining_seconds || 0) > 0)
+      ? Date.now() + state.remaining_seconds * 1000 : null;
     setError(false);
     setLoadedOnce(true);
   }, []);
@@ -85,17 +95,25 @@ export default function TournamentClock({ tournament }) {
   useEffect(() => {
     if (!tournamentId) return;
     load();
-    const poll = setInterval(load, 10000);
+    const poll = setInterval(load, 5000);  // 5s: el reloj auto-avanza server-side, poll ágil para reflejarlo
     const onVisible = () => { if (document.visibilityState === 'visible') load(); };
     document.addEventListener('visibilitychange', onVisible);
     return () => { clearInterval(poll); document.removeEventListener('visibilitychange', onVisible); };
   }, [tournamentId, load]);
 
-  // Tick local cada segundo (sólo re-renderiza; el cálculo usa el último estado).
+  // Tick local cada segundo: re-renderiza el contador y, al vencer el nivel,
+  // dispara un refetch inmediato (una vez por endsAt) para ver el auto-avance.
   useEffect(() => {
-    const id = setInterval(() => forceTick((t) => t + 1), 1000);
+    const id = setInterval(() => {
+      forceTick((t) => t + 1);
+      const ea = endsAtRef.current;
+      if (ea && Date.now() >= ea && Date.now() - lastEdgeReloadRef.current > 2000) {
+        lastEdgeReloadRef.current = Date.now();
+        load();
+      }
+    }, 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [load]);
 
   const control = async (fn) => {
     if (busy || !tournamentId) return;
@@ -184,7 +202,9 @@ export default function TournamentClock({ tournament }) {
             {fmtClock(remaining)}
           </p>
           {levelOver && !isBreak && (
-            <p className="text-red-400/90 text-xs font-bold mt-1.5">Nivel terminado · subí de nivel ▶</p>
+            <p className="text-red-400/90 text-xs font-bold mt-1.5">
+              {clock?.current_level >= clock?.total_levels ? 'Nivel terminado' : 'Nivel terminado · subiendo…'}
+            </p>
           )}
         </div>
 

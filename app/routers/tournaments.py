@@ -200,8 +200,12 @@ async def get_tournament_clock(
     db: AsyncSession = Depends(get_db),
     current_club: models.Club = Depends(get_current_club),
 ):
-    """Estado vivo del reloj (elapsed/remaining/nivel/blinds). Read-only."""
+    """Estado vivo del reloj. Persiste el auto-avance por tiempo si el nivel venció
+    (el director polea acá cada 5s; así current_level se mantiene al día para las
+    ventanas de rebuy/addon)."""
     tournament = await _get_owned_tournament(db, tournament_id, current_club.id)
+    if tournament_clock.advance_clock_if_due(tournament):
+        await db.commit()
     return tournament_clock.clock_state(tournament)
 
 
@@ -211,6 +215,9 @@ async def _apply_clock_action(
 ) -> dict:
     tournament = await _get_owned_tournament(db, tournament_id, current_club.id)
     now = datetime.utcnow()
+    # Ponerse al día con el auto-avance antes de la acción, así next/prev operan
+    # sobre el nivel EN VIVO (no sobre uno viejo que el tiempo ya superó).
+    tournament_clock.advance_clock_if_due(tournament, now)
     if action == "start":
         tournament_clock.start_clock(tournament, now)
     elif action == "pause":
@@ -433,7 +440,7 @@ async def pay_late_dealer_tip(
 def _ensure_window_open(tournament: models.Tournament, until_level, label: str) -> None:
     """Ventana de rebuy/addon (T4): si hay un nivel límite y el reloj ya lo pasó,
     rechaza. NULL/0 = sin límite. Usa el nivel EFECTIVO (acotado a la estructura)."""
-    if until_level and tournament_clock.effective_level(tournament) > until_level:
+    if until_level and tournament_clock.live_level(tournament) > until_level:
         raise HTTPException(
             status_code=400,
             detail=f"El período de {label} cerró (disponible hasta el nivel {until_level}).",
@@ -477,7 +484,6 @@ async def register_rebuy(
     elif request.type == "DOUBLE":
         amount = tournament.double_rebuy_price
         desc = f"Rebuy Doble - Torneo #{tournament.id}"
-        t_player.double_rebuys_count += 1
     else:
         raise HTTPException(status_code=400, detail="Tipo inválido (Use SINGLE o DOUBLE)")
 
@@ -496,9 +502,12 @@ async def register_rebuy(
     )
     db.add(new_transaction)
 
-    # 4. Actualizar contador del jugador
+    # 4. Actualizar contadores (después del guard de precio: el invariante
+    # singles = total - dobles solo se toca si la jugada realmente procede).
+    if request.type == "DOUBLE":
+        t_player.double_rebuys_count += 1
     t_player.rebuys_count += 1
-    
+
     await db.commit()
     await db.refresh(t_player)
     return t_player
@@ -540,7 +549,6 @@ async def register_addon(
     elif request.type == "DOUBLE":
         amount = tournament.double_addon_price
         desc = f"Add-on Doble - Torneo #{tournament.id}"
-        t_player.double_addons_count += 1
     else:
         raise HTTPException(status_code=400, detail="Tipo inválido")
 
@@ -557,6 +565,10 @@ async def register_addon(
         timestamp=datetime.utcnow()
     )
     db.add(new_transaction)
+
+    # Contador doble después del guard de precio (invariante singles = total - dobles).
+    if request.type == "DOUBLE":
+        t_player.double_addons_count += 1
 
     t_player.addons_count += 1
     
