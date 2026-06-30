@@ -201,7 +201,7 @@ async def get_tournament_clock(
     current_club: models.Club = Depends(get_current_club),
 ):
     """Estado vivo del reloj. Persiste el auto-avance por tiempo si el nivel venció
-    (el director polea acá cada 10s; así current_level se mantiene al día para las
+    (el director polea acá cada 5s; así current_level se mantiene al día para las
     ventanas de rebuy/addon)."""
     tournament = await _get_owned_tournament(db, tournament_id, current_club.id)
     if tournament_clock.advance_clock_if_due(tournament):

@@ -9,7 +9,7 @@ import BlindStructureEditor, { DEFAULT_BLINDS } from './BlindStructureEditor';
 /**
  * Reloj del torneo (vista del director). El backend es la fuente de verdad del
  * tiempo (elapsed/remaining); acá sólo tickeamos localmente cada segundo a partir
- * del último estado servido y resincronizamos con un poll cada 10s. Mismo espíritu
+ * del último estado servido y resincronizamos con un poll cada 5s. Mismo espíritu
  * que el cronómetro del dealer: nunca confiamos en el reloj del navegador como
  * fuente, sólo para interpolar entre polls.
  */
@@ -184,7 +184,9 @@ export default function TournamentClock({ tournament }) {
             {fmtClock(remaining)}
           </p>
           {levelOver && !isBreak && (
-            <p className="text-red-400/90 text-xs font-bold mt-1.5">Nivel terminado · subiendo…</p>
+            <p className="text-red-400/90 text-xs font-bold mt-1.5">
+              {clock?.current_level >= clock?.total_levels ? 'Nivel terminado' : 'Nivel terminado · subiendo…'}
+            </p>
           )}
         </div>
 

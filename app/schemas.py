@@ -292,7 +292,7 @@ class BlindLevel(BaseModel):
     small_blind: int = Field(default=0, ge=0)
     big_blind: int = Field(default=0, ge=0)
     ante: int = Field(default=0, ge=0)
-    duration_min: int = Field(default=20, ge=0, le=600)
+    duration_min: int = Field(default=20, ge=1, le=600)  # ge=1: un nivel de 0 min trabaría el auto-avance
     is_break: bool = False
 
 class TournamentCreate(BaseModel):
