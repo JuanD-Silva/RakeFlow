@@ -25,11 +25,11 @@ function MoneyInput({ value, onChange, accent = 'gray' }) {
 }
 
 // Input de fichas (puntos al stack) — prefijo "fichas"
-function ChipsInput({ value, onChange }) {
+function ChipsInput({ value, onChange, placeholder = '0' }) {
     return (
         <div className="relative mt-1.5">
             <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[9px] text-gray-500 uppercase font-bold tracking-wide">fichas</span>
-            <input type="number" min="0" inputMode="numeric" placeholder="0" value={value} onChange={onChange}
+            <input type="number" min="0" inputMode="numeric" placeholder={placeholder} value={value} onChange={onChange}
                 className="w-full bg-gray-900/60 border border-gray-700 focus:border-violet-500 rounded-lg p-2 pl-12 text-white text-sm font-mono outline-none transition-colors" />
         </div>
     );
@@ -188,7 +188,7 @@ export default function CreateTournamentForm({ onSuccess, onCancel }) {
                             <label className="block text-green-400 text-[10px] font-bold uppercase mb-1">Buy-in · precio + fichas</label>
                             <div className="grid grid-cols-2 gap-3">
                                 <MoneyInput value={costs.buyin} onChange={setCost('buyin')} />
-                                <ChipsInput value={startingStack} onChange={(e) => setStartingStack(e.target.value)} />
+                                <ChipsInput value={startingStack} onChange={(e) => setStartingStack(e.target.value)} placeholder="Ej: 20000" />
                             </div>
                             <p className="text-[10px] text-gray-600 mt-1 ml-1">Las fichas del buy-in son el stack inicial de cada jugador.</p>
                         </div>
