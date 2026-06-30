@@ -58,17 +58,31 @@ function TemplateBar({ levels, startingStack, onLoad }) {
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [loadErr, setLoadErr] = useState(false);
 
   const fetchTemplates = async () => {
     try {
       const res = await blindTemplateService.list();
       setData({ presets: res.presets || [], saved: res.saved || [] });
+      setLoadErr(false);
     } catch {
-      // silencioso: sin plantillas el editor sigue funcionando normal
+      // El editor sigue funcionando sin plantillas; marcamos el fallo para
+      // distinguir "no hay guardadas" de "no se pudo cargar".
+      setLoadErr(true);
     }
   };
 
   useEffect(() => { fetchTemplates(); }, []);
+
+  // Re-sincronizar al abrir el panel de carga (puede haber plantillas nuevas
+  // creadas en otra pestaña/sesión desde que se montó el editor).
+  const toggleLoad = () => {
+    setOpenLoad((v) => {
+      if (!v) fetchTemplates();
+      return !v;
+    });
+    setNaming(false);
+  };
 
   const apply = (tpl) => {
     onLoad(tpl);
@@ -93,35 +107,38 @@ function TemplateBar({ levels, startingStack, onLoad }) {
 
   const remove = async (id, e) => {
     e.stopPropagation();
-    setBusy(true);
+    setBusy(true); setErr('');
     try {
       await blindTemplateService.remove(id);
       await fetchTemplates();
-    } catch {
-      // ignora; el item queda hasta el próximo fetch
+    } catch (e2) {
+      setErr(e2?.response?.data?.detail || 'No se pudo borrar la plantilla.');
     } finally {
       setBusy(false);
     }
   };
 
+  // Fila clickeable como <div role="button"> para poder anidar el botón de
+  // borrar sin meter un control interactivo dentro de un <button> (HTML inválido).
   const Item = ({ tpl, deletable }) => (
-    <button type="button" onClick={() => apply(tpl)}
-      className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-violet-500/10 group">
+    <div role="button" tabIndex={0} onClick={() => apply(tpl)}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); apply(tpl); } }}
+      className="w-full flex items-center gap-2 px-3 py-2 text-left cursor-pointer hover:bg-violet-500/10 outline-none focus:bg-violet-500/10">
       <span className="flex-1 text-sm text-white truncate">{tpl.name}</span>
       <span className="text-[10px] text-gray-500 shrink-0">{(tpl.blind_structure || []).length} niv.</span>
       {deletable && (
-        <span onClick={(e) => remove(tpl.id, e)} role="button"
-          className="shrink-0 p-1 -mr-1 text-gray-600 hover:text-red-400" title="Borrar plantilla">
+        <button type="button" onClick={(e) => remove(tpl.id, e)} disabled={busy}
+          className="shrink-0 p-1 -mr-1 text-gray-600 hover:text-red-400 disabled:opacity-40" title="Borrar plantilla">
           <XMarkIcon className="w-3.5 h-3.5" />
-        </span>
+        </button>
       )}
-    </button>
+    </div>
   );
 
   return (
     <div className="relative flex flex-wrap items-center gap-2">
       {/* Cargar plantilla */}
-      <button type="button" onClick={() => { setOpenLoad((v) => !v); setNaming(false); }}
+      <button type="button" onClick={toggleLoad}
         className="text-[10px] font-bold uppercase px-2.5 py-1.5 rounded-lg border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10 flex items-center gap-1">
         <FolderOpenIcon className="w-3.5 h-3.5" /> Cargar plantilla
       </button>
@@ -139,9 +156,12 @@ function TemplateBar({ levels, startingStack, onLoad }) {
             <p className="px-3 py-1.5 text-[9px] font-black uppercase tracking-wider text-emerald-400/70 bg-gray-950/50">Presets</p>
             {data.presets.map((tpl) => <Item key={tpl.id} tpl={tpl} deletable={false} />)}
             <p className="px-3 py-1.5 text-[9px] font-black uppercase tracking-wider text-violet-400/70 bg-gray-950/50">Mis plantillas</p>
-            {data.saved.length === 0
-              ? <p className="px-3 py-2 text-xs text-gray-600 italic">Ninguna guardada aún.</p>
-              : data.saved.map((tpl) => <Item key={tpl.id} tpl={tpl} deletable />)}
+            {loadErr
+              ? <p className="px-3 py-2 text-xs text-red-400/80 italic">No se pudieron cargar las plantillas.</p>
+              : data.saved.length === 0
+                ? <p className="px-3 py-2 text-xs text-gray-600 italic">Ninguna guardada aún.</p>
+                : data.saved.map((tpl) => <Item key={tpl.id} tpl={tpl} deletable />)}
+            {err && <p className="px-3 py-2 text-[11px] text-red-400">{err}</p>}
           </div>
         </>
       )}
