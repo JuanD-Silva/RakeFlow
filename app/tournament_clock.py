@@ -50,22 +50,65 @@ def effective_level(tournament) -> int:
     return _clamp_level(tournament, tournament.current_level or 1)
 
 
-def clock_state(tournament, now: Optional[datetime] = None) -> dict:
-    """Estado vivo del reloj para los clientes. elapsed/remaining se calculan
-    server-side; `server_time` deja que el cliente compense el drift al tickear."""
-    now = now or datetime.utcnow()
+def _due_advance(tournament, now: datetime) -> tuple:
+    """Calcula el nivel y el elapsed-en-ese-nivel CONSIDERANDO el auto-avance por
+    tiempo, sin mutar. Si el reloj corre y el nivel actual ya venció, "consume" su
+    duración y pasa al siguiente (arrastrando el sobrante), hasta el último nivel.
+    Devuelve (level_idx, elapsed_in_level)."""
     structure = _structure(tournament)
     n = len(structure)
     level_idx = _clamp_level(tournament, tournament.current_level or 1)
+    elapsed = int(tournament.clock_elapsed_seconds or 0)
+    if tournament.clock_status == "RUNNING" and tournament.level_started_at:
+        elapsed += int((now - tournament.level_started_at).total_seconds())
+    elapsed = max(0, elapsed)
+
+    if tournament.clock_status == "RUNNING":
+        while level_idx < n:
+            duration = int(structure[level_idx - 1].get("duration_min", 0)) * 60
+            if duration <= 0 or elapsed < duration:
+                break
+            elapsed -= duration
+            level_idx += 1
+    return level_idx, elapsed
+
+
+def live_level(tournament, now: Optional[datetime] = None) -> int:
+    """Nivel efectivo EN VIVO (con auto-avance por tiempo). Lo usan las ventanas de
+    rebuy/addon para cerrar aunque el current_level persistido aún no se haya puesto
+    al día."""
+    now = now or datetime.utcnow()
+    return _due_advance(tournament, now)[0]
+
+
+def advance_clock_if_due(tournament, now: Optional[datetime] = None) -> bool:
+    """Persiste el auto-avance: si el reloj corre y el nivel ya venció, mueve
+    current_level/clock_elapsed_seconds/level_started_at al nivel en vivo. Devuelve
+    True si avanzó. NO hace commit (lo hace el endpoint)."""
+    now = now or datetime.utcnow()
+    if tournament.clock_status != "RUNNING":
+        return False
+    level_idx, elapsed = _due_advance(tournament, now)
+    if level_idx != _clamp_level(tournament, tournament.current_level or 1):
+        tournament.current_level = level_idx
+        tournament.clock_elapsed_seconds = elapsed
+        tournament.level_started_at = now
+        return True
+    return False
+
+
+def clock_state(tournament, now: Optional[datetime] = None) -> dict:
+    """Estado vivo del reloj para los clientes. elapsed/remaining (y el nivel actual,
+    que auto-avanza por tiempo) se calculan server-side; el cliente solo interpola
+    local entre polls."""
+    now = now or datetime.utcnow()
+    structure = _structure(tournament)
+    n = len(structure)
+    level_idx, elapsed = _due_advance(tournament, now)
     current = structure[level_idx - 1] if n else None
     nxt = structure[level_idx] if level_idx < n else None
 
     status = tournament.clock_status or "STOPPED"
-    elapsed = int(tournament.clock_elapsed_seconds or 0)
-    if status == "RUNNING" and tournament.level_started_at:
-        elapsed += int((now - tournament.level_started_at).total_seconds())
-    elapsed = max(0, elapsed)
-
     duration_s = int((current or {}).get("duration_min", 0)) * 60
     remaining = max(0, duration_s - elapsed) if duration_s else 0
 

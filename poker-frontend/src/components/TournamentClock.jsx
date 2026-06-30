@@ -85,7 +85,7 @@ export default function TournamentClock({ tournament }) {
   useEffect(() => {
     if (!tournamentId) return;
     load();
-    const poll = setInterval(load, 10000);
+    const poll = setInterval(load, 5000);  // 5s: el reloj auto-avanza server-side, poll ágil para reflejarlo
     const onVisible = () => { if (document.visibilityState === 'visible') load(); };
     document.addEventListener('visibilitychange', onVisible);
     return () => { clearInterval(poll); document.removeEventListener('visibilitychange', onVisible); };
@@ -184,7 +184,7 @@ export default function TournamentClock({ tournament }) {
             {fmtClock(remaining)}
           </p>
           {levelOver && !isBreak && (
-            <p className="text-red-400/90 text-xs font-bold mt-1.5">Nivel terminado · subí de nivel ▶</p>
+            <p className="text-red-400/90 text-xs font-bold mt-1.5">Nivel terminado · subiendo…</p>
           )}
         </div>
 
