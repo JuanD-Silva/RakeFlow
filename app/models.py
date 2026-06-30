@@ -156,8 +156,10 @@ class Dealer(Base):
 
     name = Column(String, nullable=False, index=True)
     phone = Column(String, nullable=True)
-    hourly_rate_cop = Column(Float, default=0.0, nullable=False)  # tarifa por hora dealeada
-    rake_pct = Column(Float, default=0.0, nullable=False)         # % del rake del turno (0-100)
+    hourly_rate_cop = Column(Float, default=0.0, nullable=False)  # tarifa por hora dealeada (cash)
+    rake_pct = Column(Float, default=0.0, nullable=False)         # % del rake del turno (0-100, cash)
+    # Tarifa por hora en TORNEO (distinta a la de cash; sin %rake). Fase 1b.
+    tournament_hourly_rate_cop = Column(Float, default=0.0, nullable=False)
     is_active = Column(Boolean, default=True)
     # Cuándo se desactivó (para la purga automática a 60 días). NULL si está activo.
     deactivated_at = Column(DateTime, nullable=True)
@@ -524,3 +526,31 @@ class TournamentTable(Base):
 
     tournament = relationship("Tournament")
     players = relationship("TournamentPlayer", back_populates="table")
+
+
+class TournamentDealerShift(Base):
+    """Turno de un dealer en una MESA de torneo (Fase 1b). Análogo a DealerShift
+    pero para torneos: paga sólo horas × tarifa de torneo (sin %rake). end_time
+    NULL => turno abierto. La tarifa se snapshotea al iniciar."""
+    __tablename__ = "tournament_dealer_shifts"
+    # Un solo turno abierto por mesa de torneo (red de seguridad anti doble-tap).
+    __table_args__ = (
+        Index(
+            "uq_tournament_dealer_shift_open", "table_id", unique=True,
+            postgresql_where=text("end_time IS NULL"),
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False, index=True)  # redundante: tenant
+    tournament_id = Column(Integer, ForeignKey("tournaments.id"), nullable=False, index=True)
+    table_id = Column(Integer, ForeignKey("tournament_tables.id"), nullable=False, index=True)
+    dealer_id = Column(Integer, ForeignKey("dealers.id"), nullable=False, index=True)
+
+    start_time = Column(DateTime, default=datetime.utcnow, nullable=False)
+    end_time = Column(DateTime, nullable=True)
+    # Snapshot de la tarifa/hora de torneo al iniciar el turno.
+    tournament_hourly_rate_cop = Column(Float, nullable=False, default=0.0)
+
+    dealer = relationship("Dealer")
+    table = relationship("TournamentTable")

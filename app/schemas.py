@@ -395,6 +395,12 @@ class TournamentTableResponse(BaseModel):
     seated_count: int = 0       # jugadores ACTIVE sentados
     seats_available: int = 0    # max_seats − seated_count (clamp ≥0)
     players: List[TableSeatPlayer] = []
+    dealer_id: Optional[int] = None      # dealer con turno abierto en la mesa
+    dealer_name: Optional[str] = None
+
+class AssignDealerRequest(BaseModel):
+    dealer_id: int
+    force: bool = False  # mover al dealer aunque tenga otra mesa de torneo abierta
 
 class UnseatedPlayer(BaseModel):
     player_id: int

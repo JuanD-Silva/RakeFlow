@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
-import { TableCellsIcon, PlusIcon, TrashIcon, UserGroupIcon, ArrowsRightLeftIcon, XMarkIcon, SparklesIcon } from '@heroicons/react/24/solid';
-import { tournamentService } from '../api/services';
+import { TableCellsIcon, PlusIcon, TrashIcon, UserGroupIcon, ArrowsRightLeftIcon, XMarkIcon, SparklesIcon, IdentificationIcon } from '@heroicons/react/24/solid';
+import { tournamentService, dealerService } from '../api/services';
 
 /**
  * Panel de mesas del torneo (Fase 1a). Crear mesas, ver ocupación/cupos por mesa
@@ -14,6 +14,8 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
   const [err, setErr] = useState('');
   const [newSeats, setNewSeats] = useState(9);
   const [moveFor, setMoveFor] = useState(null); // { player_id, name }
+  const [dealerFor, setDealerFor] = useState(null); // { table_id, table_number, dealer_id }
+  const [dealers, setDealers] = useState([]);
 
   const load = useCallback(async () => {
     if (!tId) return;
@@ -22,6 +24,8 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
   }, [tId]);
 
   useEffect(() => { load(); }, [load, refreshTrigger]);
+  // Lista de dealers para el picker de asignación.
+  useEffect(() => { dealerService.list().then(setDealers).catch(() => {}); }, []);
 
   const act = async (fn) => {
     setBusy(true); setErr('');
@@ -36,6 +40,16 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
   const doMove = (playerId, tableId) => act(async () => {
     const v = await tournamentService.movePlayer(tId, playerId, tableId);
     setMoveFor(null);
+    return v;
+  });
+  const assignDealer = (tableId, dealerId, force = false) => act(async () => {
+    const v = await tournamentService.assignTableDealer(tId, tableId, dealerId, force);
+    setDealerFor(null);
+    return v;
+  });
+  const removeDealer = (tableId) => act(async () => {
+    const v = await tournamentService.endTableDealer(tId, tableId);
+    setDealerFor(null);
     return v;
   });
 
@@ -94,6 +108,12 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
                   </button>
                 </div>
               </div>
+              {/* Dealer de la mesa */}
+              <button type="button" onClick={() => setDealerFor({ table_id: t.id, table_number: t.table_number, dealer_id: t.dealer_id })} disabled={busy}
+                className={`w-full mb-1.5 flex items-center gap-1.5 text-[11px] px-2 py-1 rounded-lg border ${t.dealer_id ? 'border-amber-500/30 bg-amber-950/20 text-amber-200' : 'border-dashed border-gray-700 text-gray-500 hover:text-amber-300 hover:border-amber-500/40'}`}>
+                <IdentificationIcon className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">{t.dealer_name || 'Sin dealer — asignar'}</span>
+              </button>
               {t.players.length === 0 ? (
                 <p className="text-gray-600 text-[11px] italic py-1">Vacía</p>
               ) : (
@@ -162,6 +182,36 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
               className="mt-3 w-full text-[11px] font-bold uppercase py-2 rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700 disabled:opacity-50">
               Sacar de la mesa
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* PICKER DE DEALER PARA LA MESA */}
+      {dealerFor && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/70" onClick={() => setDealerFor(null)}>
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-4 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-white text-sm font-bold">Dealer de la <span className="text-violet-300">Mesa {dealerFor.table_number}</span></h4>
+              <button type="button" onClick={() => setDealerFor(null)} className="text-gray-500 hover:text-white"><XMarkIcon className="w-5 h-5" /></button>
+            </div>
+            {err && <p className="text-red-400 text-xs font-bold mb-2">{err}</p>}
+            <div className="max-h-[40vh] overflow-y-auto space-y-1.5">
+              {dealers.length === 0 && <p className="text-gray-600 text-xs italic py-2">No hay dealers. Creá uno en Configuración.</p>}
+              {dealers.map((d) => (
+                <button key={d.id} type="button" disabled={busy} onClick={() => assignDealer(dealerFor.table_id, d.id, true)}
+                  className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl border text-left ${dealerFor.dealer_id === d.id ? 'border-amber-500/50 bg-amber-950/30 text-amber-200' : 'border-gray-700 text-white hover:bg-amber-500/10'}`}>
+                  <IdentificationIcon className="w-4 h-4 shrink-0 text-amber-300" />
+                  <span className="flex-1 text-sm truncate">{d.name}</span>
+                  {dealerFor.dealer_id === d.id && <span className="text-[10px] text-amber-300 font-bold">EN MESA</span>}
+                </button>
+              ))}
+            </div>
+            {dealerFor.dealer_id && (
+              <button type="button" onClick={() => removeDealer(dealerFor.table_id)} disabled={busy}
+                className="mt-3 w-full text-[11px] font-bold uppercase py-2 rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700 disabled:opacity-50">
+                Sacar dealer de la mesa
+              </button>
+            )}
           </div>
         </div>
       )}

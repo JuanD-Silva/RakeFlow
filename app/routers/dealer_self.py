@@ -19,7 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from .. import models, services
+from .. import models, services, tournament_clock
 from ..dependencies import get_db, require_role
 from ..audit import log_action, AuditAction
 from ..dealer_view import utc_iso, session_players, shift_hours, ALERT_TYPES
@@ -31,6 +31,10 @@ _require_dealer = require_role([models.UserRole.DEALER])
 
 
 class BustIn(BaseModel):
+    player_id: int
+
+
+class EliminateIn(BaseModel):
     player_id: int
 
 
@@ -76,8 +80,34 @@ async def _my_open_shift(db: AsyncSession, dealer: models.Dealer, club_id: int):
     return shift, session
 
 
+async def _my_open_tournament_shift(db: AsyncSession, dealer: models.Dealer, club_id: int):
+    """(shift, table, tournament) del turno de torneo abierto del dealer, o
+    (None, None, None). Sólo si el torneo está activo (REGISTERING/RUNNING)."""
+    shift = (await db.execute(
+        select(models.TournamentDealerShift).where(
+            models.TournamentDealerShift.dealer_id == dealer.id,
+            models.TournamentDealerShift.club_id == club_id,
+            models.TournamentDealerShift.end_time.is_(None),
+        ).order_by(models.TournamentDealerShift.start_time.desc())
+    )).scalars().first()
+    if not shift:
+        return None, None, None
+    table = (await db.execute(
+        select(models.TournamentTable).where(models.TournamentTable.id == shift.table_id)
+    )).scalars().first()
+    tournament = (await db.execute(
+        select(models.Tournament).where(
+            models.Tournament.id == shift.tournament_id,
+            models.Tournament.club_id == club_id,
+        )
+    )).scalars().first()
+    if not table or not tournament or tournament.status not in ("REGISTERING", "RUNNING"):
+        return None, None, None
+    return shift, table, tournament
+
+
 # ---------------------------------------------------------
-# 1. MI MESA (operar): jugadores + cupos
+# 1. MI MESA (operar): jugadores + cupos. Cash o TORNEO (Fase 1b).
 # ---------------------------------------------------------
 @router.get("/my-table")
 async def my_table(
@@ -85,6 +115,35 @@ async def my_table(
     current_user: models.User = Depends(_require_dealer),
 ):
     dealer = await _my_dealer(db, current_user)
+
+    # 1) Mesa de TORNEO (tiene prioridad): reloj + jugadores de SU mesa.
+    t_shift, t_table, tournament = await _my_open_tournament_shift(db, dealer, current_user.club_id)
+    if tournament:
+        rows = (await db.execute(
+            select(models.TournamentPlayer, models.Player.name)
+            .join(models.Player, models.Player.id == models.TournamentPlayer.player_id)
+            .where(models.TournamentPlayer.table_id == t_table.id)
+            .where(models.TournamentPlayer.status == "ACTIVE")
+        )).all()
+        rows.sort(key=lambda x: (x[0].seat_number or 999))
+        cap = int(t_table.max_seats)
+        return {
+            "has_table": True,
+            "mode": "tournament",
+            "dealer_name": dealer.name,
+            "table_name": f"Mesa {t_table.table_number}",
+            "tournament_name": tournament.name,
+            "clock": tournament_clock.clock_state(tournament),
+            "max_players": cap,
+            "players_count": len(rows),
+            "seats_available": max(0, cap - len(rows)),
+            "players": [
+                {"player_id": tp.player_id, "name": name, "seat_number": tp.seat_number}
+                for tp, name in rows
+            ],
+        }
+
+    # 2) Mesa CASH (existente).
     shift, session = await _my_open_shift(db, dealer, current_user.club_id)
     if not session:
         return {"has_table": False, "dealer_name": dealer.name}
@@ -94,6 +153,7 @@ async def my_table(
     cap = int(session.max_players) if session.max_players else None
     return {
         "has_table": True,
+        "mode": "cash",
         "dealer_name": dealer.name,
         "table_name": session.name or f"Mesa #{session.id}",
         "is_open": True,
@@ -102,6 +162,47 @@ async def my_table(
         "seats_available": max(0, cap - active) if cap is not None else None,
         "players": players,
     }
+
+
+@router.post("/my-table/eliminate")
+async def my_table_eliminate(
+    data: EliminateIn,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(_require_dealer),
+):
+    """El dealer elimina a un jugador de SU mesa de torneo (libera el cupo).
+    Auditado con el usuario real del dealer."""
+    dealer = await _my_dealer(db, current_user)
+    t_shift, t_table, tournament = await _my_open_tournament_shift(db, dealer, current_user.club_id)
+    if not tournament:
+        raise HTTPException(status_code=409, detail="No tenés una mesa de torneo asignada")
+
+    tp = (await db.execute(
+        select(models.TournamentPlayer).where(
+            models.TournamentPlayer.tournament_id == tournament.id,
+            models.TournamentPlayer.player_id == data.player_id,
+            models.TournamentPlayer.table_id == t_table.id,
+            models.TournamentPlayer.status == "ACTIVE",
+        )
+    )).scalars().first()
+    if not tp:
+        raise HTTPException(status_code=404, detail="El jugador no está en tu mesa")
+
+    tp.status = "ELIMINATED"
+    tp.table_id = None
+    tp.seat_number = None
+    club = (await db.execute(select(models.Club).where(models.Club.id == current_user.club_id))).scalars().first()
+    if club:
+        await log_action(
+            db, request=request, club=club, user=current_user,
+            action=AuditAction.TOURNAMENT_PLAYER_ELIMINATE,
+            entity_type="TournamentPlayer", entity_id=tp.id,
+            meta={"player_id": data.player_id, "tournament_id": tournament.id,
+                  "table_id": t_table.id, "source": "dealer_authenticated"},
+        )
+    await db.commit()
+    return {"action": "eliminated", "player_id": data.player_id}
 
 
 @router.post("/my-table/bust")

@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.future import select
-from sqlalchemy import text, delete
+from sqlalchemy import text, delete, func
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from pydantic import BaseModel, Field
@@ -103,10 +103,31 @@ async def get_club_activity(public_token: str, db: AsyncSession = Depends(get_db
     for t in tourneys:
         registered = len(t.players)
         active = sum(1 for p in t.players if p.status == "ACTIVE")
+        # Cupos de mesas (Fase 1b): sólo si el torneo tiene mesas OPEN.
+        n_tables = (await db.execute(
+            select(func.count(models.TournamentTable.id))
+            .where(models.TournamentTable.tournament_id == t.id, models.TournamentTable.status == "OPEN")
+        )).scalar() or 0
+        seats_available = None
+        if n_tables:
+            total_seats = (await db.execute(
+                select(func.coalesce(func.sum(models.TournamentTable.max_seats), 0))
+                .where(models.TournamentTable.tournament_id == t.id, models.TournamentTable.status == "OPEN")
+            )).scalar() or 0
+            seated = (await db.execute(
+                select(func.count(models.TournamentPlayer.id))
+                .join(models.TournamentTable, models.TournamentTable.id == models.TournamentPlayer.table_id)
+                .where(models.TournamentTable.tournament_id == t.id,
+                       models.TournamentTable.status == "OPEN",
+                       models.TournamentPlayer.status == "ACTIVE")
+            )).scalar() or 0
+            seats_available = max(0, int(total_seats) - int(seated))
         tournaments.append({
             "name": t.name,
             "registered": registered,
             "active": active,
+            "tables": n_tables or None,
+            "seats_available": seats_available,
             "status": "En juego" if t.status not in ("REGISTERING",) else "Por iniciar",
         })
 
