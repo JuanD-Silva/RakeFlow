@@ -364,9 +364,54 @@ class TournamentPlayerSchema(BaseModel):
     double_addons_count: int = 0
     rank: Optional[int] = None
     prize_collected: int
+    table_id: Optional[int] = None
+    seat_number: Optional[int] = None
 
     class Config:
         from_attributes = True
+
+# --- MESAS DE TORNEO (Fase 1a) ---
+class TournamentTableCreate(BaseModel):
+    """Crear una mesa (o varias) para un torneo."""
+    max_seats: int = Field(default=9, ge=2, le=12)
+    count: int = Field(default=1, ge=1, le=20)  # cuántas mesas crear de una
+
+class TournamentTableUpdate(BaseModel):
+    max_seats: Optional[int] = Field(default=None, ge=2, le=12)
+    status: Optional[str] = None  # OPEN | CLOSED
+
+class TableSeatPlayer(BaseModel):
+    """Un jugador sentado en una mesa (vista de la mesa)."""
+    player_id: int
+    name: str
+    seat_number: Optional[int] = None
+    status: str
+
+class TournamentTableResponse(BaseModel):
+    id: int
+    table_number: int
+    max_seats: int
+    status: str
+    seated_count: int = 0       # jugadores ACTIVE sentados
+    seats_available: int = 0    # max_seats − seated_count (clamp ≥0)
+    players: List[TableSeatPlayer] = []
+
+class UnseatedPlayer(BaseModel):
+    player_id: int
+    name: str
+
+class TournamentTablesView(BaseModel):
+    """Vista completa de mesas de un torneo: mesas + jugadores sin mesa + totales."""
+    tables: List[TournamentTableResponse] = []
+    unseated: List[UnseatedPlayer] = []
+    total_seats: int = 0       # Σ max_seats de mesas OPEN
+    total_seated: int = 0      # Σ jugadores ACTIVE sentados
+    total_available: int = 0   # cupos libres totales (OPEN)
+
+class MovePlayerRequest(BaseModel):
+    """Mover un jugador a otra mesa (reasiento manual). table_id None = sacar de mesa."""
+    table_id: Optional[int] = None
+    seat_number: Optional[int] = None
 
 class TournamentResponse(BaseModel):
     id: int

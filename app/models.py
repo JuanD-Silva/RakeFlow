@@ -471,6 +471,11 @@ class TournamentPlayer(Base):
     # Estado
     status = Column(String, default="ACTIVE") # ACTIVE, ELIMINATED
 
+    # Mesa/asiento (Fase 1 mesas de torneo). NULL = sin sentar. La ocupación de una
+    # mesa cuenta solo jugadores ACTIVE con ese table_id (eliminar libera el cupo).
+    table_id = Column(Integer, ForeignKey("tournament_tables.id"), nullable=True, index=True)
+    seat_number = Column(Integer, nullable=True)
+
     is_tip_paid = Column(Boolean, default=False)
     tips_count = Column(Integer, default=0)
     is_buyin_paid = Column(Boolean, default=False)  # false = jugador debe la entrada
@@ -488,3 +493,25 @@ class TournamentPlayer(Base):
 
     tournament = relationship("Tournament", back_populates="players")
     player = relationship("Player")
+    table = relationship("TournamentTable", back_populates="players")
+
+
+class TournamentTable(Base):
+    """Mesa física de un torneo (Fase 1). Los jugadores se reparten entre mesas
+    (auto-balanceado al registrar). La ocupación = jugadores ACTIVE con este
+    table_id; cupos = max_seats − ocupación. No toca plata."""
+    __tablename__ = "tournament_tables"
+
+    id = Column(Integer, primary_key=True, index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False, index=True)  # redundante: tenant isolation
+    tournament_id = Column(Integer, ForeignKey("tournaments.id"), nullable=False, index=True)
+
+    table_number = Column(Integer, nullable=False)        # número visible de la mesa (1-based)
+    max_seats = Column(Integer, default=9)                # cupos de la mesa
+    status = Column(String, default="OPEN")               # OPEN | CLOSED (CLOSED = rota/consolidada, Fase 3)
+    public_token = Column(String, unique=True, index=True, nullable=True)  # link del dealer (anónimo, respaldo)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    tournament = relationship("Tournament")
+    players = relationship("TournamentPlayer", back_populates="table")

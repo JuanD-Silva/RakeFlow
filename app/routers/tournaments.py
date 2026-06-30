@@ -3,7 +3,7 @@ import secrets
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc, delete
+from sqlalchemy import select, desc, delete, func
 from sqlalchemy.orm import selectinload
 from app import models, schemas
 from datetime import datetime
@@ -199,6 +199,301 @@ async def _get_owned_tournament(db: AsyncSession, tournament_id: int, club_id: i
     return tournament
 
 
+# ---------------------------------------------------------------------------
+# MESAS DE TORNEO (Fase 1a): asientos + cupos. No toca plata.
+# Ocupación de una mesa = jugadores ACTIVE con ese table_id (eliminar libera cupo).
+# ---------------------------------------------------------------------------
+
+async def _get_owned_table(db, tournament_id, table_id, club_id) -> models.TournamentTable:
+    result = await db.execute(
+        select(models.TournamentTable)
+        .where(models.TournamentTable.id == table_id)
+        .where(models.TournamentTable.tournament_id == tournament_id)
+        .where(models.TournamentTable.club_id == club_id)
+    )
+    table = result.scalars().first()
+    if not table:
+        raise HTTPException(status_code=404, detail="Mesa no encontrada")
+    return table
+
+
+async def _active_counts_by_table(db, tournament_id) -> dict:
+    rows = (await db.execute(
+        select(models.TournamentPlayer.table_id, func.count())
+        .where(models.TournamentPlayer.tournament_id == tournament_id)
+        .where(models.TournamentPlayer.status == "ACTIVE")
+        .where(models.TournamentPlayer.table_id.isnot(None))
+        .group_by(models.TournamentPlayer.table_id)
+    )).all()
+    return {tid: c for tid, c in rows}
+
+
+async def _used_seats(db, table_id, exclude_player_row_id=None) -> set:
+    q = (
+        select(models.TournamentPlayer.seat_number)
+        .where(models.TournamentPlayer.table_id == table_id)
+        .where(models.TournamentPlayer.status == "ACTIVE")
+        .where(models.TournamentPlayer.seat_number.isnot(None))
+    )
+    if exclude_player_row_id is not None:
+        q = q.where(models.TournamentPlayer.id != exclude_player_row_id)
+    return set((await db.execute(q)).scalars().all())
+
+
+def _lowest_free_seat(used: set, max_seats: int):
+    for s in range(1, max_seats + 1):
+        if s not in used:
+            return s
+    return None
+
+
+async def _auto_seat_one(db, tournament_id, t_player) -> bool:
+    """Sienta UN jugador en la mesa OPEN más vacía con cupo. Recalcula desde DB
+    (sirve para el registro de a uno). No-op si no hay mesa con espacio."""
+    tables = (await db.execute(
+        select(models.TournamentTable)
+        .where(models.TournamentTable.tournament_id == tournament_id)
+        .where(models.TournamentTable.status == "OPEN")
+        .order_by(models.TournamentTable.table_number)
+    )).scalars().all()
+    if not tables:
+        return False
+    counts = await _active_counts_by_table(db, tournament_id)
+    best = None
+    for t in tables:
+        if counts.get(t.id, 0) < t.max_seats and (best is None or counts.get(t.id, 0) < counts.get(best.id, 0)):
+            best = t
+    if best is None:
+        return False
+    used = await _used_seats(db, best.id)
+    t_player.table_id = best.id
+    t_player.seat_number = _lowest_free_seat(used, best.max_seats)
+    return True
+
+
+async def _tables_response(db, tournament_id) -> schemas.TournamentTablesView:
+    """Mesas con ocupación + jugadores ACTIVE sentados + los sin mesa + totales."""
+    tables = (await db.execute(
+        select(models.TournamentTable)
+        .where(models.TournamentTable.tournament_id == tournament_id)
+        .order_by(models.TournamentTable.table_number)
+    )).scalars().all()
+    rows = (await db.execute(
+        select(models.TournamentPlayer, models.Player.name)
+        .join(models.Player, models.Player.id == models.TournamentPlayer.player_id)
+        .where(models.TournamentPlayer.tournament_id == tournament_id)
+        .where(models.TournamentPlayer.status == "ACTIVE")
+    )).all()
+    by_table = {}
+    unseated = []
+    for tp, name in rows:
+        if tp.table_id is None:
+            unseated.append(schemas.UnseatedPlayer(player_id=tp.player_id, name=name))
+        else:
+            by_table.setdefault(tp.table_id, []).append((tp, name))
+    out_tables = []
+    total_seats = total_seated = total_available = 0
+    for t in tables:
+        seated = by_table.get(t.id, [])
+        seated.sort(key=lambda x: (x[0].seat_number or 999))
+        avail = max(0, t.max_seats - len(seated))
+        out_tables.append(schemas.TournamentTableResponse(
+            id=t.id, table_number=t.table_number, max_seats=t.max_seats, status=t.status,
+            seated_count=len(seated), seats_available=avail,
+            players=[schemas.TableSeatPlayer(player_id=tp.player_id, name=name,
+                                             seat_number=tp.seat_number, status=tp.status)
+                     for tp, name in seated],
+        ))
+        if t.status == "OPEN":
+            total_seats += t.max_seats
+            total_seated += len(seated)
+            total_available += avail
+    return schemas.TournamentTablesView(
+        tables=out_tables, unseated=unseated,
+        total_seats=total_seats, total_seated=total_seated, total_available=total_available,
+    )
+
+
+@router.get("/{tournament_id}/tables", response_model=schemas.TournamentTablesView)
+async def list_tournament_tables(
+    tournament_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+):
+    await _get_owned_tournament(db, tournament_id, current_club.id)
+    return await _tables_response(db, tournament_id)
+
+
+@router.post("/{tournament_id}/tables", response_model=schemas.TournamentTablesView)
+async def create_tournament_tables(
+    tournament_id: int,
+    data: schemas.TournamentTableCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+):
+    tournament = await _get_owned_tournament(db, tournament_id, current_club.id)
+    start_n = (await db.execute(
+        select(func.max(models.TournamentTable.table_number))
+        .where(models.TournamentTable.tournament_id == tournament_id)
+    )).scalar() or 0
+    for i in range(data.count):
+        db.add(models.TournamentTable(
+            club_id=current_club.id, tournament_id=tournament.id,
+            table_number=start_n + i + 1, max_seats=data.max_seats, status="OPEN",
+            public_token=secrets.token_urlsafe(16),
+        ))
+    await log_action(
+        db, request=request, club=current_club, action=AuditAction.TOURNAMENT_TABLE_CREATE,
+        entity_type="Tournament", entity_id=tournament.id,
+        meta={"count": data.count, "max_seats": data.max_seats},
+    )
+    await db.commit()
+    return await _tables_response(db, tournament_id)
+
+
+@router.patch("/{tournament_id}/tables/{table_id}", response_model=schemas.TournamentTablesView)
+async def update_tournament_table(
+    tournament_id: int,
+    table_id: int,
+    data: schemas.TournamentTableUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+):
+    await _get_owned_tournament(db, tournament_id, current_club.id)
+    table = await _get_owned_table(db, tournament_id, table_id, current_club.id)
+    if data.max_seats is not None:
+        # No permitir achicar por debajo de los que ya están sentados.
+        seated = (await _active_counts_by_table(db, tournament_id)).get(table_id, 0)
+        if data.max_seats < seated:
+            raise HTTPException(status_code=400, detail=f"Hay {seated} jugadores sentados; no podés bajar los cupos por debajo.")
+        table.max_seats = data.max_seats
+    if data.status in ("OPEN", "CLOSED"):
+        table.status = data.status
+    await log_action(
+        db, request=request, club=current_club, action=AuditAction.TOURNAMENT_TABLE_UPDATE,
+        entity_type="TournamentTable", entity_id=table.id, meta={"max_seats": table.max_seats, "status": table.status},
+    )
+    await db.commit()
+    return await _tables_response(db, tournament_id)
+
+
+@router.delete("/{tournament_id}/tables/{table_id}", response_model=schemas.TournamentTablesView)
+async def delete_tournament_table(
+    tournament_id: int,
+    table_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+):
+    await _get_owned_tournament(db, tournament_id, current_club.id)
+    table = await _get_owned_table(db, tournament_id, table_id, current_club.id)
+    # Desentar a sus jugadores (vuelven al pool, se pueden auto-sentar de nuevo).
+    seated = (await db.execute(
+        select(models.TournamentPlayer)
+        .where(models.TournamentPlayer.table_id == table_id)
+    )).scalars().all()
+    for tp in seated:
+        tp.table_id = None
+        tp.seat_number = None
+    await db.delete(table)
+    await log_action(
+        db, request=request, club=current_club, action=AuditAction.TOURNAMENT_TABLE_DELETE,
+        entity_type="TournamentTable", entity_id=table_id, meta={"unseated": len(seated)},
+    )
+    await db.commit()
+    return await _tables_response(db, tournament_id)
+
+
+@router.post("/{tournament_id}/tables/auto-seat", response_model=schemas.TournamentTablesView)
+async def auto_seat_players(
+    tournament_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+):
+    """Reparte los jugadores ACTIVE sin mesa entre las mesas OPEN, balanceado."""
+    await _get_owned_tournament(db, tournament_id, current_club.id)
+    tables = (await db.execute(
+        select(models.TournamentTable)
+        .where(models.TournamentTable.tournament_id == tournament_id)
+        .where(models.TournamentTable.status == "OPEN")
+        .order_by(models.TournamentTable.table_number)
+    )).scalars().all()
+    if not tables:
+        raise HTTPException(status_code=400, detail="Creá al menos una mesa antes de auto-sentar.")
+    unseated = (await db.execute(
+        select(models.TournamentPlayer)
+        .where(models.TournamentPlayer.tournament_id == tournament_id)
+        .where(models.TournamentPlayer.status == "ACTIVE")
+        .where(models.TournamentPlayer.table_id.is_(None))
+    )).scalars().all()
+    counts = await _active_counts_by_table(db, tournament_id)
+    used_by_table = {t.id: await _used_seats(db, t.id) for t in tables}
+    seated_n = 0
+    for tp in unseated:
+        best = None
+        for t in tables:
+            if counts.get(t.id, 0) < t.max_seats and (best is None or counts.get(t.id, 0) < counts.get(best.id, 0)):
+                best = t
+        if best is None:
+            break  # todas llenas
+        seat = _lowest_free_seat(used_by_table[best.id], best.max_seats)
+        tp.table_id = best.id
+        tp.seat_number = seat
+        counts[best.id] = counts.get(best.id, 0) + 1
+        used_by_table[best.id].add(seat)
+        seated_n += 1
+    await log_action(
+        db, request=request, club=current_club, action=AuditAction.TOURNAMENT_PLAYER_SEAT,
+        entity_type="Tournament", entity_id=tournament_id, meta={"auto_seated": seated_n},
+    )
+    await db.commit()
+    return await _tables_response(db, tournament_id)
+
+
+@router.post("/{tournament_id}/players/{player_id}/move", response_model=schemas.TournamentTablesView)
+async def move_player_to_table(
+    tournament_id: int,
+    player_id: int,
+    data: schemas.MovePlayerRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+):
+    """Mueve un jugador a otra mesa (reasiento manual). table_id None = sacar de mesa."""
+    await _get_owned_tournament(db, tournament_id, current_club.id)
+    t_player = (await db.execute(
+        select(models.TournamentPlayer)
+        .where(models.TournamentPlayer.tournament_id == tournament_id)
+        .where(models.TournamentPlayer.player_id == player_id)
+    )).scalars().first()
+    if not t_player:
+        raise HTTPException(status_code=404, detail="Jugador no encontrado en el torneo")
+    if t_player.status != "ACTIVE":
+        raise HTTPException(status_code=400, detail="El jugador no está activo")
+
+    if data.table_id is None:
+        t_player.table_id = None
+        t_player.seat_number = None
+    else:
+        table = await _get_owned_table(db, tournament_id, data.table_id, current_club.id)
+        seated = await _used_seats(db, table.id, exclude_player_row_id=t_player.id)
+        if len(seated) >= table.max_seats:
+            raise HTTPException(status_code=409, detail="La mesa está llena.")
+        seat = data.seat_number if (data.seat_number and data.seat_number not in seated and data.seat_number <= table.max_seats) else _lowest_free_seat(seated, table.max_seats)
+        t_player.table_id = table.id
+        t_player.seat_number = seat
+    await log_action(
+        db, request=request, club=current_club, action=AuditAction.TOURNAMENT_PLAYER_SEAT,
+        entity_type="TournamentPlayer", entity_id=t_player.id,
+        meta={"player_id": player_id, "table_id": data.table_id},
+    )
+    await db.commit()
+    return await _tables_response(db, tournament_id)
+
+
 @router.get("/{tournament_id}/clock")
 async def get_tournament_clock(
     tournament_id: int,
@@ -383,6 +678,9 @@ async def register_player(
         tips_count=tips_count,
     )
     db.add(new_player)
+
+    # Auto-sentar en la mesa OPEN más vacía con cupo (no-op si no hay mesas).
+    await _auto_seat_one(db, tournament.id, new_player)
 
     await db.commit()
     await db.refresh(new_player)
@@ -693,6 +991,9 @@ async def eliminate_player(
         raise HTTPException(status_code=400, detail="El jugador ya fue eliminado")
 
     t_player.status = "ELIMINATED"
+    # Liberar el cupo: el eliminado deja de ocupar asiento en su mesa.
+    t_player.table_id = None
+    t_player.seat_number = None
     await db.commit()
     await db.refresh(t_player)
     return t_player
