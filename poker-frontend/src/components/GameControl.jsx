@@ -297,7 +297,7 @@ const handleCreateTournament = async (formData) => {
     try {
       await tournamentService.endTournament(activeTournament.id);
       setActiveTournament(null);
-      setViewMode("cash"); 
+      setViewMode("menu");  // volver al dashboard principal, no a la mesa cash
       setShowEndTournamentModal(false);
       refresh();
     } catch (error) {
