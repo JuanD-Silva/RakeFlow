@@ -81,6 +81,9 @@ export default function TournamentPlayerTable({ tournament, onUpdate }) {
     });
 
     const activePlayersCount = playersWithStats.filter(p => p.status === 'ACTIVE').length;
+    // Stack promedio (fichas, no plata) — calculado server-side, expuesto en la respuesta.
+    const avgStack = Number(tournament.average_stack) || 0;
+    const showAvgStack = avgStack > 0;
     const totalPotRaw = playersWithStats.reduce((acc, p) => acc + p.moneyInvested, 0);
     const houseRake = totalPotRaw * (prices.rake / 100);
     const netPot = totalPotRaw - houseRake;
@@ -182,8 +185,9 @@ export default function TournamentPlayerTable({ tournament, onUpdate }) {
             )}
 
             {/* HUD */}
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4 animate-fade-in-up">
+            <div className={`grid grid-cols-2 md:grid-cols-3 ${showAvgStack ? 'xl:grid-cols-6' : 'xl:grid-cols-5'} gap-4 animate-fade-in-up`}>
                 <StatCard icon={<UserIcon className="w-10 h-10 text-blue-500" />} label="Jugadores" value={`${activePlayersCount} / ${playersWithStats.length}`} sub="Activos / Total" color="blue" />
+                {showAvgStack && <StatCard icon={<span className="text-5xl">🪙</span>} label="Stack Prom." value={avgStack.toLocaleString('es-CO')} sub="Fichas ÷ activos" color="green" />}
                 <StatCard icon={<BanknotesIcon className="w-10 h-10 text-green-500" />} label="Pozo Bruto" value={formatCurrency(totalPotRaw)} sub="Total Recaudado" color="green" />
                 <StatCard icon={<ChartBarIcon className="w-10 h-10 text-violet-500" />} label="Rake Club" value={formatCurrency(houseRake)} sub={`${prices.rake}%`} color="violet" />
                 <StatCard icon={<HeartIcon className="w-10 h-10 text-pink-500" />} label="Staff Bonus" value={formatCurrency(totalTipsCollected)} sub={`${totalTipsCount} tips (${playersWithTip}/${playersWithStats.length} jugadores)`} color="pink" />

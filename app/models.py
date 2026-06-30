@@ -397,6 +397,12 @@ class Tournament(Base):
     starting_stack = Column(Integer, default=0)         # fichas iniciales (informativo, se muestra en TV)
     rebuy_until_level = Column(Integer, nullable=True)  # rebuys disponibles hasta este nivel (NULL = sin límite)
     addon_until_level = Column(Integer, nullable=True)  # add-ons disponibles hasta este nivel (NULL = sin límite)
+    # Fichas (no plata) que suma cada jugada al stack, para el stack promedio.
+    rebuy_chips = Column(Integer, default=0)
+    double_rebuy_chips = Column(Integer, default=0)
+    addon_chips = Column(Integer, default=0)
+    double_addon_chips = Column(Integer, default=0)
+    tip_chips = Column(Integer, default=0)
     current_level = Column(Integer, default=1)          # nivel activo (1-based en la estructura)
     clock_status = Column(String, default="STOPPED")    # STOPPED | RUNNING | PAUSED
     level_started_at = Column(DateTime, nullable=True)  # cuándo arrancó el reloj del nivel actual
