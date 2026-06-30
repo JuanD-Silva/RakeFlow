@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { publicService } from '../api/services';
 
@@ -25,13 +25,23 @@ export default function TournamentTV() {
   // Si el reloj corre, guardamos el instante (epoch ms) en que termina el nivel;
   // así el render es puro (resta now − endsAt, sin Date ni refs en render).
   const [endsAt, setEndsAt] = useState(null);
+  // endsAt en ref + marca de "ya recargué para este endsAt": al llegar a 0 dispara
+  // un refetch inmediato (el server ya auto-avanzó) → el cambio de nivel se ve
+  // sub-segundo en vez de esperar al poll de 5s.
+  const endsAtRef = useRef(null);
+  const reloadedForRef = useRef(0);
 
   const load = useCallback(async () => {
     try {
       const d = await publicService.getTournamentTV(token);
       const c = d?.clock || {};
       setData(d);
-      setEndsAt(c.clock_status === 'RUNNING' ? Date.now() + (c.remaining_seconds || 0) * 1000 : null);
+      // Solo si corre Y queda tiempo (>0): en el último nivel en overtime queda
+      // null para no recargar en loop.
+      const ends = (c.clock_status === 'RUNNING' && (c.remaining_seconds || 0) > 0)
+        ? Date.now() + c.remaining_seconds * 1000 : null;
+      setEndsAt(ends);
+      endsAtRef.current = ends;
       setError(false);
       setLoadedOnce(true);
     } catch {
@@ -50,9 +60,18 @@ export default function TournamentTV() {
   }, [token, load]);
 
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000);
+    const id = setInterval(() => {
+      setNow(Date.now());
+      // Nivel vencido: refetch inmediato (una sola vez por endsAt) para ver el
+      // auto-avance del server al toque, sin esperar al poll.
+      const ea = endsAtRef.current;
+      if (ea && Date.now() >= ea && reloadedForRef.current !== ea) {
+        reloadedForRef.current = ea;
+        load();
+      }
+    }, 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [load]);
 
   if (!loadedOnce) {
     return (

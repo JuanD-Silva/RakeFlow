@@ -36,6 +36,10 @@ export default function TournamentClock({ tournament }) {
   const [editError, setEditError] = useState(null);
   const [, forceTick] = useState(0); // sólo para re-renderizar el contador local cada segundo
   const fetchedAtRef = useRef(0);
+  // Instante (epoch ms) en que vence el nivel actual + marca de "ya recargué": al
+  // llegar a 0 dispara un refetch inmediato para ver el auto-avance al toque.
+  const endsAtRef = useRef(null);
+  const reloadedForRef = useRef(0);
 
   const openEdit = () => {
     const current = tournament?.blind_structure?.length ? tournament.blind_structure : DEFAULT_BLINDS;
@@ -71,6 +75,10 @@ export default function TournamentClock({ tournament }) {
   const apply = useCallback((state) => {
     setClock(state);
     fetchedAtRef.current = Date.now();
+    // endsAt solo si corre y queda tiempo (>0); en el último nivel en overtime
+    // queda null para no recargar en loop.
+    endsAtRef.current = (state?.clock_status === 'RUNNING' && (state?.remaining_seconds || 0) > 0)
+      ? Date.now() + state.remaining_seconds * 1000 : null;
     setError(false);
     setLoadedOnce(true);
   }, []);
@@ -91,11 +99,19 @@ export default function TournamentClock({ tournament }) {
     return () => { clearInterval(poll); document.removeEventListener('visibilitychange', onVisible); };
   }, [tournamentId, load]);
 
-  // Tick local cada segundo (sólo re-renderiza; el cálculo usa el último estado).
+  // Tick local cada segundo: re-renderiza el contador y, al vencer el nivel,
+  // dispara un refetch inmediato (una vez por endsAt) para ver el auto-avance.
   useEffect(() => {
-    const id = setInterval(() => forceTick((t) => t + 1), 1000);
+    const id = setInterval(() => {
+      forceTick((t) => t + 1);
+      const ea = endsAtRef.current;
+      if (ea && Date.now() >= ea && reloadedForRef.current !== ea) {
+        reloadedForRef.current = ea;
+        load();
+      }
+    }, 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [load]);
 
   const control = async (fn) => {
     if (busy || !tournamentId) return;
