@@ -129,11 +129,11 @@ export default function CreateTournamentForm({ onSuccess, onCancel }) {
     const isLast = step === STEPS.length;
 
     return (
-        <div className="relative">
+        <div className="relative flex flex-col max-h-[80vh]">
             {loading && <GlobalLoader />}
 
             {/* Indicador de pasos */}
-            <div className="flex items-center mb-4">
+            <div className="flex items-center mb-4 shrink-0">
                 {STEPS.map((s, i) => {
                     const done = step > s.n, active = step === s.n;
                     const Icon = s.icon;
@@ -155,7 +155,10 @@ export default function CreateTournamentForm({ onSuccess, onCancel }) {
                 })}
             </div>
 
-            <form onSubmit={handleSubmit} className="max-h-[68vh] overflow-y-auto pr-1 -mr-1">
+            <form onSubmit={handleSubmit} className="flex flex-col min-h-0 flex-1 overflow-hidden">
+
+              {/* Contenido del paso — ÚNICO que scrollea (el footer queda fijo abajo) */}
+              <div className="overflow-y-auto pr-1 -mr-1 flex-1 min-h-0">
 
                 {/* PASO 1 — BÁSICO */}
                 {step === 1 && (
@@ -300,20 +303,28 @@ export default function CreateTournamentForm({ onSuccess, onCancel }) {
                         </div>
                     </div>
                 )}
+              </div>
 
-                {/* NAVEGACIÓN */}
-                <div className="flex gap-3 pt-4 mt-2 border-t border-gray-700/50">
+                {/* NAVEGACIÓN — fuera del scroll, posición fija abajo del modal en todos
+                    los pasos (evita que el botón salte al cambiar de paso). */}
+                <div className="flex gap-3 pt-4 mt-2 border-t border-gray-700/50 shrink-0">
                     <button type="button" onClick={step === 1 ? onCancel : goBack}
                         className="flex items-center justify-center gap-1.5 px-4 py-3 bg-gray-700 hover:bg-gray-600 text-gray-200 rounded-lg font-bold text-sm">
                         <ArrowLeftIcon className="w-4 h-4" /> {step === 1 ? 'Cancelar' : 'Atrás'}
                     </button>
+                    {/* `key` distinta en cada botón: fuerza a React a desmontar el de
+                        "Siguiente" y montar uno nuevo para "Crear Torneo" en vez de
+                        reusar el mismo nodo. Si reusa el nodo y solo le cambia el
+                        type de "button" a "submit" durante goNext, la acción por
+                        defecto del MISMO click envía el form y crea el torneo
+                        saltándose el paso Premios. */}
                     {isLast ? (
-                        <button type="submit" disabled={!!payoutError}
+                        <button key="submit-create" type="submit" disabled={!!payoutError}
                             className="flex-1 flex items-center justify-center gap-2 py-3 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white rounded-lg font-bold shadow-lg shadow-violet-900/20">
                             <CheckIcon className="w-5 h-5" /> {scheduledStart ? 'Programar Torneo' : 'Crear Torneo'}
                         </button>
                     ) : (
-                        <button type="button" onClick={goNext}
+                        <button key="next-step" type="button" onClick={goNext}
                             className="flex-1 flex items-center justify-center gap-2 py-3 bg-violet-600 hover:bg-violet-500 text-white rounded-lg font-bold shadow-lg shadow-violet-900/20">
                             Siguiente <ArrowRightIcon className="w-4 h-4" />
                         </button>
