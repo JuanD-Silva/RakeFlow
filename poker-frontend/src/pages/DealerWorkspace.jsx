@@ -176,6 +176,9 @@ function TableTab({ now }) {
     </div>
   );
 
+  // Mesa de TORNEO: reloj + jugadores de la mesa + eliminar (Fase 1b).
+  if (data.mode === 'tournament') return <TournamentTableView data={data} error={error} reload={reload} />;
+
   const players = data.players || [];
   const seated = players.filter((p) => !p.is_busted);
   const cap = data.max_players;
@@ -243,6 +246,100 @@ function TableTab({ now }) {
           ))}
         </div>
         {sent && <div className="bg-emerald-900/40 border border-emerald-500/40 text-emerald-200 text-sm font-bold rounded-xl px-4 py-3 text-center">✓ Aviso enviado al staff</div>}
+      </section>
+    </div>
+  );
+}
+
+// Mesa de TORNEO del dealer: reloj del nivel + jugadores + eliminar.
+const fmtClock = (secs) => {
+  const s = Math.max(0, Math.floor(secs));
+  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+};
+
+function TournamentTableView({ data, error, reload }) {
+  const clock = data.clock || {};
+  const lvl = clock.level || {};
+  const [remaining, setRemaining] = useState(clock.remaining_seconds || 0);
+  const [busy, setBusy] = useState({});
+  const [confirmId, setConfirmId] = useState(null);
+
+  // Resync con el dato del poll (cada 30s) y tick local de 1s si el reloj corre.
+  useEffect(() => { setRemaining(clock.remaining_seconds || 0); }, [clock.remaining_seconds, clock.current_level, clock.clock_status]);
+  useEffect(() => {
+    if (clock.clock_status !== 'RUNNING') return undefined;
+    const id = setInterval(() => setRemaining((r) => Math.max(0, r - 1)), 1000);
+    return () => clearInterval(id);
+  }, [clock.clock_status, clock.remaining_seconds, clock.current_level]);
+
+  const eliminate = async (pid) => {
+    if (busy[pid]) return;
+    if (confirmId !== pid) { setConfirmId(pid); setTimeout(() => setConfirmId((c) => (c === pid ? null : c)), 3000); return; }
+    setConfirmId(null);
+    setBusy((b) => ({ ...b, [pid]: true }));
+    try { await dealerSelfService.eliminate(pid); await reload(); }
+    catch { /* noop */ } finally { setBusy((b) => ({ ...b, [pid]: false })); }
+  };
+
+  const players = data.players || [];
+  const cap = data.max_players;
+  const seats = data.seats_available;
+  const running = clock.clock_status === 'RUNNING';
+
+  return (
+    <div className="space-y-5">
+      {error && <StaleHint />}
+      <div className="text-center">
+        <p className="text-[11px] text-violet-300/80 font-bold uppercase tracking-widest">{data.tournament_name}</p>
+        <h1 className="text-2xl font-black text-white mt-0.5">{data.table_name}</h1>
+      </div>
+
+      {/* Reloj del nivel */}
+      <div className="bg-gradient-to-b from-violet-900/30 to-gray-900/40 border border-violet-500/30 rounded-2xl p-4 text-center">
+        <p className="text-[10px] text-violet-300/70 font-bold uppercase tracking-widest">
+          {lvl.is_break ? 'Break' : `Nivel ${clock.current_level || 1}`}
+          {clock.total_levels ? <span className="text-gray-600"> / {clock.total_levels}</span> : null}
+        </p>
+        <p className={`text-5xl font-black font-mono my-1 ${running ? 'text-white' : 'text-gray-500'}`}>{fmtClock(remaining)}</p>
+        {!lvl.is_break && (lvl.big_blind ? (
+          <p className="text-sm text-violet-200 font-bold">Blinds {lvl.small_blind}/{lvl.big_blind}{lvl.ante ? ` · ante ${lvl.ante}` : ''}</p>
+        ) : null)}
+        {!running && <p className="text-[10px] text-amber-400/80 font-bold uppercase mt-1">{clock.clock_status === 'PAUSED' ? 'Pausado' : 'Detenido'}</p>}
+      </div>
+
+      {/* Cupos */}
+      {cap != null && (
+        <div className="bg-gray-800/50 border border-gray-700/60 rounded-2xl px-4 py-3">
+          <div className="flex items-center justify-between text-sm">
+            <span className="font-bold text-white">{players.length}/{cap} en mesa</span>
+            <span className={`font-bold ${seats > 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
+              {seats > 0 ? `${seats} cupo${seats !== 1 ? 's' : ''} libre${seats !== 1 ? 's' : ''}` : 'Mesa llena'}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Jugadores */}
+      <section className="space-y-2">
+        <p className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">Jugadores en tu mesa</p>
+        {players.length === 0 && (
+          <div className="bg-gray-800/40 border border-gray-700/50 rounded-xl px-4 py-6 text-center text-gray-500 text-sm">Aún no hay jugadores sentados.</div>
+        )}
+        {players.map((p) => (
+          <div key={p.player_id} className="rounded-xl px-4 py-3 flex items-center justify-between gap-3 border bg-gray-800/60 border-gray-700/60">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="shrink-0 w-6 h-6 rounded-full bg-violet-500/15 text-violet-300 text-xs font-black flex items-center justify-center">{p.seat_number ?? '·'}</span>
+              <p className="font-bold text-white truncate">{p.name}</p>
+            </div>
+            <button
+              onClick={() => eliminate(p.player_id)}
+              disabled={busy[p.player_id]}
+              className={`shrink-0 text-xs font-bold px-3 py-2 rounded-lg transition-all active:scale-95 disabled:opacity-40 ${confirmId === p.player_id ? 'bg-red-500 text-white' : 'bg-red-600/80 hover:bg-red-500 text-white'}`}
+            >
+              {busy[p.player_id] ? '…' : confirmId === p.player_id ? '¿Seguro?' : 'Eliminar'}
+            </button>
+          </div>
+        ))}
       </section>
     </div>
   );

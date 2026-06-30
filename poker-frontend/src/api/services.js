@@ -391,6 +391,11 @@ endTournament: async (tournamentId) => {
   autoSeat: async (tournamentId) => (await api.post(`/tournaments/${tournamentId}/tables/auto-seat`)).data,
   movePlayer: async (tournamentId, playerId, tableId) =>
     (await api.post(`/tournaments/${tournamentId}/players/${playerId}/move`, { table_id: tableId })).data,
+  // Dealer por mesa (Fase 1b)
+  assignTableDealer: async (tournamentId, tableId, dealerId, force = false) =>
+    (await api.post(`/tournaments/${tournamentId}/tables/${tableId}/dealer`, { dealer_id: dealerId, force })).data,
+  endTableDealer: async (tournamentId, tableId) =>
+    (await api.delete(`/tournaments/${tournamentId}/tables/${tableId}/dealer`)).data,
 };
 
 // Biblioteca de estructuras de blinds (PR3): presets fijos + plantillas del club.
@@ -492,6 +497,7 @@ export const dealerService = {
 export const dealerSelfService = {
     getMyTable: async () => (await api.get('/dealer/my-table')).data,
     toggleBust: async (playerId) => (await api.post('/dealer/my-table/bust', { player_id: playerId })).data,
+    eliminate: async (playerId) => (await api.post('/dealer/my-table/eliminate', { player_id: playerId })).data,
     sendAlert: async (alertType, message = null) =>
         (await api.post('/dealer/my-table/alert', { alert_type: alertType, message })).data,
     getMyShift: async () => (await api.get('/dealer/my-shift')).data,

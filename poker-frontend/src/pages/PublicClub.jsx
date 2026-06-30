@@ -131,6 +131,7 @@ export default function PublicClub() {
                   <p className="text-white font-bold truncate flex items-center gap-2">🏆 {t.name}</p>
                   <p className="text-gray-400 text-xs mt-0.5">
                     {t.active > 0 ? `${t.active} jugando` : `${t.registered} inscrito${t.registered !== 1 ? 's' : ''}`}
+                    {t.seats_available != null && ` · ${t.seats_available} cupo${t.seats_available !== 1 ? 's' : ''}`}
                   </p>
                 </div>
                 <Badge tone={t.status === 'En juego' ? 'emerald' : 'amber'}>{t.status}</Badge>
