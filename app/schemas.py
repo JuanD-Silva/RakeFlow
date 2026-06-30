@@ -1,9 +1,10 @@
 # app/schemas.py
-from pydantic import BaseModel, Field, ConfigDict, field_validator
+from pydantic import BaseModel, Field, ConfigDict, field_validator, computed_field
 from decimal import Decimal
 from typing import Optional, List
 from datetime import datetime
 from .models import TransactionType, SessionStatus
+from . import tournament_chips
 from enum import Enum
 
 
@@ -310,6 +311,12 @@ class TournamentCreate(BaseModel):
     # default; si viene, debe tener al menos 1 nivel (una vacía rompería el reloj).
     blind_structure: Optional[List[BlindLevel]] = Field(default=None, min_length=1)
     starting_stack: Optional[int] = Field(default=0, ge=0)  # fichas iniciales (T4)
+    # Fichas que suma cada jugada al stack (para el stack promedio).
+    rebuy_chips: Optional[int] = Field(default=0, ge=0)
+    double_rebuy_chips: Optional[int] = Field(default=0, ge=0)
+    addon_chips: Optional[int] = Field(default=0, ge=0)
+    double_addon_chips: Optional[int] = Field(default=0, ge=0)
+    tip_chips: Optional[int] = Field(default=0, ge=0)
     # Ventanas de rebuy/addon (T4): nivel hasta el cual están disponibles. None = sin límite.
     rebuy_until_level: Optional[int] = Field(default=None, ge=1)
     addon_until_level: Optional[int] = Field(default=None, ge=1)
@@ -360,11 +367,26 @@ class TournamentResponse(BaseModel):
     # Reloj / niveles (T3). El estado vivo (elapsed/remaining) va en GET /clock.
     blind_structure: List[BlindLevel] = []
     starting_stack: int = 0
+    rebuy_chips: int = 0
+    double_rebuy_chips: int = 0
+    addon_chips: int = 0
+    double_addon_chips: int = 0
+    tip_chips: int = 0
     rebuy_until_level: Optional[int] = None
     addon_until_level: Optional[int] = None
     current_level: int = 1
     clock_status: str = "STOPPED"
     public_token: Optional[str] = None
+
+    @computed_field
+    @property
+    def average_stack(self) -> int:
+        return tournament_chips.chip_stats(self)["average_stack"]
+
+    @computed_field
+    @property
+    def total_chips(self) -> int:
+        return tournament_chips.chip_stats(self)["total_chips"]
 
     class Config:
         from_attributes = True

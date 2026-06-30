@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from pydantic import BaseModel, Field
 
-from .. import models, tournament_clock
+from .. import models, tournament_clock, tournament_chips
 from ..dependencies import get_db
 from ..audit import log_action, AuditAction
 
@@ -174,6 +174,7 @@ async def get_tournament_tv(public_token: str, db: AsyncSession = Depends(get_db
         "rebuys_total": rebuys,
         "addons_total": addons,
         "starting_stack": t.starting_stack or 0,
+        "average_stack": tournament_chips.chip_stats(t)["average_stack"],
         "clock": tournament_clock.clock_state(t),
     }
 

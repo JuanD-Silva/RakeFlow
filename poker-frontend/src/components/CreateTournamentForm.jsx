@@ -24,6 +24,17 @@ function MoneyInput({ value, onChange, accent = 'gray' }) {
     );
 }
 
+// Input de fichas (puntos al stack) — prefijo "fichas"
+function ChipsInput({ value, onChange }) {
+    return (
+        <div className="relative mt-1.5">
+            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[9px] text-gray-500 uppercase font-bold tracking-wide">fichas</span>
+            <input type="number" min="0" inputMode="numeric" placeholder="0" value={value} onChange={onChange}
+                className="w-full bg-gray-900/60 border border-gray-700 focus:border-violet-500 rounded-lg p-2 pl-12 text-white text-sm font-mono outline-none transition-colors" />
+        </div>
+    );
+}
+
 export default function CreateTournamentForm({ onSuccess, onCancel }) {
     const [step, setStep] = useState(1);
     const [name, setName] = useState("");
@@ -39,7 +50,11 @@ export default function CreateTournamentForm({ onSuccess, onCancel }) {
     // Programación (T4): fecha/hora de inicio. Vacío = arranca ahora (en juego).
     const [scheduledStart, setScheduledStart] = useState('');
 
-    const [costs, setCosts] = useState({ buyin: 0, tip: 0, rebuy: 0, doubleRebuy: 0, addon: 0, doubleAddon: 0 });
+    const [costs, setCosts] = useState({
+        buyin: 0, tip: 0, rebuy: 0, doubleRebuy: 0, addon: 0, doubleAddon: 0,
+        // fichas (puntos) que suma cada jugada al stack
+        tipChips: 0, rebuyChips: 0, doubleRebuyChips: 0, addonChips: 0, doubleAddonChips: 0,
+    });
     const [rake, setRake] = useState(10);
     const [placesPaid, setPlacesPaid] = useState(3);
     const [payouts, setPayouts] = useState([50, 30, 20]);
@@ -94,6 +109,11 @@ export default function CreateTournamentForm({ onSuccess, onCancel }) {
             bounty_amount: 0,
             blind_structure: blinds,
             starting_stack: Number(startingStack) || 0,
+            rebuy_chips: Number(costs.rebuyChips) || 0,
+            double_rebuy_chips: Number(costs.doubleRebuyChips) || 0,
+            addon_chips: Number(costs.addonChips) || 0,
+            double_addon_chips: Number(costs.doubleAddonChips) || 0,
+            tip_chips: Number(costs.tipChips) || 0,
             rebuy_until_level: rebuyUntil ? Number(rebuyUntil) : null,
             addon_until_level: addonUntil ? Number(addonUntil) : null,
             scheduled_start: scheduledStart || null,
@@ -160,14 +180,11 @@ export default function CreateTournamentForm({ onSuccess, onCancel }) {
                 {/* PASO 2 — COSTOS */}
                 {step === 2 && (
                     <div className="space-y-4 animate-fade-in">
-                        <div className="grid grid-cols-3 gap-3">
+                        <div className="grid grid-cols-2 gap-3">
                             <div>
                                 <label className="block text-green-400 text-[10px] font-bold uppercase mb-1">Buy-in</label>
                                 <MoneyInput value={costs.buyin} onChange={setCost('buyin')} />
-                            </div>
-                            <div>
-                                <label className="block text-yellow-500 text-[10px] font-bold uppercase mb-1">Tip (staff)</label>
-                                <MoneyInput value={costs.tip} onChange={setCost('tip')} />
+                                <p className="text-[10px] text-gray-600 mt-1 ml-1">Fichas = stack inicial (paso Reloj)</p>
                             </div>
                             <div>
                                 <label className="block text-violet-400 text-[10px] font-bold uppercase mb-1">Rake (%)</label>
@@ -179,17 +196,28 @@ export default function CreateTournamentForm({ onSuccess, onCancel }) {
                             </div>
                         </div>
 
-                        {/* REBUYS */}
+                        {/* TIP */}
+                        <div>
+                            <label className="block text-yellow-500 text-[10px] font-bold uppercase mb-1">Tip (staff)</label>
+                            <div className="grid grid-cols-2 gap-3">
+                                <MoneyInput value={costs.tip} onChange={setCost('tip')} />
+                                <ChipsInput value={costs.tipChips} onChange={setCost('tipChips')} />
+                            </div>
+                        </div>
+
+                        {/* REBUYS — precio + fichas por jugada */}
                         <div className="bg-gray-900/30 p-4 rounded-lg border border-gray-700/50 space-y-3">
-                            <label className="text-blue-400 text-xs font-bold uppercase tracking-wider block border-b border-blue-500/20 pb-1">Recompras (Rebuys)</label>
+                            <label className="text-blue-400 text-xs font-bold uppercase tracking-wider block border-b border-blue-500/20 pb-1">Recompras (Rebuys) · precio + fichas</label>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <span className="block text-[10px] text-blue-300/80 font-bold mb-1 ml-1 uppercase">Sencillo</span>
                                     <MoneyInput value={costs.rebuy} onChange={setCost('rebuy')} accent="blue" />
+                                    <ChipsInput value={costs.rebuyChips} onChange={setCost('rebuyChips')} />
                                 </div>
                                 <div>
                                     <span className="block text-[10px] text-blue-100 font-black mb-1 ml-1 uppercase">Doble</span>
                                     <MoneyInput value={costs.doubleRebuy} onChange={setCost('doubleRebuy')} accent="blue" />
+                                    <ChipsInput value={costs.doubleRebuyChips} onChange={setCost('doubleRebuyChips')} />
                                 </div>
                             </div>
                             <div className="flex items-center gap-2 px-1">
@@ -200,17 +228,19 @@ export default function CreateTournamentForm({ onSuccess, onCancel }) {
                             </div>
                         </div>
 
-                        {/* ADD-ONS */}
+                        {/* ADD-ONS — precio + fichas por jugada */}
                         <div className="bg-gray-900/30 p-4 rounded-lg border border-gray-700/50 space-y-3">
-                            <label className="text-orange-400 text-xs font-bold uppercase tracking-wider block border-b border-orange-500/20 pb-1">Add-ons</label>
+                            <label className="text-orange-400 text-xs font-bold uppercase tracking-wider block border-b border-orange-500/20 pb-1">Add-ons · precio + fichas</label>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <span className="block text-[10px] text-orange-300/80 font-bold mb-1 ml-1 uppercase">Sencillo</span>
                                     <MoneyInput value={costs.addon} onChange={setCost('addon')} accent="orange" />
+                                    <ChipsInput value={costs.addonChips} onChange={setCost('addonChips')} />
                                 </div>
                                 <div>
                                     <span className="block text-[10px] text-orange-100 font-black mb-1 ml-1 uppercase">Doble</span>
                                     <MoneyInput value={costs.doubleAddon} onChange={setCost('doubleAddon')} accent="orange" />
+                                    <ChipsInput value={costs.doubleAddonChips} onChange={setCost('doubleAddonChips')} />
                                 </div>
                             </div>
                             <div className="flex items-center gap-2 px-1">

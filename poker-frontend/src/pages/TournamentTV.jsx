@@ -167,8 +167,17 @@ export default function TournamentTV() {
                 )}
               </div>
             )}
-            {data.starting_stack > 0 && (
-              <p className="text-gray-500 text-xs md:text-lg font-bold mt-1 uppercase tracking-widest">Stack inicial {cop(data.starting_stack)}</p>
+            {(data.average_stack > 0 || data.starting_stack > 0) && (
+              <div className="text-center mt-1">
+                {data.average_stack > 0 && (
+                  <p className="text-emerald-300 font-black uppercase tracking-widest leading-none" style={{ fontSize: 'clamp(1rem, 3.5vw, 2.25rem)' }}>
+                    Stack promedio {cop(data.average_stack)}
+                  </p>
+                )}
+                {data.starting_stack > 0 && (
+                  <p className="text-gray-500 text-xs md:text-base font-bold uppercase tracking-widest mt-0.5">Stack inicial {cop(data.starting_stack)}</p>
+                )}
+              </div>
             )}
           </>
         )}
