@@ -56,6 +56,7 @@ export default function GameControl() {
   const activeSession = tables.find(t => t.id === currentTableId) || null;
 
   const [activeTournament, setActiveTournament] = useState(null);
+  const [scheduledTournaments, setScheduledTournaments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
   const [selectedPlayerForHistory, setSelectedPlayerForHistory] = useState(null);
@@ -90,13 +91,15 @@ export default function GameControl() {
 useEffect(() => {
     const checkSystemState = async () => {
       try {
-        const [openTables, tournament] = await Promise.all([
+        const [openTables, tournament, scheduled] = await Promise.all([
             sessionService.findOpenSessions(),
-            tournamentService.findActive()
+            tournamentService.findActive(),
+            tournamentService.getScheduled()
         ]);
 
         setTables(openTables);
         setActiveTournament(tournament);
+        setScheduledTournaments(scheduled || []);
 
         // En el primer load: decidir vista por defecto y mesa actual
         if (isFirstLoad.current) {
@@ -185,16 +188,43 @@ const handleCreateTournament = async (formData) => {
       try {
           // 1. Enviar al Backend
           const newTournament = await tournamentService.create(formData);
-          
-          // 2. Actualizar Estado Visual Inmediato
-          setActiveTournament(newTournament);
-          setViewMode("tournament"); 
-          
+
+          // 2a. Programado: NO entra a la vista de torneo (no está en juego);
+          // se suma a la lista de programados del menú.
+          if (newTournament.status === "SCHEDULED") {
+              setScheduledTournaments((prev) => [...prev, newTournament]);
+          } else {
+              // 2b. En juego: entrar directo al panel de control
+              setActiveTournament(newTournament);
+              setViewMode("tournament");
+          }
+
           // 3. Cerrar Modal
-          setIsModalOpen(false);  
+          setIsModalOpen(false);
       } catch (error) {
           alert("Error al crear el torneo");
           console.error(error);
+      }
+  };
+
+  const handleOpenScheduled = async (id) => {
+      try {
+          const opened = await tournamentService.openScheduled(id);
+          setScheduledTournaments((prev) => prev.filter((t) => t.id !== id));
+          setActiveTournament(opened);
+          setViewMode("tournament");
+      } catch (error) {
+          alert(error.response?.data?.detail || "No se pudo abrir el torneo programado");
+      }
+  };
+
+  const handleDeleteScheduled = async (id) => {
+      if (!window.confirm("¿Eliminar este torneo programado?")) return;
+      try {
+          await tournamentService.deleteTournament(id);
+          setScheduledTournaments((prev) => prev.filter((t) => t.id !== id));
+      } catch (error) {
+          alert(error.response?.data?.detail || "No se pudo eliminar");
       }
   };
 
@@ -616,6 +646,27 @@ const handleCreateTournament = async (formData) => {
                      <div className="bg-violet-900/30 p-2 rounded-lg"><TrophyIcon className="w-6 h-6 text-violet-200" /></div>
                      <div className="text-left"><span className="block text-xs text-violet-300 font-medium">Evento Especial</span><span className="block leading-none">Organizar Torneo</span></div>
                    </button>
+               )}
+
+               {/* Torneos PROGRAMADOS (status SCHEDULED) */}
+               {scheduledTournaments.length > 0 && (
+                 <div className="w-full space-y-2 pt-1">
+                   <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest px-1">📅 Programados</p>
+                   {scheduledTournaments.map((t) => (
+                     <div key={t.id} className="bg-gray-800/40 border border-violet-500/20 rounded-xl px-3 py-2.5 flex items-center justify-between gap-2">
+                       <div className="min-w-0">
+                         <p className="text-white font-bold text-sm truncate">{t.name}</p>
+                         <p className="text-violet-300/70 text-[11px]">
+                           {t.scheduled_start ? new Date(t.scheduled_start).toLocaleString('es-CO', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'Sin fecha'}
+                         </p>
+                       </div>
+                       <div className="flex gap-1.5 shrink-0">
+                         <button onClick={() => handleOpenScheduled(t.id)} className="text-[10px] font-bold uppercase px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-colors">Abrir</button>
+                         <button onClick={() => handleDeleteScheduled(t.id)} className="text-[10px] font-bold uppercase px-2.5 py-1.5 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors">✕</button>
+                       </div>
+                     </div>
+                   ))}
+                 </div>
                )}
 
                <div className="h-px bg-gray-700 w-full my-2"></div>

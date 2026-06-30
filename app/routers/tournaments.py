@@ -1,5 +1,6 @@
 # app/routers/tournaments.py
 import secrets
+from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, delete
@@ -39,16 +40,19 @@ async def create_tournament(
     db: AsyncSession = Depends(get_db),
     current_club: models.Club = Depends(get_current_club)
 ):
-    # Verificar si ya hay un torneo corriendo
-    result = await db.execute(
-        select(models.Tournament)
-        .where(models.Tournament.club_id == current_club.id)
-        .where(models.Tournament.status.in_(["REGISTERING", "RUNNING"]))
-    )
-    active_tournament = result.scalars().first()
-    
-    if active_tournament:
-        raise HTTPException(status_code=409, detail="Ya existe un torneo activo. Only one active tournament allowed.")
+    # Torneo PROGRAMADO: si viene scheduled_start, se crea como SCHEDULED y NO
+    # cuenta como activo (se pueden programar varios a futuro aunque corra uno).
+    is_scheduled = tournament_data.scheduled_start is not None
+
+    if not is_scheduled:
+        # Solo un torneo en juego (REGISTERING/RUNNING) por club. Los SCHEDULED no cuentan.
+        result = await db.execute(
+            select(models.Tournament)
+            .where(models.Tournament.club_id == current_club.id)
+            .where(models.Tournament.status.in_(["REGISTERING", "RUNNING"]))
+        )
+        if result.scalars().first():
+            raise HTTPException(status_code=409, detail="Ya existe un torneo activo. Only one active tournament allowed.")
 
     # Estructura de blinds: la enviada (si vino) o la plantilla default editable.
     if tournament_data.blind_structure is not None:
@@ -69,8 +73,9 @@ async def create_tournament(
         addon_price=tournament_data.addon_price,
         double_addon_price=tournament_data.double_addon_price,
         club_id=current_club.id,
-        status="REGISTERING",
+        status="SCHEDULED" if is_scheduled else "REGISTERING",
         start_time=datetime.utcnow(),
+        scheduled_start=tournament_data.scheduled_start,
         blind_structure=blinds,
         starting_stack=tournament_data.starting_stack or 0,
         rebuy_until_level=tournament_data.rebuy_until_level,
@@ -112,6 +117,62 @@ async def get_active_tournament(
     )
     tournament = result.scalars().first()
 
+    return tournament
+
+
+# 2.b TORNEOS PROGRAMADOS (status SCHEDULED) — listar y lanzar
+@router.get("/scheduled", response_model=List[schemas.TournamentResponse])
+async def list_scheduled_tournaments(
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+):
+    """Torneos programados del club (status SCHEDULED), ordenados por fecha."""
+    result = await db.execute(
+        select(models.Tournament)
+        .where(models.Tournament.club_id == current_club.id)
+        .where(models.Tournament.status == "SCHEDULED")
+        .order_by(models.Tournament.scheduled_start.asc().nullslast())
+    )
+    return result.scalars().all()
+
+
+@router.post("/{tournament_id}/open", response_model=schemas.TournamentResponse)
+async def open_scheduled_tournament(
+    tournament_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+):
+    """Lanza un torneo programado: SCHEDULED -> REGISTERING. Respeta la regla de
+    un solo torneo en juego por club (409 si ya hay uno activo)."""
+    result = await db.execute(
+        select(models.Tournament)
+        .where(models.Tournament.id == tournament_id)
+        .where(models.Tournament.club_id == current_club.id)
+    )
+    tournament = result.scalars().first()
+    if not tournament:
+        raise HTTPException(status_code=404, detail="Torneo no encontrado")
+    if tournament.status != "SCHEDULED":
+        raise HTTPException(status_code=400, detail="Este torneo no está programado")
+
+    active = await db.execute(
+        select(models.Tournament)
+        .where(models.Tournament.club_id == current_club.id)
+        .where(models.Tournament.status.in_(["REGISTERING", "RUNNING"]))
+    )
+    if active.scalars().first():
+        raise HTTPException(status_code=409, detail="Ya hay un torneo activo. Cerralo antes de abrir el programado.")
+
+    tournament.status = "REGISTERING"
+    tournament.start_time = datetime.utcnow()
+    await log_action(
+        db, request=request, club=current_club,
+        action=AuditAction.TOURNAMENT_CREATE, entity_type="Tournament", entity_id=tournament.id,
+        meta={"action": "open_scheduled", "name": tournament.name},
+    )
+    await db.commit()
+    await db.refresh(tournament)
     return tournament
 
 

@@ -373,6 +373,7 @@ class Tournament(Base):
     name = Column(String, nullable=False)
     start_time = Column(DateTime, default=datetime.utcnow)
     end_time = Column(DateTime, nullable=True)
+    scheduled_start = Column(DateTime, nullable=True)  # programado para esta fecha (status SCHEDULED)
     
     # --- ESTRUCTURA DE COSTOS ---
     buyin_amount = Column(Integer, default=0)    # Costo base de entrada (Va al Pozo Bruto)
