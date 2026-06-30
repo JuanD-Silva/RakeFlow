@@ -663,6 +663,18 @@ async def get_dealer_payments(
     )
     shift_rows = (await db.execute(shifts_stmt)).all()
 
+    # 2.b Turnos de TORNEO cerrados en el rango (Fase 2): pago = horas × tarifa torneo.
+    t_shift_rows = (await db.execute(
+        select(models.TournamentDealerShift, models.Dealer.name, models.Dealer.is_active)
+        .join(models.Dealer, models.Dealer.id == models.TournamentDealerShift.dealer_id)
+        .where(
+            models.TournamentDealerShift.club_id == current_club.id,
+            models.TournamentDealerShift.end_time.isnot(None),
+            models.TournamentDealerShift.end_time >= start_dt,
+            models.TournamentDealerShift.end_time <= end_dt,
+        )
+    )).all()
+
     # 3. Propinas asignadas a dealers en el rango (por timestamp).
     #    Join a Dealer para acotar al club (defensa tenant en la propia query).
     tips_stmt = (
@@ -716,6 +728,27 @@ async def get_dealer_payments(
         d["total_minutes"] += elapsed_min
         d["hour_payment"] += bd["hour_payment"]
         d["rake_commission"] += bd["rake_commission"]
+        d["club_payment"] += bd["club_payment"]
+
+    # Turnos de TORNEO: suman horas + pago por horas (sin %rake) al mismo dealer.
+    for shift, name, is_active in t_shift_rows:
+        elapsed_min = max(0, int((shift.end_time - shift.start_time).total_seconds() // 60))
+        hours = round(elapsed_min / 60.0, 2)
+        bd = services.shift_payment_breakdown(hours, shift.tournament_hourly_rate_cop or 0, 0, None)
+        d = dealers.setdefault(shift.dealer_id, {
+            "dealer_id": shift.dealer_id,
+            "name": name,
+            "is_active": is_active,
+            "shifts_count": 0,
+            "sessions": set(),
+            "total_minutes": 0,
+            "hour_payment": 0,
+            "rake_commission": 0,
+            "club_payment": 0,
+        })
+        d["shifts_count"] += 1
+        d["total_minutes"] += elapsed_min
+        d["hour_payment"] += bd["hour_payment"]
         d["club_payment"] += bd["club_payment"]
 
     # Asegurar que dealers con propina o liquidación pero sin turno cerrado

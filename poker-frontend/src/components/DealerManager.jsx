@@ -45,6 +45,7 @@ export default function DealerManager() {
       name: dealer.name,
       hourly_rate_cop: dealer.hourly_rate_cop,
       rake_pct: dealer.rake_pct,
+      tournament_hourly_rate_cop: dealer.tournament_hourly_rate_cop,
       is_active: dealer.is_active,
     });
     setError(null);
@@ -53,7 +54,7 @@ export default function DealerManager() {
   const startCreate = () => {
     setCreating(true);
     setEditingId(null);
-    setDraft({ name: "", hourly_rate_cop: "", rake_pct: "", is_active: true });
+    setDraft({ name: "", hourly_rate_cop: "", rake_pct: "", tournament_hourly_rate_cop: "", is_active: true });
     setError(null);
   };
 
@@ -71,6 +72,7 @@ export default function DealerManager() {
       name: draft.name.trim(),
       hourly_rate_cop: parseFloat(draft.hourly_rate_cop) || 0,
       rake_pct: parseFloat(draft.rake_pct) || 0,
+      tournament_hourly_rate_cop: parseFloat(draft.tournament_hourly_rate_cop) || 0,
     };
     try {
       if (creating) {
@@ -172,6 +174,18 @@ export default function DealerManager() {
           />
         </div>
       </div>
+      <div>
+        <label className="text-gray-500 text-[10px] font-bold uppercase px-1">🏆 $ / hora en torneo <span className="text-gray-600 normal-case font-normal">(sin rake)</span></label>
+        <input
+          type="number"
+          inputMode="numeric"
+          min="0"
+          value={draft.tournament_hourly_rate_cop ?? ''}
+          onChange={(e) => setDraft({ ...draft, tournament_hourly_rate_cop: e.target.value })}
+          className="w-full bg-gray-800 text-white border border-gray-600 rounded-lg py-2 px-3 focus:border-violet-500 outline-none font-mono text-sm"
+          placeholder="25000"
+        />
+      </div>
       {error && <p className="text-red-400 text-xs">{error}</p>}
       <div className="flex gap-2">
         <button onClick={save} className="flex-1 bg-amber-600 hover:bg-amber-500 text-white font-bold py-2 rounded-lg text-xs uppercase flex items-center justify-center gap-1">
@@ -237,6 +251,7 @@ export default function DealerManager() {
                     </p>
                     <p className="text-gray-500 text-xs font-mono mt-0.5">
                       {formatMoney(d.hourly_rate_cop)}/h · {d.rake_pct}% rake
+                      {d.tournament_hourly_rate_cop ? ` · 🏆 ${formatMoney(d.tournament_hourly_rate_cop)}/h` : ''}
                     </p>
                   </div>
                   {canManage && (

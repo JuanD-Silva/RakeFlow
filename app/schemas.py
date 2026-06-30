@@ -119,6 +119,7 @@ class DealerCreate(BaseModel):
     phone: Optional[str] = Field(None, max_length=20)
     hourly_rate_cop: float = Field(0, ge=0)
     rake_pct: float = Field(0, ge=0, le=100)
+    tournament_hourly_rate_cop: float = Field(0, ge=0)  # tarifa/hora en torneo (sin rake)
 
     @field_validator('name')
     @classmethod
@@ -130,6 +131,7 @@ class DealerUpdate(BaseModel):
     phone: Optional[str] = Field(None, max_length=20)
     hourly_rate_cop: Optional[float] = Field(None, ge=0)
     rake_pct: Optional[float] = Field(None, ge=0, le=100)
+    tournament_hourly_rate_cop: Optional[float] = Field(None, ge=0)
     is_active: Optional[bool] = None
 
 class DealerResponse(BaseSchema):
@@ -138,6 +140,7 @@ class DealerResponse(BaseSchema):
     phone: Optional[str] = None
     hourly_rate_cop: float
     rake_pct: float
+    tournament_hourly_rate_cop: float = 0.0
     is_active: bool
     user_id: Optional[int] = None          # cuenta vinculada (rol DEALER), si tiene
     has_account: bool = False              # True si user_id != None

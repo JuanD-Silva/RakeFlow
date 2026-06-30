@@ -336,9 +336,28 @@ async def my_shift(
     db: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(_require_dealer),
 ):
-    """Turno abierto actual: tiempo + pago ESTIMADO en vivo (solo horas×tarifa;
-    el % del rake del turno no se conoce hasta que el cajero lo cuente al cierre)."""
+    """Turno abierto actual: tiempo + pago ESTIMADO en vivo. En cash, sólo
+    horas×tarifa (el %rake se conoce al cierre); en TORNEO, el pago por horas es el
+    total (sin rake)."""
     dealer = await _my_dealer(db, current_user)
+
+    # Torneo primero (igual que my-table).
+    t_shift, t_table, tournament = await _my_open_tournament_shift(db, dealer, current_user.club_id)
+    if t_shift:
+        hours = shift_hours(t_shift.start_time)
+        return {
+            "has_shift": True,
+            "mode": "tournament",
+            "dealer_name": dealer.name,
+            "table_name": f"Mesa {t_table.table_number} · {tournament.name}",
+            "start_time": utc_iso(t_shift.start_time),
+            "hours": round(hours, 2),
+            "hourly_rate_cop": t_shift.tournament_hourly_rate_cop,
+            "rake_pct": 0.0,
+            "estimated_pay_hours_only": round(hours * (t_shift.tournament_hourly_rate_cop or 0.0)),
+            "note": "Torneo: pago por horas (sin %rake).",
+        }
+
     shift, session = await _my_open_shift(db, dealer, current_user.club_id)
     if not session:
         return {"has_shift": False, "dealer_name": dealer.name}
@@ -347,6 +366,7 @@ async def my_shift(
     est_pay_hours_only = round(hours * (shift.hourly_rate_cop or 0.0))
     return {
         "has_shift": True,
+        "mode": "cash",
         "dealer_name": dealer.name,
         "table_name": session.name or f"Mesa #{session.id}",
         "start_time": utc_iso(shift.start_time),
@@ -385,14 +405,45 @@ async def my_history(
         payment = services.shift_payment(hours, shift.hourly_rate_cop, shift.rake_pct, shift.declared_rake)
         history.append({
             "shift_id": shift.id,
-            "session_id": shift.session_id,
+            "kind": "cash",
             "table_name": session_name or f"Mesa #{shift.session_id}",
             "start_time": utc_iso(shift.start_time),
             "end_time": utc_iso(shift.end_time),
             "hours": round(hours, 2),
-            "declared_rake": shift.declared_rake,
             "payment": round(payment),
+            "_sort": shift.start_time,
         })
+
+    # Turnos de TORNEO cerrados (Fase 2).
+    t_rows = (await db.execute(
+        select(models.TournamentDealerShift, models.Tournament.name, models.TournamentTable.table_number)
+        .join(models.Tournament, models.Tournament.id == models.TournamentDealerShift.tournament_id)
+        .join(models.TournamentTable, models.TournamentTable.id == models.TournamentDealerShift.table_id)
+        .where(
+            models.TournamentDealerShift.dealer_id == dealer.id,
+            models.TournamentDealerShift.club_id == current_user.club_id,
+            models.TournamentDealerShift.end_time.is_not(None),
+        )
+        .order_by(models.TournamentDealerShift.start_time.desc())
+        .limit(limit)
+    )).all()
+    for shift, t_name, table_number in t_rows:
+        hours = shift_hours(shift.start_time, shift.end_time)
+        payment = services.shift_payment(hours, shift.tournament_hourly_rate_cop, 0.0, None)
+        history.append({
+            "shift_id": shift.id,
+            "kind": "tournament",
+            "table_name": f"Mesa {table_number} · {t_name}",
+            "start_time": utc_iso(shift.start_time),
+            "end_time": utc_iso(shift.end_time),
+            "hours": round(hours, 2),
+            "payment": round(payment),
+            "_sort": shift.start_time,
+        })
+
+    # Merge por fecha desc, recortado al límite, sin el campo interno de orden.
+    history.sort(key=lambda x: x["_sort"] or datetime.min, reverse=True)
+    history = [{k: v for k, v in h.items() if k != "_sort"} for h in history[:limit]]
     return {"shifts": history}
 
 
@@ -414,6 +465,15 @@ async def my_summary(
         )
     )).scalars().all()
 
+    # Turnos cerrados de TORNEO (Fase 2): pago = horas × tarifa de torneo (sin %rake).
+    t_shifts = (await db.execute(
+        select(models.TournamentDealerShift).where(
+            models.TournamentDealerShift.dealer_id == dealer.id,
+            models.TournamentDealerShift.club_id == current_user.club_id,
+            models.TournamentDealerShift.end_time.is_not(None),
+        )
+    )).scalars().all()
+
     now = datetime.utcnow()
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     earned_total = 0.0
@@ -426,6 +486,13 @@ async def my_summary(
         earned_total += pay
         hours_total += hours
         sessions_set.add(s.session_id)
+        if s.end_time and s.end_time >= month_start:
+            earned_month += pay
+    for s in t_shifts:
+        hours = shift_hours(s.start_time, s.end_time)
+        pay = services.shift_payment(hours, s.tournament_hourly_rate_cop, 0.0, None)
+        earned_total += pay
+        hours_total += hours
         if s.end_time and s.end_time >= month_start:
             earned_month += pay
 
@@ -442,7 +509,7 @@ async def my_summary(
         "earned_month": round(earned_month),
         "earned_total": round(earned_total),
         "hours_total": round(hours_total, 1),
-        "shifts_count": len(shifts),
+        "shifts_count": len(shifts) + len(t_shifts),
         "sessions_count": len(sessions_set),
         "paid_total": round(paid_total),
         "pending_total": round(earned_total - paid_total),
