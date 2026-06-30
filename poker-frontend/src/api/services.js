@@ -382,6 +382,14 @@ endTournament: async (tournamentId) => {
     })).data,
 };
 
+// Biblioteca de estructuras de blinds (PR3): presets fijos + plantillas del club.
+export const blindTemplateService = {
+  list: async () => (await api.get('/blind-templates')).data,   // { presets: [...], saved: [...] }
+  save: async ({ name, blind_structure, starting_stack }) =>
+    (await api.post('/blind-templates', { name, blind_structure, starting_stack })).data,
+  remove: async (id) => (await api.delete(`/blind-templates/${id}`)).data,
+};
+
 export const historyService = {
     getAll: async () => {
         const response = await api.get('/history/');

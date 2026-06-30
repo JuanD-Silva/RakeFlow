@@ -328,6 +328,29 @@ class BlindStructureUpdate(BaseModel):
     blind_structure: List[BlindLevel] = Field(..., min_length=1)  # al menos 1 nivel
     starting_stack: Optional[int] = Field(default=None, ge=0)
 
+# --- BIBLIOTECA DE ESTRUCTURAS DE BLINDS (PR3) ---
+class BlindTemplateCreate(BaseModel):
+    """Guardar una plantilla de blinds propia del club."""
+    name: str = Field(..., min_length=1, max_length=60)
+    blind_structure: List[BlindLevel] = Field(..., min_length=1)
+    starting_stack: int = Field(default=0, ge=0)
+
+class BlindTemplateResponse(BaseModel):
+    # id es int para las guardadas y str ("preset:slug") para los presets fijos.
+    id: int | str
+    name: str
+    blind_structure: List[BlindLevel] = []
+    starting_stack: int = 0
+    is_preset: bool = False
+
+    class Config:
+        from_attributes = True
+
+class BlindTemplateList(BaseModel):
+    """Presets fijos (para todos) + plantillas guardadas del club."""
+    presets: List[BlindTemplateResponse] = []
+    saved: List[BlindTemplateResponse] = []
+
 class TournamentPlayerSchema(BaseModel):
     id: int
     player_id: int

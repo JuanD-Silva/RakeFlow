@@ -278,7 +278,11 @@ export default function TournamentClock({ tournament }) {
               onChange={(e) => setEditStack(e.target.value)}
               className="w-full bg-gray-900 border border-gray-600 focus:border-violet-500 rounded-lg p-2 text-white font-mono outline-none" />
           </div>
-          <BlindStructureEditor value={editBlinds} onChange={setEditBlinds} />
+          <BlindStructureEditor
+            value={editBlinds} onChange={setEditBlinds}
+            startingStack={Number(editStack) || 0}
+            onLoadTemplate={(tpl) => { if (tpl.starting_stack != null) setEditStack(tpl.starting_stack); }}
+          />
           {editError && <p className="text-red-400 text-xs font-bold">{editError}</p>}
           <div className="flex gap-2 pt-1">
             <button onClick={saveBlinds} disabled={savingBlinds}

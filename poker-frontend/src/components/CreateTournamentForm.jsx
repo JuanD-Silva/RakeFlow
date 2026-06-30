@@ -263,7 +263,11 @@ export default function CreateTournamentForm({ onSuccess, onCancel }) {
                         </div>
                         <div>
                             <p className="text-white text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-2"><ClockIcon className="w-4 h-4 text-violet-400" /> Estructura de blinds</p>
-                            <BlindStructureEditor value={blinds} onChange={setBlinds} />
+                            <BlindStructureEditor
+                                value={blinds} onChange={setBlinds}
+                                startingStack={Number(startingStack) || 0}
+                                onLoadTemplate={(tpl) => { if (tpl.starting_stack != null) setStartingStack(tpl.starting_stack); }}
+                            />
                         </div>
                     </div>
                 )}
