@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
-import { TrashIcon, ChevronUpIcon, ChevronDownIcon, PlusIcon, BookmarkIcon, FolderOpenIcon, XMarkIcon } from '@heroicons/react/24/solid';
+import { TrashIcon, ChevronUpIcon, ChevronDownIcon, PlusIcon, BookmarkIcon, FolderOpenIcon, XMarkIcon, Bars3Icon } from '@heroicons/react/24/solid';
+import { DndContext, closestCenter, PointerSensor, KeyboardSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
+import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { blindTemplateService } from '../api/services';
 
 /**
@@ -26,6 +30,14 @@ export const DEFAULT_BLINDS = [
   { small_blind: 5000, big_blind: 10000, ante: 1000, duration_min: 20, is_break: false },
 ].map((l, i) => ({ ...l, level: i + 1 }));
 
+// `_uid`: id estable de cliente por nivel, para keys de React y drag&drop. Sin él,
+// usar el índice como key hace que al reordenar/borrar se "mezclen" los valores de
+// los inputs. El backend lo descarta solo (Pydantic BlindLevel ignora campos extra).
+let _uidCounter = 0;
+const newUid = () => `lvl_${++_uidCounter}`;
+const withUids = (levels) => levels.map((l) => (l._uid ? l : { ...l, _uid: newUid() }));
+const uidOf = (l, i) => l._uid || `init-${i}`;  // fallback estable hasta que se asigna el _uid real
+
 const reindex = (levels) => levels.map((l, i) => ({ ...l, level: i + 1 }));
 
 const nextLevelFrom = (prev) => {
@@ -44,6 +56,57 @@ function NumInput({ value, onChange, className = '' }) {
       onChange={(e) => onChange(e.target.value === '' ? 0 : Math.max(0, parseInt(e.target.value, 10) || 0))}
       className={`w-full bg-gray-900 border border-gray-600 focus:border-violet-500 rounded p-1.5 text-white text-sm font-mono text-center outline-none ${className}`}
     />
+  );
+}
+
+// Fila de un nivel: arrastrable (handle ≡), con flechas ↑↓, trash y resaltado al
+// seleccionar/editar. `id` es el _uid estable; index es la posición 1-based visible.
+function SortableLevel({ id, level: l, index, total, selected, onSelect, onUpdate, onRemove, onMove }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style = { transform: CSS.Transform.toString(transform), transition };
+  const base = l.is_break ? 'bg-sky-950/30 border-sky-500/30' : 'bg-gray-900/40 border-gray-700/60';
+  return (
+    <div
+      ref={setNodeRef} style={style}
+      onClick={() => onSelect(id)} onFocusCapture={() => onSelect(id)}
+      className={`rounded-lg border p-2 transition-shadow ${isDragging ? 'opacity-70 shadow-xl shadow-black/40 relative z-10' : ''} ${
+        selected ? 'ring-2 ring-violet-500 border-violet-500/60 bg-violet-950/20' : base
+      }`}
+    >
+      <div className="flex items-center gap-1.5">
+        {/* Handle de arrastre */}
+        <button
+          type="button" {...attributes} {...listeners}
+          onClick={(e) => e.stopPropagation()}
+          className="shrink-0 cursor-grab active:cursor-grabbing touch-none p-1 text-gray-600 hover:text-violet-300 focus:text-violet-300 outline-none"
+          title="Arrastrar para reordenar" aria-label={`Reordenar nivel ${index + 1}`}
+        >
+          <Bars3Icon className="w-4 h-4" />
+        </button>
+        <span className={`shrink-0 w-6 text-center text-xs font-black ${l.is_break ? 'text-sky-300' : 'text-violet-300'}`}>
+          {l.is_break ? '☕' : index + 1}
+        </span>
+        {l.is_break ? (
+          <div className="flex-1 flex items-center gap-2">
+            <span className="text-sky-300 text-xs font-bold uppercase flex-1">Break</span>
+            <span className="text-[10px] text-gray-500">min</span>
+            <div className="w-16"><NumInput value={l.duration_min} onChange={(v) => onUpdate(index, { duration_min: v })} /></div>
+          </div>
+        ) : (
+          <div className="flex-1 grid grid-cols-4 gap-1.5">
+            <NumInput value={l.small_blind} onChange={(v) => onUpdate(index, { small_blind: v })} />
+            <NumInput value={l.big_blind} onChange={(v) => onUpdate(index, { big_blind: v })} />
+            <NumInput value={l.ante} onChange={(v) => onUpdate(index, { ante: v })} className="text-violet-300/90" />
+            <NumInput value={l.duration_min} onChange={(v) => onUpdate(index, { duration_min: v })} className="text-gray-400" />
+          </div>
+        )}
+        <div className="flex shrink-0">
+          <button type="button" onClick={(e) => { e.stopPropagation(); onMove(index, -1); }} disabled={index === 0} className="p-1 text-gray-500 hover:text-white disabled:opacity-30"><ChevronUpIcon className="w-4 h-4" /></button>
+          <button type="button" onClick={(e) => { e.stopPropagation(); onMove(index, 1); }} disabled={index === total - 1} className="p-1 text-gray-500 hover:text-white disabled:opacity-30"><ChevronDownIcon className="w-4 h-4" /></button>
+          <button type="button" onClick={(e) => { e.stopPropagation(); onRemove(index); }} className="p-1 text-gray-500 hover:text-red-400"><TrashIcon className="w-4 h-4" /></button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -195,7 +258,8 @@ function TemplateBar({ levels, startingStack, onLoad }) {
 
 export default function BlindStructureEditor({ value, onChange, startingStack, onLoadTemplate }) {
   const levels = value || [];
-  const set = (next) => onChange(reindex(next));
+  const [selectedUid, setSelectedUid] = useState(null);
+  const set = (next) => onChange(reindex(withUids(next)));
   const update = (i, patch) => set(levels.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
   const remove = (i) => set(levels.filter((_, idx) => idx !== i));
   const move = (i, dir) => {
@@ -203,6 +267,32 @@ export default function BlindStructureEditor({ value, onChange, startingStack, o
     if (j < 0 || j >= levels.length) return;
     const next = [...levels];
     [next[i], next[j]] = [next[j], next[i]];
+    set(next);
+  };
+
+  // Asignar _uid a los niveles que llegan sin él (estructura default, de la DB o
+  // de una plantilla) una sola vez al montar, ANTES de editar, para que el primer
+  // tecleo no remonte la fila (no perder el foco). Las mutaciones posteriores ya
+  // pasan por `set`, que mantiene los _uid.
+  useEffect(() => {
+    if (levels.length && levels.some((l) => !l._uid)) onChange(reindex(withUids(levels)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Sensores: puntero (con umbral de 6px para no confundir tap con drag) y teclado.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const onDragEnd = ({ active, over }) => {
+    if (!over || active.id === over.id) return;
+    const from = levels.findIndex((l, i) => uidOf(l, i) === active.id);
+    const to = levels.findIndex((l, i) => uidOf(l, i) === over.id);
+    if (from < 0 || to < 0) return;
+    const next = [...levels];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
     set(next);
   };
 
@@ -235,45 +325,35 @@ export default function BlindStructureEditor({ value, onChange, startingStack, o
         </div>
       </div>
 
+      {levels.length > 0 && (
+        <p className="text-[10px] text-gray-600 px-0.5">Arrastrá <Bars3Icon className="w-3 h-3 inline -mt-0.5" /> para reordenar · tocá un nivel para resaltarlo.</p>
+      )}
+
       {levels.length === 0 && (
         <p className="text-gray-600 text-xs text-center py-4 italic">Sin niveles. Agregá uno o un break.</p>
       )}
 
-      <div className="space-y-1.5 max-h-[40vh] overflow-y-auto pr-1">
-        {levels.map((l, i) => (
-          <div key={i} className={`rounded-lg border p-2 ${l.is_break ? 'bg-sky-950/30 border-sky-500/30' : 'bg-gray-900/40 border-gray-700/60'}`}>
-            <div className="flex items-center gap-2">
-              <span className={`shrink-0 w-7 text-center text-xs font-black ${l.is_break ? 'text-sky-300' : 'text-violet-300'}`}>
-                {l.is_break ? '☕' : i + 1}
-              </span>
-              {l.is_break ? (
-                <div className="flex-1 flex items-center gap-2">
-                  <span className="text-sky-300 text-xs font-bold uppercase flex-1">Break</span>
-                  <span className="text-[10px] text-gray-500">min</span>
-                  <div className="w-16"><NumInput value={l.duration_min} onChange={(v) => update(i, { duration_min: v })} /></div>
-                </div>
-              ) : (
-                <div className="flex-1 grid grid-cols-4 gap-1.5">
-                  <NumInput value={l.small_blind} onChange={(v) => update(i, { small_blind: v })} />
-                  <NumInput value={l.big_blind} onChange={(v) => update(i, { big_blind: v })} />
-                  <NumInput value={l.ante} onChange={(v) => update(i, { ante: v })} className="text-violet-300/90" />
-                  <NumInput value={l.duration_min} onChange={(v) => update(i, { duration_min: v })} className="text-gray-400" />
-                </div>
-              )}
-              <div className="flex shrink-0">
-                <button type="button" onClick={() => move(i, -1)} disabled={i === 0} className="p-1 text-gray-500 hover:text-white disabled:opacity-30"><ChevronUpIcon className="w-4 h-4" /></button>
-                <button type="button" onClick={() => move(i, 1)} disabled={i === levels.length - 1} className="p-1 text-gray-500 hover:text-white disabled:opacity-30"><ChevronDownIcon className="w-4 h-4" /></button>
-                <button type="button" onClick={() => remove(i)} className="p-1 text-gray-500 hover:text-red-400"><TrashIcon className="w-4 h-4" /></button>
-              </div>
-            </div>
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd} modifiers={[restrictToVerticalAxis]}>
+        <SortableContext items={levels.map(uidOf)} strategy={verticalListSortingStrategy}>
+          <div className="space-y-1.5 max-h-[40vh] overflow-y-auto pr-1">
+            {levels.map((l, i) => {
+              const id = uidOf(l, i);
+              return (
+                <SortableLevel
+                  key={id} id={id} level={l} index={i} total={levels.length}
+                  selected={selectedUid === id} onSelect={setSelectedUid}
+                  onUpdate={update} onRemove={remove} onMove={move}
+                />
+              );
+            })}
           </div>
-        ))}
-      </div>
+        </SortableContext>
+      </DndContext>
 
       {/* Leyenda de columnas (no-break) */}
       {levels.some((l) => !l.is_break) && (
-        <div className="flex items-center gap-2 px-2 text-[9px] text-gray-600 font-bold uppercase tracking-wider">
-          <span className="w-7" />
+        <div className="flex items-center gap-1.5 px-2 text-[9px] text-gray-600 font-bold uppercase tracking-wider">
+          <span className="w-[52px]" />
           <div className="flex-1 grid grid-cols-4 gap-1.5 text-center">
             <span>SB</span><span>BB</span><span className="text-violet-500/70">Ante</span><span>Min</span>
           </div>
