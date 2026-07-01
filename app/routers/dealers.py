@@ -17,7 +17,7 @@ import asyncio
 from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.future import select
@@ -48,8 +48,14 @@ async def list_dealer_alerts(
     (el cajero en la mesa es quien atiende). Trae el nombre de la mesa."""
     rows = (await db.execute(
         select(models.DealerAlert, models.Session.name, models.TournamentTable.table_number)
-        .outerjoin(models.Session, models.Session.id == models.DealerAlert.session_id)
-        .outerjoin(models.TournamentTable, models.TournamentTable.id == models.DealerAlert.tournament_table_id)
+        .outerjoin(models.Session, and_(
+            models.Session.id == models.DealerAlert.session_id,
+            models.Session.club_id == models.DealerAlert.club_id,
+        ))
+        .outerjoin(models.TournamentTable, and_(
+            models.TournamentTable.id == models.DealerAlert.tournament_table_id,
+            models.TournamentTable.club_id == models.DealerAlert.club_id,
+        ))
         .where(
             models.DealerAlert.club_id == current_club.id,
             models.DealerAlert.status == status.upper(),
