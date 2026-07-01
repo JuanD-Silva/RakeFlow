@@ -281,9 +281,21 @@ function TournamentTableView({ data, error, reload }) {
     catch { /* noop */ } finally { setBusy((b) => ({ ...b, [pid]: false })); }
   };
 
+  // Pasar a otra mesa: abre un picker con las otras mesas OPEN y sus cupos.
+  const [moveFor, setMoveFor] = useState(null); // { player_id, name }
+  const [moveErr, setMoveErr] = useState('');
+  const doMove = async (pid, tableId) => {
+    if (busy[pid]) return;
+    setBusy((b) => ({ ...b, [pid]: true })); setMoveErr('');
+    try { await dealerSelfService.movePlayer(pid, tableId); setMoveFor(null); await reload(); }
+    catch (e) { setMoveErr(e?.response?.data?.detail || 'No se pudo mover.'); }
+    finally { setBusy((b) => ({ ...b, [pid]: false })); }
+  };
+
   const players = data.players || [];
   const cap = data.max_players;
   const seats = data.seats_available;
+  const otherTables = data.other_tables || [];
   const running = clock.clock_status === 'RUNNING';
 
   return (
@@ -326,21 +338,55 @@ function TournamentTableView({ data, error, reload }) {
           <div className="bg-gray-800/40 border border-gray-700/50 rounded-xl px-4 py-6 text-center text-gray-500 text-sm">Aún no hay jugadores sentados.</div>
         )}
         {players.map((p) => (
-          <div key={p.player_id} className="rounded-xl px-4 py-3 flex items-center justify-between gap-3 border bg-gray-800/60 border-gray-700/60">
+          <div key={p.player_id} className="rounded-xl px-4 py-3 flex items-center justify-between gap-2 border bg-gray-800/60 border-gray-700/60">
             <div className="flex items-center gap-2.5 min-w-0">
               <span className="shrink-0 w-6 h-6 rounded-full bg-violet-500/15 text-violet-300 text-xs font-black flex items-center justify-center">{p.seat_number ?? '·'}</span>
               <p className="font-bold text-white truncate">{p.name}</p>
             </div>
-            <button
-              onClick={() => eliminate(p.player_id)}
-              disabled={busy[p.player_id]}
-              className={`shrink-0 text-xs font-bold px-3 py-2 rounded-lg transition-all active:scale-95 disabled:opacity-40 ${confirmId === p.player_id ? 'bg-red-500 text-white' : 'bg-red-600/80 hover:bg-red-500 text-white'}`}
-            >
-              {busy[p.player_id] ? '…' : confirmId === p.player_id ? '¿Seguro?' : 'Eliminar'}
-            </button>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {otherTables.length > 0 && (
+                <button
+                  onClick={() => { setMoveFor({ player_id: p.player_id, name: p.name }); setMoveErr(''); }}
+                  disabled={busy[p.player_id]}
+                  className="text-xs font-bold px-3 py-2 rounded-lg bg-violet-600/70 hover:bg-violet-500 text-white transition-all active:scale-95 disabled:opacity-40"
+                >
+                  Mover
+                </button>
+              )}
+              <button
+                onClick={() => eliminate(p.player_id)}
+                disabled={busy[p.player_id]}
+                className={`text-xs font-bold px-3 py-2 rounded-lg transition-all active:scale-95 disabled:opacity-40 ${confirmId === p.player_id ? 'bg-red-500 text-white' : 'bg-red-600/80 hover:bg-red-500 text-white'}`}
+              >
+                {busy[p.player_id] ? '…' : confirmId === p.player_id ? '¿Seguro?' : 'Eliminar'}
+              </button>
+            </div>
           </div>
         ))}
       </section>
+
+      {/* Picker: pasar jugador a otra mesa */}
+      {moveFor && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center p-4 bg-black/70" onClick={() => setMoveFor(null)}>
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-4 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+            <h4 className="text-white text-sm font-bold mb-3">Pasar a <span className="text-violet-300">{moveFor.name}</span> a…</h4>
+            {moveErr && <p className="text-red-400 text-xs font-bold mb-2">{moveErr}</p>}
+            <div className="grid grid-cols-2 gap-2">
+              {otherTables.map((t) => {
+                const full = t.seats_available <= 0;
+                return (
+                  <button key={t.id} disabled={full || busy[moveFor.player_id]} onClick={() => doMove(moveFor.player_id, t.id)}
+                    className={`p-3 rounded-xl border text-left ${full ? 'border-gray-800 text-gray-600' : 'border-violet-500/40 text-white hover:bg-violet-500/10 active:scale-95'}`}>
+                    <span className="block text-xs font-black uppercase">Mesa {t.table_number}</span>
+                    <span className={`block text-[10px] font-mono ${full ? '' : 'text-emerald-300'}`}>{full ? 'Llena' : `${t.seats_available} cupo${t.seats_available !== 1 ? 's' : ''}`}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <button onClick={() => setMoveFor(null)} className="mt-3 w-full text-[11px] font-bold uppercase py-2 rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700">Cancelar</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
