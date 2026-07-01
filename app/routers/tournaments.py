@@ -267,86 +267,98 @@ def _lowest_free_seat(used: set, max_seats: int):
 MIN_TABLE_PLAYERS = 5
 
 
-def _compute_rebalance(tables: list) -> dict:
-    """Plan de balanceo ASISTIDO (Fase 3). Puro (no toca DB). Recibe las mesas OPEN
-    como [{id, table_number, max_seats, player_ids:[...]}] y devuelve la lista de
-    movimientos sugeridos + las mesas a cerrar (consolidación).
+def _compute_rebalance(tables: list, waiting: list = None) -> dict:
+    """Plan de NIVELADO asistido. Puro (no toca DB). Recibe las mesas OPEN como
+    [{id, table_number, max_seats, player_ids:[...]}] y la lista de espera
+    (player_ids ACTIVE sin mesa). Devuelve movimientos (from_id None = espera),
+    mesas a cerrar y quiénes quedan en espera.
 
-    Reglas: (1) romper mesas mientras sus jugadores quepan en los cupos de las
-    demás (consolidar de a una, la más vacía primero); (2) subir las mesas que
-    queden por debajo del MÍNIMO (5) moviendo desde la más llena que tenga >5 (así
-    el donante nunca baja del mínimo). Si TODAS las mesas están ≥5 y no hay nada que
-    consolidar, no toca nada (respeta el fill-first: no empareja mesas sanas). No
-    mueve a nadie en mitad de una mano (el director aplica el plan cuando quiere)."""
+    Regla del club: (1) sentar la espera; una mesa VACÍA (reserva creada a mano)
+    sólo se abre si hacen falta ≥2 lugares que no caben en las mesas en uso;
+    (2) consolidar: romper la mesa más chica mientras sus jugadores quepan en las
+    demás; (3) NIVELAR: todas las mesas en uso parejas (diferencia ≤ 1) — nunca
+    8/5 ni 9/6. El mínimo de 5 emerge de (2): una mesa corta se une si cabe.
+    No mueve a nadie en mitad de una mano (el director aplica cuando quiere)."""
+    waiting = list(waiting or [])
     state = {t["id"]: {"id": t["id"], "number": t["table_number"], "max": t["max_seats"],
                        "players": list(t["player_ids"])} for t in tables}
     origin = {}
     for t in tables:
         for pid in t["player_ids"]:
             origin[pid] = t["id"]
+    for pid in waiting:
+        origin[pid] = None
     close_ids = []
 
     def opens():
         return [s for tid, s in state.items() if tid not in close_ids]
 
-    # (0) Cerrar las mesas OPEN vacías (quedan así tras eliminaciones), dejando al
-    # menos una abierta. Sin esto, el pairing las repoblaría en vez de consolidarlas.
-    open_count = len(opens())
-    for s in [x for x in opens() if not x["players"]]:
-        if open_count > 1:
-            close_ids.append(s["id"])
-            open_count -= 1
+    in_use = [s for s in opens() if s["players"]]
+    reserve = sorted([s for s in opens() if not s["players"]], key=lambda s: s["number"])
+    if not in_use and reserve:
+        # Arranque: sin mesas en uso, la primera reserva pasa a ser la mesa 1.
+        in_use = [reserve.pop(0)]
 
-    # (1) Consolidación: romper la mesa más vacía mientras las demás la absorban.
-    changed = True
-    while changed:
-        changed = False
-        os = opens()
-        if len(os) <= 1:
-            break
-        cand = min(os, key=lambda s: len(s["players"]))
-        others = [s for s in os if s["id"] != cand["id"]]
+    # (1) Abrir reservas sólo si faltan ≥2 lugares para la espera (regla del club:
+    # no se abre una mesa nueva por un solo jugador; ese queda en espera).
+    total = sum(len(s["players"]) for s in in_use) + len(waiting)
+    capacity = sum(s["max"] for s in in_use)
+    while total - capacity >= 2 and reserve:
+        opened = reserve.pop(0)
+        in_use.append(opened)
+        capacity += opened["max"]
+
+    # (2) Sentar la espera en la mesa con menos jugadores (con cupo). Va ANTES de
+    # consolidar para que la reserva recién abierta reciba gente (si consolidáramos
+    # primero, la reserva aún vacía se cerraría). Los que no caben siguen esperando.
+    still_waiting = []
+    for pid in waiting:
+        target = min((s for s in in_use if len(s["players"]) < s["max"]),
+                     key=lambda s: len(s["players"]), default=None)
+        if target is None:
+            still_waiting.append(pid)
+        else:
+            target["players"].append(pid)
+
+    # (3) Consolidación: romper la mesa más chica mientras las demás la absorban.
+    while len(in_use) > 1:
+        cand = min(in_use, key=lambda s: len(s["players"]))
+        others = [s for s in in_use if s["id"] != cand["id"]]
         free = sum(s["max"] - len(s["players"]) for s in others)
-        if cand["players"] and len(cand["players"]) <= free:
-            for pid in list(cand["players"]):
-                target = min((s for s in others if len(s["players"]) < s["max"]),
-                             key=lambda s: len(s["players"]), default=None)
-                if target is None:
-                    break
-                target["players"].append(pid)
-                cand["players"].remove(pid)
-            close_ids.append(cand["id"])
-            changed = True
+        if len(cand["players"]) > free:
+            break
+        for pid in list(cand["players"]):
+            target = min((s for s in others if len(s["players"]) < s["max"]),
+                         key=lambda s: len(s["players"]))
+            target["players"].append(pid)
+            cand["players"].remove(pid)
+        close_ids.append(cand["id"])
+        in_use = others
 
-    # (2) Subir las mesas por debajo del MÍNIMO moviendo del más lleno (que quede
-    # ≥ MÍNIMO tras donar). No empareja mesas sanas: si todas están ≥5, no toca nada.
+    # (4) NIVELAR: mover del más lleno al más vacío hasta que la diferencia sea ≤ 1.
     guard = 0
-    while guard < 1000:
+    while len(in_use) > 1 and guard < 1000:
         guard += 1
-        os = opens()
-        if len(os) <= 1:
+        fullest = max(in_use, key=lambda s: len(s["players"]))
+        emptiest = min(in_use, key=lambda s: len(s["players"]))
+        if len(fullest["players"]) - len(emptiest["players"]) < 2 or len(emptiest["players"]) >= emptiest["max"]:
             break
-        below = [s for s in os if len(s["players"]) < MIN_TABLE_PLAYERS and len(s["players"]) < s["max"]]
-        if not below:
-            break
-        tgt = min(below, key=lambda s: len(s["players"]))
-        donors = [s for s in os if s["id"] != tgt["id"] and len(s["players"]) > MIN_TABLE_PLAYERS]
-        if not donors:
-            break  # nadie puede donar sin caer bajo el mínimo
-        donor = max(donors, key=lambda s: len(s["players"]))
-        tgt["players"].append(donor["players"].pop())
+        emptiest["players"].append(fullest["players"].pop())
 
-    # Movimiento NETO por jugador (origen → destino final), sin no-ops.
-    final = {pid: tid for tid, s in state.items() for pid in s["players"]}
+    # Movimiento NETO por jugador (origen → destino final), sin no-ops. Las
+    # reservas no usadas quedan OPEN vacías (no se cierran: las maneja el director).
+    final = {pid: tid for tid, s in state.items() for pid in s["players"] if tid not in close_ids}
     moves = [{"player_id": pid, "from_id": origin[pid], "to_id": final[pid]}
-             for pid in origin if final.get(pid) != origin[pid]]
-    return {"moves": moves, "close_table_ids": close_ids}
+             for pid in origin if pid in final and final[pid] != origin[pid]]
+    return {"moves": moves, "close_table_ids": close_ids, "still_waiting": still_waiting}
 
 
 async def _auto_seat_one(db, tournament_id, t_player) -> bool:
     """Sienta UN jugador en la PRIMERA mesa OPEN (por número) con cupo — fill-first:
-    se llena una mesa antes de usar la siguiente. Recalcula desde DB (registro de a
-    uno). No-op si no hay mesa con espacio."""
+    se llena una mesa antes de usar la siguiente. Una mesa VACÍA (reserva) NO se
+    estrena por un solo registro: el jugador queda en espera y el director la abre
+    con "Nivelar" cuando hay ≥2 esperando. Recalcula desde DB (registro de a uno).
+    No-op si no hay mesa disponible (queda en espera)."""
     tables = (await db.execute(
         select(models.TournamentTable)
         .where(models.TournamentTable.tournament_id == tournament_id)
@@ -356,7 +368,11 @@ async def _auto_seat_one(db, tournament_id, t_player) -> bool:
     if not tables:
         return False
     counts = await _active_counts_by_table(db, tournament_id)
-    best = next((t for t in tables if counts.get(t.id, 0) < t.max_seats), None)
+    in_use = [t for t in tables if counts.get(t.id, 0) > 0]
+    if in_use:
+        best = next((t for t in in_use if counts.get(t.id, 0) < t.max_seats), None)
+    else:
+        best = tables[0]  # arranque: torneo sin nadie sentado, se estrena la mesa 1
     if best is None:
         return False
     used = await _used_seats(db, best.id)
@@ -521,7 +537,9 @@ async def auto_seat_players(
     db: AsyncSession = Depends(get_db),
     current_club: models.Club = Depends(get_current_club),
 ):
-    """Reparte los jugadores ACTIVE sin mesa entre las mesas OPEN, balanceado."""
+    """Sienta a los que esperan, fill-first, SOLO en mesas ya en uso (una reserva
+    vacía se abre con "Nivelar" cuando hay ≥2 esperando, no acá). Los que no caben
+    siguen en espera."""
     await _get_owned_tournament(db, tournament_id, current_club.id)
     tables = (await db.execute(
         select(models.TournamentTable)
@@ -541,10 +559,13 @@ async def auto_seat_players(
     used_by_table = {t.id: await _used_seats(db, t.id) for t in tables}
     seated_n = 0
     for tp in unseated:
-        # fill-first: primera mesa (por número) con cupo.
-        best = next((t for t in tables if counts.get(t.id, 0) < t.max_seats), None)
+        in_use = [t for t in tables if counts.get(t.id, 0) > 0]
+        if in_use:
+            best = next((t for t in in_use if counts.get(t.id, 0) < t.max_seats), None)
+        else:
+            best = tables[0]  # arranque: nadie sentado aún
         if best is None:
-            break  # todas llenas
+            break  # mesas en uso llenas: el resto queda en espera (Nivelar abre reserva)
         seat = _lowest_free_seat(used_by_table[best.id], best.max_seats)
         tp.table_id = best.id
         tp.seat_number = seat
@@ -625,20 +646,23 @@ async def _open_tables_model(db, tournament_id):
         .join(models.Player, models.Player.id == models.TournamentPlayer.player_id)
         .where(models.TournamentPlayer.tournament_id == tournament_id)
         .where(models.TournamentPlayer.status == "ACTIVE")
-        .where(models.TournamentPlayer.table_id.isnot(None))
     )).all()
     by_table, names, tp_by_player = {}, {}, {}
+    waiting = []
     for tp, name in rows:
-        by_table.setdefault(tp.table_id, []).append(tp)
         names[tp.player_id] = name
         tp_by_player[tp.player_id] = tp
-    return tables, by_table, names, tp_by_player
+        if tp.table_id is None:
+            waiting.append(tp.player_id)
+        else:
+            by_table.setdefault(tp.table_id, []).append(tp)
+    return tables, by_table, names, tp_by_player, waiting
 
 
-def _plan_from_model(tables, by_table):
+def _plan_from_model(tables, by_table, waiting):
     model = [{"id": t.id, "table_number": t.table_number, "max_seats": t.max_seats,
               "player_ids": [tp.player_id for tp in by_table.get(t.id, [])]} for t in tables]
-    return _compute_rebalance(model)
+    return _compute_rebalance(model, waiting)
 
 
 @router.get("/{tournament_id}/tables/rebalance-plan")
@@ -647,10 +671,11 @@ async def rebalance_plan(
     db: AsyncSession = Depends(get_db),
     current_club: models.Club = Depends(get_current_club),
 ):
-    """Sugerencia de balanceo (read-only): movimientos + mesas a cerrar."""
+    """Sugerencia de nivelado (read-only): movimientos (desde mesa o desde la
+    espera) + mesas a cerrar + quiénes siguen esperando."""
     await _get_owned_tournament(db, tournament_id, current_club.id)
-    tables, by_table, names, _ = await _open_tables_model(db, tournament_id)
-    plan = _plan_from_model(tables, by_table)
+    tables, by_table, names, _, waiting = await _open_tables_model(db, tournament_id)
+    plan = _plan_from_model(tables, by_table, waiting)
     num = {t.id: t.table_number for t in tables}
     return {
         "moves": [{
@@ -659,6 +684,7 @@ async def rebalance_plan(
             "to_table_id": m["to_id"], "to_table_number": num.get(m["to_id"]),
         } for m in plan["moves"]],
         "close_tables": [{"id": tid, "table_number": num.get(tid)} for tid in plan["close_table_ids"]],
+        "still_waiting": [{"player_id": pid, "player_name": names.get(pid, "?")} for pid in plan["still_waiting"]],
         "any": bool(plan["moves"] or plan["close_table_ids"]),
     }
 
@@ -670,11 +696,12 @@ async def rebalance_apply(
     db: AsyncSession = Depends(get_db),
     current_club: models.Club = Depends(get_current_club),
 ):
-    """Aplica el balanceo: recalcula el plan fresco (no confía en el cliente),
-    reasienta a los jugadores y cierra las mesas consolidadas (más su dealer)."""
+    """Aplica el nivelado: recalcula el plan fresco (no confía en el cliente),
+    sienta la espera, reasienta a los jugadores y cierra las mesas consolidadas
+    (más su dealer)."""
     await _get_owned_tournament(db, tournament_id, current_club.id)
-    tables, by_table, _, tp_by_player = await _open_tables_model(db, tournament_id)
-    plan = _plan_from_model(tables, by_table)
+    tables, by_table, _, tp_by_player, waiting = await _open_tables_model(db, tournament_id)
+    plan = _plan_from_model(tables, by_table, waiting)
     if not plan["moves"] and not plan["close_table_ids"]:
         return await _tables_response(db, tournament_id)
 
@@ -683,7 +710,8 @@ async def rebalance_apply(
     seat_by_player = {tp.player_id: tp.seat_number for tps in by_table.values() for tp in tps}
     for m in plan["moves"]:
         tp = tp_by_player[m["player_id"]]
-        used.get(m["from_id"], set()).discard(seat_by_player.get(m["player_id"]))
+        if m["from_id"] is not None:
+            used.get(m["from_id"], set()).discard(seat_by_player.get(m["player_id"]))
         seat = _lowest_free_seat(used.setdefault(m["to_id"], set()), max_by_id.get(m["to_id"], 0))
         if seat is None:
             # No debería pasar (el plan garantiza cupo), pero no persistimos un
