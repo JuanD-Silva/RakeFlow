@@ -388,6 +388,7 @@ async def _tables_response(db, tournament_id) -> schemas.TournamentTablesView:
         .join(models.Player, models.Player.id == models.TournamentPlayer.player_id)
         .where(models.TournamentPlayer.tournament_id == tournament_id)
         .where(models.TournamentPlayer.status == "ACTIVE")
+        .order_by(models.TournamentPlayer.id)  # la espera sale FIFO (orden de inscripción)
     )).all()
     by_table = {}
     unseated = []
@@ -561,6 +562,7 @@ async def auto_seat_players(
         .where(models.TournamentPlayer.tournament_id == tournament_id)
         .where(models.TournamentPlayer.status == "ACTIVE")
         .where(models.TournamentPlayer.table_id.is_(None))
+        .order_by(models.TournamentPlayer.id)  # FIFO: primero en anotarse, primero sentado
     )).scalars().all()
     counts = await _active_counts_by_table(db, tournament_id)
     used_by_table = {t.id: await _used_seats(db, t.id) for t in tables}
@@ -653,6 +655,7 @@ async def _open_tables_model(db, tournament_id):
         .join(models.Player, models.Player.id == models.TournamentPlayer.player_id)
         .where(models.TournamentPlayer.tournament_id == tournament_id)
         .where(models.TournamentPlayer.status == "ACTIVE")
+        .order_by(models.TournamentPlayer.id)  # waiting queda FIFO (orden de inscripción)
     )).all()
     open_ids = {t.id for t in tables}
     by_table, names, tp_by_player = {}, {}, {}
