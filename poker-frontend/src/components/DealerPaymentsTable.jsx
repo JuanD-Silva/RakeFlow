@@ -50,6 +50,16 @@ export default function DealerPaymentsTable({ startISO, endISO }) {
     </div>
   );
 
+  // Contexto del dealer: mesas cash + torneos + turnos, omitiendo lo que sea 0.
+  // Así un dealer solo de torneos no muestra "0 mesas".
+  const ctx = (d) => {
+    const parts = [];
+    if (d.sessions_count > 0) parts.push(`${d.sessions_count} mesa${d.sessions_count !== 1 ? 's' : ''}`);
+    if (d.tournaments_count > 0) parts.push(`${d.tournaments_count} torneo${d.tournaments_count !== 1 ? 's' : ''}`);
+    parts.push(`${d.shifts_count} turno${d.shifts_count !== 1 ? 's' : ''}`);
+    return parts.join(' · ');
+  };
+
   const onLiquidated = () => { setLiquidating(null); setReloadKey(k => k + 1); };
   const PaidBadge = ({ d }) => (
     d.pending <= 0
@@ -90,7 +100,7 @@ export default function DealerPaymentsTable({ startISO, endISO }) {
                   {!d.is_active && <span className="text-[8px] bg-gray-700 text-gray-400 px-1.5 py-0.5 rounded-full uppercase">Inactivo</span>}
                   <PaidBadge d={d} />
                 </h3>
-                <p className="text-[11px] text-gray-500">{d.sessions_count} mesa{d.sessions_count !== 1 ? 's' : ''} · {d.hours}h</p>
+                <p className="text-[11px] text-gray-500">{ctx(d)} · {d.hours}h</p>
               </div>
               <p className="text-lg font-mono font-black text-emerald-400 shrink-0">{formatMoney(d.club_payment)}</p>
             </div>
@@ -140,7 +150,7 @@ export default function DealerPaymentsTable({ startISO, endISO }) {
                     {!d.is_active && <span className="text-[8px] bg-gray-700 text-gray-400 px-1.5 py-0.5 rounded-full uppercase">Inactivo</span>}
                     <PaidBadge d={d} />
                   </span>
-                  <div className="text-[10px] text-gray-500 font-normal">{d.sessions_count} mesa{d.sessions_count !== 1 ? 's' : ''} · {d.shifts_count} turno{d.shifts_count !== 1 ? 's' : ''}</div>
+                  <div className="text-[10px] text-gray-500 font-normal">{ctx(d)}</div>
                 </td>
                 <td className="p-4 text-right font-mono text-gray-300">{d.hours}h</td>
                 <td className="p-4 text-right font-mono text-white font-bold">{formatMoney(d.club_payment)}</td>

@@ -718,6 +718,7 @@ async def get_dealer_payments(
             "is_active": is_active,
             "shifts_count": 0,
             "sessions": set(),
+            "tournaments": set(),
             "total_minutes": 0,
             "hour_payment": 0,
             "rake_commission": 0,
@@ -741,12 +742,14 @@ async def get_dealer_payments(
             "is_active": is_active,
             "shifts_count": 0,
             "sessions": set(),
+            "tournaments": set(),
             "total_minutes": 0,
             "hour_payment": 0,
             "rake_commission": 0,
             "club_payment": 0,
         })
         d["shifts_count"] += 1
+        d["tournaments"].add(shift.tournament_id)
         d["total_minutes"] += elapsed_min
         d["hour_payment"] += bd["hour_payment"]
         d["club_payment"] += bd["club_payment"]
@@ -765,7 +768,7 @@ async def get_dealer_payments(
                 continue
             dealers[d_id] = {
                 "dealer_id": d_id, "name": dr[0], "is_active": dr[1],
-                "shifts_count": 0, "sessions": set(), "total_minutes": 0,
+                "shifts_count": 0, "sessions": set(), "tournaments": set(), "total_minutes": 0,
                 "hour_payment": 0, "rake_commission": 0, "club_payment": 0,
             }
 
@@ -786,6 +789,7 @@ async def get_dealer_payments(
             "is_active": d["is_active"],
             "shifts_count": d["shifts_count"],
             "sessions_count": len(d["sessions"]),
+            "tournaments_count": len(d["tournaments"]),
             "hours": hours,
             "hour_payment": round(d["hour_payment"]),
             "rake_commission": round(d["rake_commission"]),
