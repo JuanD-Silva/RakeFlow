@@ -274,8 +274,9 @@ def _compute_rebalance(tables: list) -> dict:
 
     Reglas: (1) romper mesas mientras sus jugadores quepan en los cupos de las
     demás (consolidar de a una, la más vacía primero); (2) subir las mesas que
-    queden por debajo del MÍNIMO (5) moviendo del más lleno, sin bajar al donante
-    del mínimo (mesas sanas entre 5 y max NO se tocan — respeta el fill-first). No
+    queden por debajo del MÍNIMO (5) moviendo desde la más llena que tenga >5 (así
+    el donante nunca baja del mínimo). Si TODAS las mesas están ≥5 y no hay nada que
+    consolidar, no toca nada (respeta el fill-first: no empareja mesas sanas). No
     mueve a nadie en mitad de una mano (el director aplica el plan cuando quiere)."""
     state = {t["id"]: {"id": t["id"], "number": t["table_number"], "max": t["max_seats"],
                        "players": list(t["player_ids"])} for t in tables}
