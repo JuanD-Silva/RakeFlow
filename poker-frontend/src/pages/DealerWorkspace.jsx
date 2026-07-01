@@ -362,12 +362,15 @@ function ShiftTab() {
     <div className="space-y-4">
       <h2 className="text-lg font-black text-white">Turno actual</h2>
       <div className="bg-gray-800/50 border border-gray-700/60 rounded-2xl p-5 space-y-3">
+        {data.mode === 'tournament' && (
+          <span className="inline-block text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-violet-500/15 text-violet-300 ring-1 ring-violet-500/30">🏆 Torneo</span>
+        )}
         <Row label="Mesa" value={data.table_name} />
         <Row label="Tiempo dealeado" value={`${data.hours} h`} />
         <Row label="Tarifa" value={`${cop(data.hourly_rate_cop)}/h`} />
-        <Row label="% rake del turno" value={`${data.rake_pct}%`} />
+        {data.mode !== 'tournament' && <Row label="% rake del turno" value={`${data.rake_pct}%`} />}
         <div className="border-t border-gray-700 pt-3">
-          <Row label="Pago estimado (horas)" value={cop(data.estimated_pay_hours_only)} strong />
+          <Row label={data.mode === 'tournament' ? 'Pago por horas' : 'Pago estimado (horas)'} value={cop(data.estimated_pay_hours_only)} strong />
           <p className="text-[11px] text-gray-500 mt-2">{data.note}</p>
         </div>
       </div>
@@ -389,9 +392,11 @@ function HistoryTab() {
     <div className="space-y-3">
       <h2 className="text-lg font-black text-white">Mis turnos</h2>
       {shifts.map((s) => (
-        <div key={s.shift_id} className="bg-gray-800/60 border border-gray-700/60 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+        <div key={`${s.kind}-${s.shift_id}`} className="bg-gray-800/60 border border-gray-700/60 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-white font-bold truncate">{s.table_name}</p>
+            <p className="text-white font-bold truncate flex items-center gap-1.5">
+              <span className="shrink-0">{s.kind === 'tournament' ? '🏆' : '🃏'}</span>{s.table_name}
+            </p>
             <p className="text-xs text-gray-400 mt-0.5">
               {s.start_time ? new Date(s.start_time).toLocaleDateString('es-CO', { day: '2-digit', month: 'short' }) : ''} · {s.hours} h
             </p>

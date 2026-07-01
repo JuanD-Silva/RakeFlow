@@ -349,6 +349,7 @@ async def create_dealer(
         phone=data.phone,
         hourly_rate_cop=data.hourly_rate_cop,
         rake_pct=data.rake_pct,
+        tournament_hourly_rate_cop=data.tournament_hourly_rate_cop,
     )
     db.add(dealer)
     await db.flush()
