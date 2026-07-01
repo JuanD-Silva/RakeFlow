@@ -38,6 +38,11 @@ class EliminateIn(BaseModel):
     player_id: int
 
 
+class MoveIn(BaseModel):
+    player_id: int
+    to_table_id: int
+
+
 class AlertIn(BaseModel):
     alert_type: str
     message: Optional[str] = Field(None, max_length=200)
@@ -130,6 +135,22 @@ async def my_table(
         )).all()
         rows.sort(key=lambda x: (x[0].seat_number or 999))
         cap = int(t_table.max_seats)
+        # Otras mesas OPEN del torneo (para que el dealer pueda pasar un jugador).
+        others = (await db.execute(
+            select(models.TournamentTable)
+            .where(models.TournamentTable.tournament_id == tournament.id)
+            .where(models.TournamentTable.club_id == current_user.club_id)
+            .where(models.TournamentTable.status == "OPEN")
+            .where(models.TournamentTable.id != t_table.id)
+            .order_by(models.TournamentTable.table_number)
+        )).scalars().all()
+        occ = dict((await db.execute(
+            select(models.TournamentPlayer.table_id, func.count())
+            .where(models.TournamentPlayer.tournament_id == tournament.id)
+            .where(models.TournamentPlayer.status == "ACTIVE")
+            .where(models.TournamentPlayer.table_id.isnot(None))
+            .group_by(models.TournamentPlayer.table_id)
+        )).all())
         return {
             "has_table": True,
             "mode": "tournament",
@@ -143,6 +164,11 @@ async def my_table(
             "players": [
                 {"player_id": tp.player_id, "name": name, "seat_number": tp.seat_number}
                 for tp, name in rows
+            ],
+            "other_tables": [
+                {"id": t.id, "table_number": t.table_number,
+                 "seats_available": max(0, t.max_seats - occ.get(t.id, 0))}
+                for t in others
             ],
         }
 
@@ -206,6 +232,83 @@ async def my_table_eliminate(
         )
     await db.commit()
     return {"action": "eliminated", "player_id": data.player_id}
+
+
+@router.post("/my-table/move")
+async def my_table_move(
+    data: MoveIn,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(_require_dealer),
+):
+    """El dealer pasa un jugador de SU mesa de torneo a otra mesa OPEN del mismo
+    torneo (con cupo). Asiento libre más bajo. Auditado con el usuario real."""
+    dealer = await _my_dealer(db, current_user)
+    t_shift, t_table, tournament = await _my_open_tournament_shift(db, dealer, current_user.club_id)
+    if not tournament:
+        raise HTTPException(status_code=409, detail="No tenés una mesa de torneo asignada")
+
+    tp = (await db.execute(
+        select(models.TournamentPlayer).where(
+            models.TournamentPlayer.tournament_id == tournament.id,
+            models.TournamentPlayer.player_id == data.player_id,
+            models.TournamentPlayer.table_id == t_table.id,
+            models.TournamentPlayer.status == "ACTIVE",
+        )
+    )).scalars().first()
+    if not tp:
+        raise HTTPException(status_code=404, detail="El jugador no está en tu mesa")
+
+    dest = (await db.execute(
+        select(models.TournamentTable).where(
+            models.TournamentTable.id == data.to_table_id,
+            models.TournamentTable.tournament_id == tournament.id,
+            models.TournamentTable.club_id == current_user.club_id,
+            models.TournamentTable.status == "OPEN",
+        )
+    )).scalars().first()
+    if not dest or dest.id == t_table.id:
+        raise HTTPException(status_code=404, detail="Mesa destino no válida")
+
+    # Gate de cupo por OCUPACIÓN (todos los ACTIVE de la mesa, tengan o no asiento),
+    # la misma semántica que el display; los asientos usados sólo eligen el número.
+    occupancy = (await db.execute(
+        select(func.count(models.TournamentPlayer.id)).where(
+            models.TournamentPlayer.table_id == dest.id,
+            models.TournamentPlayer.status == "ACTIVE",
+        )
+    )).scalar() or 0
+    if occupancy >= dest.max_seats:
+        raise HTTPException(status_code=409, detail="La mesa destino está llena")
+    used = set((await db.execute(
+        select(models.TournamentPlayer.seat_number).where(
+            models.TournamentPlayer.table_id == dest.id,
+            models.TournamentPlayer.status == "ACTIVE",
+            models.TournamentPlayer.seat_number.isnot(None),
+        )
+    )).scalars().all())
+    seat = next((s for s in range(1, dest.max_seats + 1) if s not in used), None)
+    if seat is None:
+        raise HTTPException(status_code=409, detail="La mesa destino está llena")
+
+    tp.table_id = dest.id
+    tp.seat_number = seat
+    club = (await db.execute(select(models.Club).where(models.Club.id == current_user.club_id))).scalars().first()
+    if club:
+        await log_action(
+            db, request=request, club=club, user=current_user,
+            action=AuditAction.TOURNAMENT_PLAYER_SEAT,
+            entity_type="TournamentPlayer", entity_id=tp.id,
+            meta={"player_id": data.player_id, "tournament_id": tournament.id,
+                  "from_table_id": t_table.id, "to_table_id": dest.id,
+                  "source": "dealer_authenticated"},
+        )
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="El asiento se ocupó al mismo tiempo. Reintentá.")
+    return {"action": "moved", "player_id": data.player_id, "to_table_id": dest.id, "seat_number": seat}
 
 
 @router.post("/my-table/bust")

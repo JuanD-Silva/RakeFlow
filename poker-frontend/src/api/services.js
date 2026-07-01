@@ -501,6 +501,7 @@ export const dealerSelfService = {
     getMyTable: async () => (await api.get('/dealer/my-table')).data,
     toggleBust: async (playerId) => (await api.post('/dealer/my-table/bust', { player_id: playerId })).data,
     eliminate: async (playerId) => (await api.post('/dealer/my-table/eliminate', { player_id: playerId })).data,
+    movePlayer: async (playerId, toTableId) => (await api.post('/dealer/my-table/move', { player_id: playerId, to_table_id: toTableId })).data,
     sendAlert: async (alertType, message = null) =>
         (await api.post('/dealer/my-table/alert', { alert_type: alertType, message })).data,
     getMyShift: async () => (await api.get('/dealer/my-shift')).data,
