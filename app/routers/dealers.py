@@ -17,7 +17,7 @@ import asyncio
 from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.future import select
@@ -47,8 +47,15 @@ async def list_dealer_alerts(
     """Alertas del club (default pendientes). Cualquier usuario del club las ve
     (el cajero en la mesa es quien atiende). Trae el nombre de la mesa."""
     rows = (await db.execute(
-        select(models.DealerAlert, models.Session.name)
-        .join(models.Session, models.Session.id == models.DealerAlert.session_id)
+        select(models.DealerAlert, models.Session.name, models.TournamentTable.table_number)
+        .outerjoin(models.Session, and_(
+            models.Session.id == models.DealerAlert.session_id,
+            models.Session.club_id == models.DealerAlert.club_id,
+        ))
+        .outerjoin(models.TournamentTable, and_(
+            models.TournamentTable.id == models.DealerAlert.tournament_table_id,
+            models.TournamentTable.club_id == models.DealerAlert.club_id,
+        ))
         .where(
             models.DealerAlert.club_id == current_club.id,
             models.DealerAlert.status == status.upper(),
@@ -56,15 +63,21 @@ async def list_dealer_alerts(
         .order_by(models.DealerAlert.created_at.desc())
         .limit(50)
     )).all()
+
+    def _table_name(a, session_name, t_number):
+        if a.tournament_table_id is not None:
+            return f"Mesa {t_number} (torneo)" if t_number is not None else "Mesa (torneo)"
+        return session_name or f"Mesa #{a.session_id}"
+
     return [{
         "id": a.id,
         "alert_type": a.alert_type,
         "message": a.message,
         "dealer_name": a.dealer_name,
-        "table_name": name or f"Mesa #{a.session_id}",
+        "table_name": _table_name(a, name, t_number),
         "session_id": a.session_id,
         "created_at": a.created_at.isoformat() if a.created_at else None,
-    } for a, name in rows]
+    } for a, name, t_number in rows]
 
 
 @alerts_router.post("/{alert_id}/resolve")
