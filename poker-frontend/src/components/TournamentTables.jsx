@@ -86,6 +86,8 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
   const { tables, unseated, total_seats, total_seated, total_available } = view;
   const openTables = tables.filter((t) => t.status === 'OPEN');
   const closedCount = tables.length - openTables.length;
+  // Resaltar "Balancear" cuando alguna mesa quedó por debajo del mínimo (5).
+  const needsBalance = openTables.length >= 2 && openTables.some((t) => t.seated_count < 5);
 
   return (
     <div className="mt-4 bg-gray-900/50 p-4 rounded-2xl border border-violet-500/20">
@@ -97,7 +99,8 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
         <div className="flex items-center gap-2 text-[11px]">
           {openTables.length >= 2 && (
             <button type="button" onClick={openPlan} disabled={busy || planLoading}
-              className="px-2.5 py-1 rounded-lg border border-violet-500/40 text-violet-300 hover:bg-violet-500/10 disabled:opacity-50 font-bold uppercase text-[10px] flex items-center gap-1">
+              className={`px-2.5 py-1 rounded-lg border disabled:opacity-50 font-bold uppercase text-[10px] flex items-center gap-1 ${needsBalance ? 'border-amber-500/60 bg-amber-500/15 text-amber-300 animate-pulse' : 'border-violet-500/40 text-violet-300 hover:bg-violet-500/10'}`}
+              title={needsBalance ? 'Hay una mesa por debajo de 5 jugadores' : 'Balancear mesas'}>
               ⚖️ {planLoading ? '...' : 'Balancear'}
             </button>
           )}

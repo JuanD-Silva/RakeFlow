@@ -262,15 +262,21 @@ def _lowest_free_seat(used: set, max_seats: int):
     return None
 
 
+# Mínimo de jugadores por mesa: si una mesa queda por debajo (y se puede), el
+# balanceo la une/rellena. Regla del club (máx por mesa = max_seats configurable).
+MIN_TABLE_PLAYERS = 5
+
+
 def _compute_rebalance(tables: list) -> dict:
     """Plan de balanceo ASISTIDO (Fase 3). Puro (no toca DB). Recibe las mesas OPEN
     como [{id, table_number, max_seats, player_ids:[...]}] y devuelve la lista de
     movimientos sugeridos + las mesas a cerrar (consolidación).
 
     Reglas: (1) romper mesas mientras sus jugadores quepan en los cupos de las
-    demás (consolidar de a una, la más vacía primero); (2) luego emparejar tamaños
-    hasta que la diferencia entre la más llena y la más vacía sea ≤ 1. No mueve a
-    nadie en mitad de una mano (el director aplica el plan cuando quiere)."""
+    demás (consolidar de a una, la más vacía primero); (2) subir las mesas que
+    queden por debajo del MÍNIMO (5) moviendo del más lleno, sin bajar al donante
+    del mínimo (mesas sanas entre 5 y max NO se tocan — respeta el fill-first). No
+    mueve a nadie en mitad de una mano (el director aplica el plan cuando quiere)."""
     state = {t["id"]: {"id": t["id"], "number": t["table_number"], "max": t["max_seats"],
                        "players": list(t["player_ids"])} for t in tables}
     origin = {}
@@ -311,18 +317,23 @@ def _compute_rebalance(tables: list) -> dict:
             close_ids.append(cand["id"])
             changed = True
 
-    # (2) Emparejar tamaños: mover del más lleno al más vacío hasta diff ≤ 1.
+    # (2) Subir las mesas por debajo del MÍNIMO moviendo del más lleno (que quede
+    # ≥ MÍNIMO tras donar). No empareja mesas sanas: si todas están ≥5, no toca nada.
     guard = 0
     while guard < 1000:
         guard += 1
         os = opens()
         if len(os) <= 1:
             break
-        fullest = max(os, key=lambda s: len(s["players"]))
-        emptiest = min(os, key=lambda s: len(s["players"]))
-        if len(fullest["players"]) - len(emptiest["players"]) < 2 or len(emptiest["players"]) >= emptiest["max"]:
+        below = [s for s in os if len(s["players"]) < MIN_TABLE_PLAYERS and len(s["players"]) < s["max"]]
+        if not below:
             break
-        emptiest["players"].append(fullest["players"].pop())
+        tgt = min(below, key=lambda s: len(s["players"]))
+        donors = [s for s in os if s["id"] != tgt["id"] and len(s["players"]) > MIN_TABLE_PLAYERS]
+        if not donors:
+            break  # nadie puede donar sin caer bajo el mínimo
+        donor = max(donors, key=lambda s: len(s["players"]))
+        tgt["players"].append(donor["players"].pop())
 
     # Movimiento NETO por jugador (origen → destino final), sin no-ops.
     final = {pid: tid for tid, s in state.items() for pid in s["players"]}
@@ -332,8 +343,9 @@ def _compute_rebalance(tables: list) -> dict:
 
 
 async def _auto_seat_one(db, tournament_id, t_player) -> bool:
-    """Sienta UN jugador en la mesa OPEN más vacía con cupo. Recalcula desde DB
-    (sirve para el registro de a uno). No-op si no hay mesa con espacio."""
+    """Sienta UN jugador en la PRIMERA mesa OPEN (por número) con cupo — fill-first:
+    se llena una mesa antes de usar la siguiente. Recalcula desde DB (registro de a
+    uno). No-op si no hay mesa con espacio."""
     tables = (await db.execute(
         select(models.TournamentTable)
         .where(models.TournamentTable.tournament_id == tournament_id)
@@ -343,10 +355,7 @@ async def _auto_seat_one(db, tournament_id, t_player) -> bool:
     if not tables:
         return False
     counts = await _active_counts_by_table(db, tournament_id)
-    best = None
-    for t in tables:
-        if counts.get(t.id, 0) < t.max_seats and (best is None or counts.get(t.id, 0) < counts.get(best.id, 0)):
-            best = t
+    best = next((t for t in tables if counts.get(t.id, 0) < t.max_seats), None)
     if best is None:
         return False
     used = await _used_seats(db, best.id)
@@ -531,10 +540,8 @@ async def auto_seat_players(
     used_by_table = {t.id: await _used_seats(db, t.id) for t in tables}
     seated_n = 0
     for tp in unseated:
-        best = None
-        for t in tables:
-            if counts.get(t.id, 0) < t.max_seats and (best is None or counts.get(t.id, 0) < counts.get(best.id, 0)):
-                best = t
+        # fill-first: primera mesa (por número) con cupo.
+        best = next((t for t in tables if counts.get(t.id, 0) < t.max_seats), None)
         if best is None:
             break  # todas llenas
         seat = _lowest_free_seat(used_by_table[best.id], best.max_seats)
