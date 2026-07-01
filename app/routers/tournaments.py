@@ -262,11 +262,6 @@ def _lowest_free_seat(used: set, max_seats: int):
     return None
 
 
-# Mínimo de jugadores por mesa: si una mesa queda por debajo (y se puede), el
-# balanceo la une/rellena. Regla del club (máx por mesa = max_seats configurable).
-MIN_TABLE_PLAYERS = 5
-
-
 def _compute_rebalance(tables: list, waiting: list = None) -> dict:
     """Plan de NIVELADO asistido. Puro (no toca DB). Recibe las mesas OPEN como
     [{id, table_number, max_seats, player_ids:[...]}] y la lista de espera
@@ -491,6 +486,18 @@ async def update_tournament_table(
         table.max_seats = data.max_seats
     if data.status in ("OPEN", "CLOSED"):
         table.status = data.status
+        if data.status == "CLOSED":
+            # Cerrar a mano desienta a sus ACTIVE (van a la espera); si no, quedan
+            # varados en una mesa que el nivelado ya no ve (mismo patrón que delete).
+            seated_rows = (await db.execute(
+                select(models.TournamentPlayer)
+                .where(models.TournamentPlayer.tournament_id == tournament_id)
+                .where(models.TournamentPlayer.table_id == table_id)
+                .where(models.TournamentPlayer.status == "ACTIVE")
+            )).scalars().all()
+            for tp in seated_rows:
+                tp.table_id = None
+                tp.seat_number = None
     await log_action(
         db, request=request, club=current_club, action=AuditAction.TOURNAMENT_TABLE_UPDATE,
         entity_type="TournamentTable", entity_id=table.id, meta={"max_seats": table.max_seats, "status": table.status},
@@ -647,12 +654,15 @@ async def _open_tables_model(db, tournament_id):
         .where(models.TournamentPlayer.tournament_id == tournament_id)
         .where(models.TournamentPlayer.status == "ACTIVE")
     )).all()
+    open_ids = {t.id for t in tables}
     by_table, names, tp_by_player = {}, {}, {}
     waiting = []
     for tp, name in rows:
         names[tp.player_id] = name
         tp_by_player[tp.player_id] = tp
-        if tp.table_id is None:
+        # Sentado en una mesa que ya no está OPEN (cerrada a mano) = en espera:
+        # el nivelado lo recoloca en vez de dejarlo varado.
+        if tp.table_id is None or tp.table_id not in open_ids:
             waiting.append(tp.player_id)
         else:
             by_table.setdefault(tp.table_id, []).append(tp)

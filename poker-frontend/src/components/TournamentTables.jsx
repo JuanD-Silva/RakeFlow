@@ -72,7 +72,13 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
     setPlanLoading(true); setErr('');
     try {
       const p = await tournamentService.getRebalancePlan(tId);
-      if (!p.any) { setErr('Las mesas ya están niveladas.'); return; }
+      if (!p.any) {
+        const w = (p.still_waiting || []).length;
+        setErr(w > 0
+          ? `Mesas niveladas; ${w} en espera (se abre otra mesa con 2+ esperando).`
+          : 'Las mesas ya están niveladas.');
+        return;
+      }
       setPlan(p);
     } catch (e) { setErr(e?.response?.data?.detail || 'No se pudo calcular el balanceo.'); }
     finally { setPlanLoading(false); }
