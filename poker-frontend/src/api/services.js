@@ -396,6 +396,9 @@ endTournament: async (tournamentId) => {
     (await api.post(`/tournaments/${tournamentId}/tables/${tableId}/dealer`, { dealer_id: dealerId, force })).data,
   endTableDealer: async (tournamentId, tableId) =>
     (await api.delete(`/tournaments/${tournamentId}/tables/${tableId}/dealer`)).data,
+  // Balanceo asistido (Fase 3)
+  getRebalancePlan: async (tournamentId) => (await api.get(`/tournaments/${tournamentId}/tables/rebalance-plan`)).data,
+  rebalance: async (tournamentId) => (await api.post(`/tournaments/${tournamentId}/tables/rebalance`)).data,
 };
 
 // Biblioteca de estructuras de blinds (PR3): presets fijos + plantillas del club.
