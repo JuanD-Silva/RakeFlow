@@ -281,6 +281,17 @@ function TournamentTableView({ data, error, reload }) {
     catch { /* noop */ } finally { setBusy((b) => ({ ...b, [pid]: false })); }
   };
 
+  // Avisos al staff (mismo endpoint que cash; el backend lo ancla a la mesa de torneo).
+  const [sent, setSent] = useState(false);
+  const [cooldown, setCooldown] = useState({});
+  const send = async (type) => {
+    if (cooldown[type]) return;
+    setCooldown((c) => ({ ...c, [type]: true }));
+    try { await dealerSelfService.sendAlert(type); setSent(true); setTimeout(() => setSent(false), 2500); }
+    catch { setCooldown((c) => ({ ...c, [type]: false })); return; }
+    setTimeout(() => setCooldown((c) => ({ ...c, [type]: false })), 30000);
+  };
+
   // Pasar a otra mesa: abre un picker con las otras mesas OPEN y sus cupos.
   const [moveFor, setMoveFor] = useState(null); // { player_id, name }
   const [moveErr, setMoveErr] = useState('');
@@ -363,6 +374,25 @@ function TournamentTableView({ data, error, reload }) {
             </div>
           </div>
         ))}
+      </section>
+
+      {/* Avisar al staff (igual que en cash) */}
+      <section className="space-y-3 pt-1">
+        <p className="text-[11px] font-bold text-gray-500 uppercase tracking-widest text-center">Avisar al staff</p>
+        <div className="grid grid-cols-2 gap-3">
+          {ALERTS.map((a) => (
+            <button
+              key={a.type}
+              onClick={() => send(a.type)}
+              disabled={cooldown[a.type]}
+              className={`bg-gradient-to-br ${a.color} ring-1 ${a.ring} disabled:opacity-50 text-white rounded-2xl py-6 flex flex-col items-center gap-1.5 font-bold transition-all active:scale-[0.97] shadow-lg`}
+            >
+              <span className="text-3xl">{a.emoji}</span>
+              <span className="text-sm">{cooldown[a.type] ? 'Enviado ✓' : a.label}</span>
+            </button>
+          ))}
+        </div>
+        {sent && <div className="bg-emerald-900/40 border border-emerald-500/40 text-emerald-200 text-sm font-bold rounded-xl px-4 py-3 text-center">✓ Aviso enviado al staff</div>}
       </section>
 
       {/* Picker: pasar jugador a otra mesa */}

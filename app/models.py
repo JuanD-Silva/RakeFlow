@@ -279,7 +279,10 @@ class DealerAlert(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False, index=True)
-    session_id = Column(Integer, ForeignKey("sessions.id"), nullable=False, index=True)
+    # Origen de la alerta: mesa CASH (session_id) o mesa de TORNEO
+    # (tournament_table_id). Exactamente uno de los dos está seteado.
+    session_id = Column(Integer, ForeignKey("sessions.id"), nullable=True, index=True)
+    tournament_table_id = Column(Integer, ForeignKey("tournament_tables.id"), nullable=True, index=True)
 
     alert_type = Column(String, nullable=False)   # CHIPS | WAITER | MANAGER | URGENT
     message = Column(String, nullable=True)
@@ -289,17 +292,22 @@ class DealerAlert(Base):
     resolved_at = Column(DateTime, nullable=True)
     resolved_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
-    # Una sola alerta PENDING por (mesa, tipo): backstop anti-flood. Declarado
-    # también acá para que metadata.create_all lo replique en DBs nuevas
-    # (no solo vía migración).
+    # Una sola alerta PENDING por (mesa, tipo): backstop anti-flood (cash y
+    # torneo por separado; los NULL no colisionan en índices únicos de PG).
+    # Declarado también acá para que metadata.create_all lo replique en DBs nuevas.
     __table_args__ = (
         Index(
             "uq_dealer_alerts_pending", "session_id", "alert_type",
             unique=True, postgresql_where=text("status = 'PENDING'"),
         ),
+        Index(
+            "uq_dealer_alerts_pending_ttable", "tournament_table_id", "alert_type",
+            unique=True, postgresql_where=text("status = 'PENDING' AND tournament_table_id IS NOT NULL"),
+        ),
     )
 
     session = relationship("Session")
+    tournament_table = relationship("TournamentTable")
 
 
 class Transaction(Base):

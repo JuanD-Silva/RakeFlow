@@ -394,13 +394,45 @@ async def my_table_alert(
     current_user: models.User = Depends(_require_dealer),
 ):
     dealer = await _my_dealer(db, current_user)
-    shift, session = await _my_open_shift(db, dealer, current_user.club_id)
-    if not session:
-        raise HTTPException(status_code=409, detail="No tenés una mesa asignada")
 
     alert_type = (data.alert_type or "").upper()
     if alert_type not in ALERT_TYPES:
         raise HTTPException(status_code=400, detail="Tipo de alerta inválido")
+
+    # Mesa de TORNEO primero (misma prioridad que my-table): la alerta cuelga de
+    # la mesa de torneo. Si no, cash como siempre.
+    t_shift, t_table, tournament = await _my_open_tournament_shift(db, dealer, current_user.club_id)
+    if tournament:
+        recent = (await db.execute(
+            select(models.DealerAlert).where(
+                models.DealerAlert.club_id == current_user.club_id,
+                models.DealerAlert.tournament_table_id == t_table.id,
+                models.DealerAlert.alert_type == alert_type,
+                models.DealerAlert.status == "PENDING",
+                models.DealerAlert.created_at >= datetime.utcnow() - timedelta(seconds=30),
+            )
+        )).scalars().first()
+        if recent:
+            return {"status": "already_sent", "alert_type": alert_type}
+        alert = models.DealerAlert(
+            club_id=current_user.club_id,
+            tournament_table_id=t_table.id,
+            alert_type=alert_type,
+            message=(data.message or "").strip() or None,
+            dealer_name=dealer.name,
+            status="PENDING",
+        )
+        db.add(alert)
+        try:
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()
+            return {"status": "already_sent", "alert_type": alert_type}
+        return {"status": "sent", "alert_type": alert_type}
+
+    shift, session = await _my_open_shift(db, dealer, current_user.club_id)
+    if not session:
+        raise HTTPException(status_code=409, detail="No tenés una mesa asignada")
 
     recent = (await db.execute(
         select(models.DealerAlert).where(
