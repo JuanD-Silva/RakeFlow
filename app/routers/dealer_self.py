@@ -139,6 +139,7 @@ async def my_table(
         others = (await db.execute(
             select(models.TournamentTable)
             .where(models.TournamentTable.tournament_id == tournament.id)
+            .where(models.TournamentTable.club_id == current_user.club_id)
             .where(models.TournamentTable.status == "OPEN")
             .where(models.TournamentTable.id != t_table.id)
             .order_by(models.TournamentTable.table_number)
@@ -269,6 +270,16 @@ async def my_table_move(
     if not dest or dest.id == t_table.id:
         raise HTTPException(status_code=404, detail="Mesa destino no válida")
 
+    # Gate de cupo por OCUPACIÓN (todos los ACTIVE de la mesa, tengan o no asiento),
+    # la misma semántica que el display; los asientos usados sólo eligen el número.
+    occupancy = (await db.execute(
+        select(func.count(models.TournamentPlayer.id)).where(
+            models.TournamentPlayer.table_id == dest.id,
+            models.TournamentPlayer.status == "ACTIVE",
+        )
+    )).scalar() or 0
+    if occupancy >= dest.max_seats:
+        raise HTTPException(status_code=409, detail="La mesa destino está llena")
     used = set((await db.execute(
         select(models.TournamentPlayer.seat_number).where(
             models.TournamentPlayer.table_id == dest.id,
@@ -276,8 +287,6 @@ async def my_table_move(
             models.TournamentPlayer.seat_number.isnot(None),
         )
     )).scalars().all())
-    if len(used) >= dest.max_seats:
-        raise HTTPException(status_code=409, detail="La mesa destino está llena")
     seat = next((s for s in range(1, dest.max_seats + 1) if s not in used), None)
     if seat is None:
         raise HTTPException(status_code=409, detail="La mesa destino está llena")
