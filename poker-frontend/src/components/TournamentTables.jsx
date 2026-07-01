@@ -187,13 +187,13 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
         </div>
       )}
 
-      {/* SIN MESA: lista para sentar manual */}
+      {/* LISTA DE ESPERA nominal (FIFO): posición + nombre; tap para sentar manual */}
       {unseated.length > 0 && (
         <div className="mt-2.5 flex flex-wrap gap-1.5">
-          {unseated.map((u) => (
+          {unseated.map((u, i) => (
             <button key={u.player_id} type="button" onClick={() => setMoveFor({ player_id: u.player_id, name: u.name })} disabled={busy}
               className="text-[11px] px-2 py-1 rounded-lg bg-amber-950/40 border border-amber-500/30 text-amber-200 hover:bg-amber-900/40 disabled:opacity-40 flex items-center gap-1">
-              {u.name} <ArrowsRightLeftIcon className="w-3 h-3" />
+              <span className="font-black text-amber-400">{i + 1}º</span> {u.name} <ArrowsRightLeftIcon className="w-3 h-3" />
             </button>
           ))}
         </div>
