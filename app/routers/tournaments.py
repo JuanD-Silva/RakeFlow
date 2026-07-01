@@ -262,6 +262,75 @@ def _lowest_free_seat(used: set, max_seats: int):
     return None
 
 
+def _compute_rebalance(tables: list) -> dict:
+    """Plan de balanceo ASISTIDO (Fase 3). Puro (no toca DB). Recibe las mesas OPEN
+    como [{id, table_number, max_seats, player_ids:[...]}] y devuelve la lista de
+    movimientos sugeridos + las mesas a cerrar (consolidación).
+
+    Reglas: (1) romper mesas mientras sus jugadores quepan en los cupos de las
+    demás (consolidar de a una, la más vacía primero); (2) luego emparejar tamaños
+    hasta que la diferencia entre la más llena y la más vacía sea ≤ 1. No mueve a
+    nadie en mitad de una mano (el director aplica el plan cuando quiere)."""
+    state = {t["id"]: {"id": t["id"], "number": t["table_number"], "max": t["max_seats"],
+                       "players": list(t["player_ids"])} for t in tables}
+    origin = {}
+    for t in tables:
+        for pid in t["player_ids"]:
+            origin[pid] = t["id"]
+    close_ids = []
+
+    def opens():
+        return [s for tid, s in state.items() if tid not in close_ids]
+
+    # (0) Cerrar las mesas OPEN vacías (quedan así tras eliminaciones), dejando al
+    # menos una abierta. Sin esto, el pairing las repoblaría en vez de consolidarlas.
+    open_count = len(opens())
+    for s in [x for x in opens() if not x["players"]]:
+        if open_count > 1:
+            close_ids.append(s["id"])
+            open_count -= 1
+
+    # (1) Consolidación: romper la mesa más vacía mientras las demás la absorban.
+    changed = True
+    while changed:
+        changed = False
+        os = opens()
+        if len(os) <= 1:
+            break
+        cand = min(os, key=lambda s: len(s["players"]))
+        others = [s for s in os if s["id"] != cand["id"]]
+        free = sum(s["max"] - len(s["players"]) for s in others)
+        if cand["players"] and len(cand["players"]) <= free:
+            for pid in list(cand["players"]):
+                target = min((s for s in others if len(s["players"]) < s["max"]),
+                             key=lambda s: len(s["players"]), default=None)
+                if target is None:
+                    break
+                target["players"].append(pid)
+                cand["players"].remove(pid)
+            close_ids.append(cand["id"])
+            changed = True
+
+    # (2) Emparejar tamaños: mover del más lleno al más vacío hasta diff ≤ 1.
+    guard = 0
+    while guard < 1000:
+        guard += 1
+        os = opens()
+        if len(os) <= 1:
+            break
+        fullest = max(os, key=lambda s: len(s["players"]))
+        emptiest = min(os, key=lambda s: len(s["players"]))
+        if len(fullest["players"]) - len(emptiest["players"]) < 2 or len(emptiest["players"]) >= emptiest["max"]:
+            break
+        emptiest["players"].append(fullest["players"].pop())
+
+    # Movimiento NETO por jugador (origen → destino final), sin no-ops.
+    final = {pid: tid for tid, s in state.items() for pid in s["players"]}
+    moves = [{"player_id": pid, "from_id": origin[pid], "to_id": final[pid]}
+             for pid in origin if final.get(pid) != origin[pid]]
+    return {"moves": moves, "close_table_ids": close_ids}
+
+
 async def _auto_seat_one(db, tournament_id, t_player) -> bool:
     """Sienta UN jugador en la mesa OPEN más vacía con cupo. Recalcula desde DB
     (sirve para el registro de a uno). No-op si no hay mesa con espacio."""
@@ -530,6 +599,118 @@ async def move_player_to_table(
         # Carrera: otro movimiento tomó el asiento (índice único). Reintentá.
         await db.rollback()
         raise HTTPException(status_code=409, detail="El asiento se ocupó al mismo tiempo. Reintentá.")
+    return await _tables_response(db, tournament_id)
+
+
+# --- Balanceo asistido de mesas (Fase 3) ---
+async def _open_tables_model(db, tournament_id):
+    """Mesas OPEN + sus jugadores ACTIVE sentados (rows ORM + nombres) para
+    planear/aplicar el balanceo."""
+    tables = (await db.execute(
+        select(models.TournamentTable)
+        .where(models.TournamentTable.tournament_id == tournament_id)
+        .where(models.TournamentTable.status == "OPEN")
+        .order_by(models.TournamentTable.table_number)
+    )).scalars().all()
+    rows = (await db.execute(
+        select(models.TournamentPlayer, models.Player.name)
+        .join(models.Player, models.Player.id == models.TournamentPlayer.player_id)
+        .where(models.TournamentPlayer.tournament_id == tournament_id)
+        .where(models.TournamentPlayer.status == "ACTIVE")
+        .where(models.TournamentPlayer.table_id.isnot(None))
+    )).all()
+    by_table, names, tp_by_player = {}, {}, {}
+    for tp, name in rows:
+        by_table.setdefault(tp.table_id, []).append(tp)
+        names[tp.player_id] = name
+        tp_by_player[tp.player_id] = tp
+    return tables, by_table, names, tp_by_player
+
+
+def _plan_from_model(tables, by_table):
+    model = [{"id": t.id, "table_number": t.table_number, "max_seats": t.max_seats,
+              "player_ids": [tp.player_id for tp in by_table.get(t.id, [])]} for t in tables]
+    return _compute_rebalance(model)
+
+
+@router.get("/{tournament_id}/tables/rebalance-plan")
+async def rebalance_plan(
+    tournament_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+):
+    """Sugerencia de balanceo (read-only): movimientos + mesas a cerrar."""
+    await _get_owned_tournament(db, tournament_id, current_club.id)
+    tables, by_table, names, _ = await _open_tables_model(db, tournament_id)
+    plan = _plan_from_model(tables, by_table)
+    num = {t.id: t.table_number for t in tables}
+    return {
+        "moves": [{
+            "player_id": m["player_id"], "player_name": names.get(m["player_id"], "?"),
+            "from_table_id": m["from_id"], "from_table_number": num.get(m["from_id"]),
+            "to_table_id": m["to_id"], "to_table_number": num.get(m["to_id"]),
+        } for m in plan["moves"]],
+        "close_tables": [{"id": tid, "table_number": num.get(tid)} for tid in plan["close_table_ids"]],
+        "any": bool(plan["moves"] or plan["close_table_ids"]),
+    }
+
+
+@router.post("/{tournament_id}/tables/rebalance", response_model=schemas.TournamentTablesView)
+async def rebalance_apply(
+    tournament_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+):
+    """Aplica el balanceo: recalcula el plan fresco (no confía en el cliente),
+    reasienta a los jugadores y cierra las mesas consolidadas (más su dealer)."""
+    await _get_owned_tournament(db, tournament_id, current_club.id)
+    tables, by_table, _, tp_by_player = await _open_tables_model(db, tournament_id)
+    plan = _plan_from_model(tables, by_table)
+    if not plan["moves"] and not plan["close_table_ids"]:
+        return await _tables_response(db, tournament_id)
+
+    max_by_id = {t.id: t.max_seats for t in tables}
+    used = {t.id: {tp.seat_number for tp in by_table.get(t.id, []) if tp.seat_number} for t in tables}
+    seat_by_player = {tp.player_id: tp.seat_number for tps in by_table.values() for tp in tps}
+    for m in plan["moves"]:
+        tp = tp_by_player[m["player_id"]]
+        used.get(m["from_id"], set()).discard(seat_by_player.get(m["player_id"]))
+        seat = _lowest_free_seat(used.setdefault(m["to_id"], set()), max_by_id.get(m["to_id"], 0))
+        if seat is None:
+            # No debería pasar (el plan garantiza cupo), pero no persistimos un
+            # asiento nulo: abortamos y el director reintenta.
+            await db.rollback()
+            raise HTTPException(status_code=409, detail="No hay asiento libre al balancear. Reintentá.")
+        tp.table_id = m["to_id"]
+        tp.seat_number = seat
+        used[m["to_id"]].add(seat)
+        seat_by_player[m["player_id"]] = seat
+
+    now = datetime.utcnow()
+    for tid in plan["close_table_ids"]:
+        table = next((t for t in tables if t.id == tid), None)
+        if table:
+            table.status = "CLOSED"
+        sh = (await db.execute(
+            select(models.TournamentDealerShift)
+            .where(models.TournamentDealerShift.club_id == current_club.id)
+            .where(models.TournamentDealerShift.table_id == tid)
+            .where(models.TournamentDealerShift.end_time.is_(None))
+        )).scalars().first()
+        if sh:
+            sh.end_time = now
+
+    await log_action(
+        db, request=request, club=current_club, action=AuditAction.TOURNAMENT_PLAYER_SEAT,
+        entity_type="Tournament", entity_id=tournament_id,
+        meta={"rebalance_moves": len(plan["moves"]), "closed_tables": len(plan["close_table_ids"])},
+    )
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Hubo movimiento simultáneo. Reintentá el balanceo.")
     return await _tables_response(db, tournament_id)
 
 
