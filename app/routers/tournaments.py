@@ -282,6 +282,14 @@ def _compute_rebalance(tables: list) -> dict:
     def opens():
         return [s for tid, s in state.items() if tid not in close_ids]
 
+    # (0) Cerrar las mesas OPEN vacías (quedan así tras eliminaciones), dejando al
+    # menos una abierta. Sin esto, el pairing las repoblaría en vez de consolidarlas.
+    open_count = len(opens())
+    for s in [x for x in opens() if not x["players"]]:
+        if open_count > 1:
+            close_ids.append(s["id"])
+            open_count -= 1
+
     # (1) Consolidación: romper la mesa más vacía mientras las demás la absorban.
     changed = True
     while changed:
@@ -669,10 +677,14 @@ async def rebalance_apply(
         tp = tp_by_player[m["player_id"]]
         used.get(m["from_id"], set()).discard(seat_by_player.get(m["player_id"]))
         seat = _lowest_free_seat(used.setdefault(m["to_id"], set()), max_by_id.get(m["to_id"], 0))
+        if seat is None:
+            # No debería pasar (el plan garantiza cupo), pero no persistimos un
+            # asiento nulo: abortamos y el director reintenta.
+            await db.rollback()
+            raise HTTPException(status_code=409, detail="No hay asiento libre al balancear. Reintentá.")
         tp.table_id = m["to_id"]
         tp.seat_number = seat
-        if seat is not None:
-            used[m["to_id"]].add(seat)
+        used[m["to_id"]].add(seat)
         seat_by_player[m["player_id"]] = seat
 
     now = datetime.utcnow()
