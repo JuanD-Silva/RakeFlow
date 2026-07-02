@@ -822,7 +822,18 @@ async def delete_session(
             db, request=request, club=current_club,
             action=AuditAction.SESSION_DELETE,
             entity_type="Session", entity_id=session_id,
-            meta={"status": str(session.status), "transactions_deleted": tx_count},
+            # Snapshot financiero: al borrar una sesión CERRADA se evaporan estos
+            # números; quedan acá para poder reconstruir el efecto de la eliminación.
+            meta={
+                "status": str(session.status),
+                "transactions_deleted": tx_count,
+                "declared_rake_cash": session.declared_rake_cash,
+                "net_rake": session.net_rake,
+                "debt_payment": session.debt_payment,
+                "partner_profit": session.partner_profit,
+                "dealer_cost": session.dealer_cost,
+                "courtesy_cost": session.courtesy_cost,
+            },
         )
         await db.commit()
 
