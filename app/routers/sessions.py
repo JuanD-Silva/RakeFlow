@@ -807,9 +807,14 @@ async def delete_session(
             select(func.count(models.Transaction.id)).where(models.Transaction.session_id == session_id)
         )).scalar() or 0
 
-        # C. Eliminar primero las transacciones y turnos de dealer asociados
+        # C. Eliminar primero TODO lo que referencia a la sesión (FKs sin cascade):
+        # transacciones, turnos de dealer, alertas del dealer y las líneas de
+        # distribución del cierre (si la sesión se cerró). Si falta alguna, el
+        # DELETE de la sesión viola la FK → 500 (bug: alertas, 2026-07-01).
         await db.execute(delete(models.Transaction).where(models.Transaction.session_id == session_id))
         await db.execute(delete(models.DealerShift).where(models.DealerShift.session_id == session_id))
+        await db.execute(delete(models.DealerAlert).where(models.DealerAlert.session_id == session_id))
+        await db.execute(delete(models.FinancialDistribution).where(models.FinancialDistribution.session_id == session_id))
 
         # D. Eliminar la sesión
         await db.execute(delete(models.Session).where(models.Session.id == session_id))
