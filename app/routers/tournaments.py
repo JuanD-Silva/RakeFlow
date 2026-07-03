@@ -21,6 +21,11 @@ router = APIRouter(
     tags=["Tournaments"]
 )
 
+# Estados terminales de un torneo: END lo deja FINISHED (sin premios),
+# FINALIZE lo deja COMPLETED (con premios). En cualquiera de los dos no se
+# aceptan más jugadas ni inscripciones.
+TERMINAL_STATUSES = ("FINISHED", "COMPLETED")
+
 # --- ESQUEMAS INTERNOS (Input) ---
 class PlayerRegistration(BaseModel):
     player_id: int
@@ -994,7 +999,18 @@ async def register_player(
     if not tournament or tournament.status in TERMINAL_STATUSES:
         raise HTTPException(status_code=400, detail="Torneo no válido o finalizado")
 
-    # B. Verificar duplicados
+    # B. El jugador debe ser del club: sin este check se podía inscribir un
+    # player_id ajeno, creando Transaction/TournamentPlayer cross-tenant (y de
+    # paso rompiendo el borrado de cuenta del otro club por FK huérfana).
+    player_result = await db.execute(
+        select(models.Player)
+        .where(models.Player.id == registration.player_id)
+        .where(models.Player.club_id == current_club.id)
+    )
+    if not player_result.scalars().first():
+        raise HTTPException(status_code=404, detail="Jugador no encontrado")
+
+    # C. Verificar duplicados
     existing = await db.execute(
         select(models.TournamentPlayer)
         .where(models.TournamentPlayer.tournament_id == tournament_id)
@@ -1068,18 +1084,9 @@ async def pay_late_dealer_tip(
     db: AsyncSession = Depends(get_db),
     current_club: models.Club = Depends(get_current_club)
 ):
-    # A. Buscar jugador
-    result = await db.execute(
-        select(models.TournamentPlayer)
-        .where(models.TournamentPlayer.tournament_id == tournament_id)
-        .where(models.TournamentPlayer.player_id == player_id)
-    )
-    t_player = result.scalars().first()
-
-    if not t_player:
-        raise HTTPException(status_code=404, detail="Jugador no encontrado en este torneo")
-
-    # B. Obtener monto del torneo (validando que pertenezca al club)
+    # A. Validar ownership del torneo ANTES de consultar al jugador: si no, la
+    # respuesta distingue jugador-existe vs no-existe en torneos ajenos (oráculo
+    # de enumeración cross-tenant).
     tournament_result = await db.execute(
         select(models.Tournament)
         .where(models.Tournament.id == tournament_id)
@@ -1089,6 +1096,17 @@ async def pay_late_dealer_tip(
 
     if not tournament:
         raise HTTPException(status_code=404, detail="Torneo no encontrado")
+
+    # B. Buscar jugador
+    result = await db.execute(
+        select(models.TournamentPlayer)
+        .where(models.TournamentPlayer.tournament_id == tournament_id)
+        .where(models.TournamentPlayer.player_id == player_id)
+    )
+    t_player = result.scalars().first()
+
+    if not t_player:
+        raise HTTPException(status_code=404, detail="Jugador no encontrado en este torneo")
 
     if tournament.dealer_tip_amount <= 0:
         raise HTTPException(status_code=400, detail="Este torneo no tiene Dealer Tip configurado")
@@ -1116,9 +1134,6 @@ async def pay_late_dealer_tip(
 
 
 # 6. REGISTRAR REBUY (Sencillo o Doble)
-TERMINAL_STATUSES = ("FINISHED", "COMPLETED")
-
-
 def _ensure_money_play_allowed(tournament: models.Tournament, t_player: models.TournamentPlayer, label: str) -> None:
     """Guard de estado para jugadas de plata (rebuy/addon): el torneo debe estar
     en curso y el jugador vivo. Sin esto se podía cobrar en un torneo finalizado
