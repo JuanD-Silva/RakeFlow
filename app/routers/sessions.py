@@ -807,9 +807,14 @@ async def delete_session(
             select(func.count(models.Transaction.id)).where(models.Transaction.session_id == session_id)
         )).scalar() or 0
 
-        # C. Eliminar primero las transacciones y turnos de dealer asociados
+        # C. Eliminar primero TODO lo que referencia a la sesión (FKs sin cascade):
+        # transacciones, turnos de dealer, alertas del dealer y las líneas de
+        # distribución del cierre (si la sesión se cerró). Si falta alguna, el
+        # DELETE de la sesión viola la FK → 500 (bug: alertas, 2026-07-01).
         await db.execute(delete(models.Transaction).where(models.Transaction.session_id == session_id))
         await db.execute(delete(models.DealerShift).where(models.DealerShift.session_id == session_id))
+        await db.execute(delete(models.DealerAlert).where(models.DealerAlert.session_id == session_id))
+        await db.execute(delete(models.FinancialDistribution).where(models.FinancialDistribution.session_id == session_id))
 
         # D. Eliminar la sesión
         await db.execute(delete(models.Session).where(models.Session.id == session_id))
@@ -817,7 +822,18 @@ async def delete_session(
             db, request=request, club=current_club,
             action=AuditAction.SESSION_DELETE,
             entity_type="Session", entity_id=session_id,
-            meta={"status": str(session.status), "transactions_deleted": tx_count},
+            # Snapshot financiero: al borrar una sesión CERRADA se evaporan estos
+            # números; quedan acá para poder reconstruir el efecto de la eliminación.
+            meta={
+                "status": str(session.status),
+                "transactions_deleted": tx_count,
+                "declared_rake_cash": session.declared_rake_cash,
+                "net_rake": session.net_rake,
+                "debt_payment": session.debt_payment,
+                "partner_profit": session.partner_profit,
+                "dealer_cost": session.dealer_cost,
+                "courtesy_cost": session.courtesy_cost,
+            },
         )
         await db.commit()
 
