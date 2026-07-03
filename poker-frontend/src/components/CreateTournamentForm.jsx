@@ -78,9 +78,13 @@ export default function CreateTournamentForm({ onSuccess, onCancel }) {
         setPayouts(newPayouts);
     }, [placesPaid]);
 
-    // Validación de payouts: valor derivado (sin estado ni efecto).
+    // Validación de payouts: valor derivado (sin estado ni efecto). Misma regla
+    // que el backend (suma 100 y todo puesto > 0): al subir "puestos pagados" los
+    // nuevos entran en 0 y sin este check el backend rechazaba con un 422 crudo.
     const payoutTotal = payouts.reduce((a, b) => Number(a) + Number(b), 0);
-    const payoutError = payoutTotal !== 100 ? `La suma es ${payoutTotal}% (debe ser 100%)` : "";
+    const payoutError = payoutTotal !== 100
+        ? `La suma es ${payoutTotal}% (debe ser 100%)`
+        : (payouts.some((p) => Number(p) <= 0) ? "Todos los puestos deben llevar un % mayor a 0" : "");
 
     const handlePayoutChange = (index, value) => {
         const newArr = [...payouts];
