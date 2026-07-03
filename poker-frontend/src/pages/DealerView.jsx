@@ -136,20 +136,24 @@ export default function DealerView() {
                   {p.name}
                 </p>
                 <p className="text-xs mt-0.5 text-gray-400">
-                  {p.is_busted ? '👋 Salió · ' : '⏱ '}{timeAtTable(p.seated_at, p.busted_at, now)} en mesa
+                  {p.cashed_out ? '💰 Cobró · ' : p.is_busted ? '👋 Salió · ' : '⏱ '}{timeAtTable(p.seated_at, p.busted_at, now)} en mesa
                 </p>
               </div>
-              <button
-                onClick={() => toggleBust(p.player_id)}
-                disabled={!data.is_open || busy[p.player_id]}
-                className={`shrink-0 text-xs font-bold px-3 py-2 rounded-lg transition-all active:scale-95 disabled:opacity-40 ${
-                  p.is_busted
-                    ? 'bg-gray-700 hover:bg-gray-600 text-gray-200'
-                    : 'bg-red-600/90 hover:bg-red-500 text-white'
-                }`}
-              >
-                {busy[p.player_id] ? '…' : p.is_busted ? 'Volvió' : 'Salió'}
-              </button>
+              {p.cashed_out ? (
+                <span className="shrink-0 text-[10px] font-bold uppercase px-3 py-2 rounded-lg bg-gray-800 text-gray-500">Cobró</span>
+              ) : (
+                <button
+                  onClick={() => toggleBust(p.player_id)}
+                  disabled={!data.is_open || busy[p.player_id]}
+                  className={`shrink-0 text-xs font-bold px-3 py-2 rounded-lg transition-all active:scale-95 disabled:opacity-40 ${
+                    p.is_busted
+                      ? 'bg-gray-700 hover:bg-gray-600 text-gray-200'
+                      : 'bg-red-600/90 hover:bg-red-500 text-white'
+                  }`}
+                >
+                  {busy[p.player_id] ? '…' : p.is_busted ? 'Volvió' : 'Salió'}
+                </button>
+              )}
             </div>
           ))}
         </section>

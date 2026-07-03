@@ -61,19 +61,26 @@ from ..dealer_view import utc_iso as _utc_iso, current_dealer_name as _current_d
 async def get_club_activity(public_token: str, db: AsyncSession = Depends(get_db)):
     club = await _get_club_by_token(db, public_token)
 
-    # Mesas cash OPEN con conteo de jugadores (mismo patrón que active-summary).
-    # Jugadores en mesa = con buy-in y SIN quebrar (el BUST de quien sale baja el
-    # conteo y libera cupos). Un BUST implica buy-in previo => basta restarlos.
+    # Mesas cash OPEN con conteo de jugadores (mismo criterio que active-summary).
+    # Jugador EN MESA = su última entrada (BUYIN/REBUY) es posterior a su última
+    # salida (CASHOUT o BUST). El cashout también libera el cupo (bug 2026-07-03:
+    # solo se restaba el BUST); si vuelve a comprar después, cuenta de nuevo.
     cash_rows = (await db.execute(text("""
         SELECT s.id, s.name, s.start_time, s.max_players,
-            GREATEST(0,
-                COUNT(DISTINCT t.player_id) FILTER (WHERE CAST(t.type AS TEXT) IN ('BUYIN','REBUY'))
-                - COUNT(DISTINCT t.player_id) FILTER (WHERE CAST(t.type AS TEXT) = 'BUST')
-            ) AS players_count
+            COALESCE(a.cnt, 0) AS players_count
         FROM sessions s
-        LEFT JOIN transactions t ON t.session_id = s.id
+        LEFT JOIN (
+            SELECT session_id, COUNT(*) AS cnt FROM (
+                SELECT t.session_id, t.player_id,
+                    MAX(CASE WHEN CAST(t.type AS TEXT) IN ('BUYIN','REBUY') THEN t.timestamp END) AS in_ts,
+                    MAX(CASE WHEN CAST(t.type AS TEXT) IN ('CASHOUT','BUST') THEN t.timestamp END) AS out_ts
+                FROM transactions t
+                GROUP BY t.session_id, t.player_id
+            ) x
+            WHERE x.in_ts IS NOT NULL AND (x.out_ts IS NULL OR x.in_ts > x.out_ts)
+            GROUP BY session_id
+        ) a ON a.session_id = s.id
         WHERE s.club_id = :cid AND s.status = 'OPEN'
-        GROUP BY s.id, s.name, s.start_time, s.max_players
         ORDER BY s.id DESC
     """), {"cid": club.id})).fetchall()
     cash = []
