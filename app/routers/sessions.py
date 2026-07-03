@@ -107,6 +107,7 @@ async def get_active_sessions_summary(
                     MAX(CASE WHEN CAST(tx.type AS TEXT) IN ('BUYIN','REBUY') THEN tx.timestamp END) AS in_ts,
                     MAX(CASE WHEN CAST(tx.type AS TEXT) IN ('CASHOUT','BUST') THEN tx.timestamp END) AS out_ts
                 FROM transactions tx
+                WHERE tx.session_id IN (SELECT id FROM sessions WHERE club_id = :cid AND status = 'OPEN')
                 GROUP BY tx.session_id, tx.player_id
             ) x
             WHERE x.in_ts IS NOT NULL AND (x.out_ts IS NULL OR x.in_ts > x.out_ts)
