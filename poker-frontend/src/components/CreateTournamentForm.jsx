@@ -9,6 +9,15 @@ const STEPS = [
     { n: 4, label: 'Premios', icon: ChartPieIcon },
 ];
 
+// Deja SOLO dígitos (bloquea letras, e/E, signos, pegado con texto). Se usa
+// type="text" + inputMode="numeric" porque type="number" en Firefox/móvil deja
+// escribir letras (el navegador las muestra y el valor llega vacío → se creaba
+// el torneo con 0 en silencio).
+const digitsOnly = (s) => String(s ?? '').replace(/\D/g, '').replace(/^0+(?=\d)/, '');
+
+// Evento sintético con el valor saneado (los setters solo leen e.target.value).
+const cleanEvt = (e) => ({ target: { value: digitsOnly(e.target.value) } });
+
 // Input numérico con prefijo $ reutilizable
 function MoneyInput({ value, onChange, accent = 'gray' }) {
     const ring = {
@@ -18,7 +27,7 @@ function MoneyInput({ value, onChange, accent = 'gray' }) {
     return (
         <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
-            <input type="number" min="0" inputMode="numeric" placeholder="0" value={value} onChange={onChange}
+            <input type="text" inputMode="numeric" placeholder="0" value={value} onChange={(e) => onChange(cleanEvt(e))}
                 className={`w-full bg-gray-800 border border-gray-600 ${ring} rounded-lg p-2.5 pl-7 text-white text-base font-mono outline-none transition-colors`} />
         </div>
     );
@@ -29,7 +38,7 @@ function ChipsInput({ value, onChange, placeholder = '0' }) {
     return (
         <div className="relative mt-1.5">
             <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[9px] text-gray-500 uppercase font-bold tracking-wide">fichas</span>
-            <input type="number" min="0" inputMode="numeric" placeholder={placeholder} value={value} onChange={onChange}
+            <input type="text" inputMode="numeric" placeholder={placeholder} value={value} onChange={(e) => onChange(cleanEvt(e))}
                 className="w-full bg-gray-900/60 border border-gray-700 focus:border-violet-500 rounded-lg p-2 pl-12 text-white text-sm font-mono outline-none transition-colors" />
         </div>
     );
@@ -219,7 +228,7 @@ export default function CreateTournamentForm({ onSuccess, onCancel }) {
                             </div>
                             <div className="flex items-center gap-2 px-1">
                                 <span className="text-[10px] text-blue-300/70 font-bold uppercase">Disponible hasta nivel</span>
-                                <input type="number" min="1" inputMode="numeric" placeholder="∞" value={rebuyUntil} onChange={(e) => setRebuyUntil(e.target.value)}
+                                <input type="text" inputMode="numeric" placeholder="∞" value={rebuyUntil} onChange={(e) => setRebuyUntil(digitsOnly(e.target.value))}
                                     className="w-16 bg-gray-800 border border-gray-600 focus:border-blue-500 rounded p-1 text-center text-white text-sm font-mono outline-none" />
                                 <span className="text-[10px] text-gray-600">(vacío = sin límite)</span>
                             </div>
@@ -242,7 +251,7 @@ export default function CreateTournamentForm({ onSuccess, onCancel }) {
                             </div>
                             <div className="flex items-center gap-2 px-1">
                                 <span className="text-[10px] text-orange-300/70 font-bold uppercase">Disponible hasta nivel</span>
-                                <input type="number" min="1" inputMode="numeric" placeholder="∞" value={addonUntil} onChange={(e) => setAddonUntil(e.target.value)}
+                                <input type="text" inputMode="numeric" placeholder="∞" value={addonUntil} onChange={(e) => setAddonUntil(digitsOnly(e.target.value))}
                                     className="w-16 bg-gray-800 border border-gray-600 focus:border-orange-500 rounded p-1 text-center text-white text-sm font-mono outline-none" />
                                 <span className="text-[10px] text-gray-600">(vacío = sin límite)</span>
                             </div>
@@ -272,7 +281,8 @@ export default function CreateTournamentForm({ onSuccess, onCancel }) {
                         <div className="bg-gray-800 p-4 rounded-lg border border-gray-600">
                             <label className="block text-violet-400 text-[10px] font-bold uppercase mb-1">Rake de la casa (%)</label>
                             <div className="relative">
-                                <input type="number" min="0" max="100" value={rake} onChange={(e) => setRake(e.target.value)}
+                                <input type="text" inputMode="numeric" value={rake}
+                                    onChange={(e) => { const v = digitsOnly(e.target.value); setRake(v === '' ? '' : Math.min(100, parseInt(v, 10))); }}
                                     className="w-full bg-gray-900 border border-violet-500/50 rounded-lg p-2.5 text-white font-bold outline-none focus:border-violet-400" />
                                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500">%</span>
                             </div>
@@ -284,7 +294,8 @@ export default function CreateTournamentForm({ onSuccess, onCancel }) {
                                 <h4 className="text-white text-xs font-bold uppercase flex items-center gap-2"><ChartPieIcon className="w-4 h-4 text-pink-500" /> Distribución de premios</h4>
                                 <div className="flex items-center gap-2">
                                     <label className="text-[10px] text-gray-400 uppercase">Puestos pagos:</label>
-                                    <input type="number" min="1" max="20" value={placesPaid} onChange={(e) => setPlacesPaid(Number(e.target.value))}
+                                    <input type="text" inputMode="numeric" value={placesPaid}
+                                        onChange={(e) => { const v = digitsOnly(e.target.value); setPlacesPaid(v === '' ? 1 : Math.min(20, Math.max(1, parseInt(v, 10)))); }}
                                         className="w-12 bg-gray-900 border border-gray-600 rounded p-1 text-center text-white text-xs font-bold" />
                                 </div>
                             </div>
@@ -292,7 +303,7 @@ export default function CreateTournamentForm({ onSuccess, onCancel }) {
                                 {payouts.map((percent, index) => (
                                     <div key={index} className="relative">
                                         <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-gray-500 font-bold">#{index + 1}</span>
-                                        <input type="number" value={percent} onChange={(e) => handlePayoutChange(index, e.target.value)}
+                                        <input type="text" inputMode="numeric" value={percent} onChange={(e) => handlePayoutChange(index, digitsOnly(e.target.value))}
                                             className={`w-full bg-gray-900 border rounded p-1.5 pl-6 text-white text-sm font-mono text-center outline-none focus:border-pink-500 ${payoutError ? 'border-red-500' : 'border-gray-600'}`} />
                                         <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-gray-500">%</span>
                                     </div>
