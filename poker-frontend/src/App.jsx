@@ -41,6 +41,7 @@ function PokerManagerApp() {
   const [emailVerified, setEmailVerified] = useState(true);
   const [resending, setResending] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
+  const [clubName, setClubName] = useState('');
   const [trialInfo, setTrialInfo] = useState(null);
   const [subscriptionInactive, setSubscriptionInactive] = useState(false);
   const navigate = useNavigate();
@@ -56,6 +57,7 @@ function PokerManagerApp() {
           return;
         }
         setEmailVerified(res.data.email_verified);
+        setClubName(res.data.name || '');
 
         // Verificar suscripcion
         try {
@@ -113,6 +115,7 @@ function PokerManagerApp() {
       <Navigation
         currentView={currentView}
         setView={setCurrentView}
+        clubName={clubName}
       />
 
       {/* Banner de verificación de email */}

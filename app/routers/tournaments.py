@@ -1419,6 +1419,80 @@ async def eliminate_player(
     await db.refresh(t_player)
     return t_player
 
+
+# QUITAR INSCRIPCIÓN (mal inscrito). Distinto de "Eliminar" (bust): el bust
+# conserva el registro y sus cobros porque el pozo se calcula con los inscritos.
+# Quitar es para un registro ERRADO: borra la inscripción Y sus transacciones
+# (entrada, propinas, rebuys, add-ons), como si nunca hubiera entrado.
+@router.delete("/{tournament_id}/players/{player_id}", status_code=200)
+async def unregister_player(
+    tournament_id: int,
+    player_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+    _: models.User = Depends(require_role([
+        models.UserRole.OWNER, models.UserRole.MANAGER, models.UserRole.CASHIER,
+    ])),
+):
+    t_result = await db.execute(
+        select(models.Tournament)
+        .where(models.Tournament.id == tournament_id)
+        .where(models.Tournament.club_id == current_club.id)
+    )
+    tournament = t_result.scalars().first()
+    if not tournament:
+        raise HTTPException(status_code=404, detail="Torneo no encontrado")
+
+    if tournament.status in TERMINAL_STATUSES:
+        raise HTTPException(status_code=400, detail="El torneo ya finalizó; no se puede quitar inscripciones.")
+
+    p_result = await db.execute(
+        select(models.TournamentPlayer)
+        .where(models.TournamentPlayer.tournament_id == tournament_id)
+        .where(models.TournamentPlayer.player_id == player_id)
+    )
+    t_player = p_result.scalars().first()
+    if not t_player:
+        raise HTTPException(status_code=404, detail="Jugador no encontrado en el torneo")
+
+    try:
+        # Snapshot de la plata que se evapora (para auditoría)
+        tx_stats = (await db.execute(
+            select(func.count(models.Transaction.id), func.coalesce(func.sum(models.Transaction.amount), 0))
+            .where(models.Transaction.tournament_id == tournament_id)
+            .where(models.Transaction.player_id == player_id)
+        )).first()
+
+        await db.execute(
+            delete(models.Transaction)
+            .where(models.Transaction.tournament_id == tournament_id)
+            .where(models.Transaction.player_id == player_id)
+        )
+        await db.execute(delete(models.TournamentPlayer).where(models.TournamentPlayer.id == t_player.id))
+
+        await log_action(
+            db, request=request, club=current_club,
+            action=AuditAction.TOURNAMENT_PLAYER_UNREGISTER,
+            entity_type="TournamentPlayer", entity_id=t_player.id,
+            meta={
+                "tournament_id": tournament_id, "player_id": player_id,
+                "status": t_player.status,
+                "rebuys_count": t_player.rebuys_count, "addons_count": t_player.addons_count,
+                "double_rebuys_count": t_player.double_rebuys_count,
+                "double_addons_count": t_player.double_addons_count,
+                "tips_count": t_player.tips_count,
+                "transactions_deleted": tx_stats[0], "amount_deleted": float(tx_stats[1]),
+            },
+        )
+        await db.commit()
+        return {"message": "Inscripción quitada. Sus cobros del torneo fueron borrados."}
+    except Exception as e:
+        await db.rollback()
+        logger.error("Error quitando inscripción t=%d p=%d: %s", tournament_id, player_id, e)
+        raise HTTPException(status_code=500, detail="Error interno al quitar la inscripción")
+
+
 @router.post("/{tournament_id}/finalize", response_model=schemas.TournamentResponse)
 async def finalize_tournament(
     tournament_id: int,

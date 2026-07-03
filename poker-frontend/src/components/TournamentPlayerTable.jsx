@@ -164,6 +164,15 @@ export default function TournamentPlayerTable({ tournament, onUpdate }) {
             try { await tournamentService.eliminatePlayer(tournament.id, pid); onUpdate(); showToast("Eliminado"); } catch(e){ console.error("Error eliminando jugador:", e.response?.data || e.message || e); showToast(e.response?.data?.detail || "Error al eliminar","error"); } finally { setLoading(false); setConfirmModal(prev=>({...prev,isOpen:false})); }
         }});
     };
+
+    // Quitar inscripción ERRADA: borra el registro y sus cobros del torneo
+    // (distinto de Eliminar, que es el bust y conserva la plata en el pozo).
+    const handleUnregister = (pid, name) => {
+        setConfirmModal({ isOpen: true, title: "Quitar del torneo", message: `¿Quitar a ${name} del torneo?`, subMessage: "Se borra la inscripción y TODOS sus cobros (entrada, tips, rebuys, add-ons). Usalo solo si se inscribió por error. Si quebró jugando, usá Eliminar.", type: "danger", onConfirm: async () => {
+            setLoading(true);
+            try { await tournamentService.unregisterPlayer(tournament.id, pid); setActionPlayer(null); onUpdate(); showToast("Inscripción quitada"); } catch(e){ showToast(e.response?.data?.detail || "Error al quitar","error"); } finally { setLoading(false); setConfirmModal(prev=>({...prev,isOpen:false})); }
+        }});
+    };
     
     const handlePayTip = (pid) => { setConfirmModal({ isOpen: true, title: "Cobrar Tip", message: "¿Cobrar tip?", subMessage: formatCurrency(prices.tip), type: "success", onConfirm: async () => {
         setLoading(true);
@@ -436,7 +445,7 @@ export default function TournamentPlayerTable({ tournament, onUpdate }) {
             )}
             
             {isRegisterOpen && <RegisterModal onClose={() => setIsRegisterOpen(false)} onConfirm={handleRegister} activeTab={activeTab} setActiveTab={setActiveTab} availablePlayers={allPlayers.filter(ap => !tournament.players?.find(tp => tp.player_id === ap.id))} selectedPlayerId={selectedPlayerId} setSelectedPlayerId={setSelectedPlayerId} newPlayerName={newPlayerName} setNewPlayerName={setNewPlayerName} newPlayerPhone={newPlayerPhone} setNewPlayerPhone={setNewPlayerPhone} regOptions={regOptions} setRegOptions={setRegOptions} prices={prices} loading={loading} />}
-            {actionPlayer && <ActionModal player={actionPlayer} playerName={getPlayerName(actionPlayer.player_id)} rebuysClosed={rebuysClosed} addonsClosed={addonsClosed} rebuyUntil={tournament.rebuy_until_level} addonUntil={tournament.addon_until_level} onClose={() => setActionPlayer(null)} onRebuy={(t) => handleTransaction("Rebuy", t)} onAddon={(t) => handleTransaction("Addon", t)} onUndo={(action, type) => { setConfirmModal({ isOpen: true, title: "Deshacer", message: `¿Deshacer ${action} ${type}?`, type: "danger", onConfirm: async () => { setLoading(true); try { await tournamentService.undoAction(tournament.id, actionPlayer.player_id, action, type); setActionPlayer(null); onUpdate(); showToast("Deshecho"); } catch(e) { showToast(e.response?.data?.detail || "Error", "error"); } finally { setLoading(false); setConfirmModal(prev => ({...prev, isOpen: false})); } } }); }} onPayTip={() => { handlePayTip(actionPlayer.player_id); }} prices={prices} loading={loading} />}
+            {actionPlayer && <ActionModal player={actionPlayer} playerName={getPlayerName(actionPlayer.player_id)} rebuysClosed={rebuysClosed} addonsClosed={addonsClosed} rebuyUntil={tournament.rebuy_until_level} addonUntil={tournament.addon_until_level} onClose={() => setActionPlayer(null)} onRebuy={(t) => handleTransaction("Rebuy", t)} onAddon={(t) => handleTransaction("Addon", t)} onUndo={(action, type) => { setConfirmModal({ isOpen: true, title: "Deshacer", message: `¿Deshacer ${action} ${type}?`, type: "danger", onConfirm: async () => { setLoading(true); try { await tournamentService.undoAction(tournament.id, actionPlayer.player_id, action, type); setActionPlayer(null); onUpdate(); showToast("Deshecho"); } catch(e) { showToast(e.response?.data?.detail || "Error", "error"); } finally { setLoading(false); setConfirmModal(prev => ({...prev, isOpen: false})); } } }); }} onPayTip={() => { handlePayTip(actionPlayer.player_id); }} onUnregister={() => handleUnregister(actionPlayer.player_id, getPlayerName(actionPlayer.player_id))} prices={prices} loading={loading} />}
         </div>
     );
 }
@@ -759,7 +768,7 @@ function RegisterModal({ onClose, onConfirm, activeTab, setActiveTab, availableP
     );
 }
 
-function ActionModal({ player, playerName, onClose, onRebuy, onAddon, onUndo, onPayTip, prices, loading, rebuysClosed, addonsClosed, rebuyUntil, addonUntil }) {
+function ActionModal({ player, playerName, onClose, onRebuy, onAddon, onUndo, onPayTip, onUnregister, prices, loading, rebuysClosed, addonsClosed, rebuyUntil, addonUntil }) {
     const singleRebuys = (player.rebuys_count || 0) - (player.double_rebuys_count || 0);
     const singleAddons = (player.addons_count || 0) - (player.double_addons_count || 0);
 
@@ -871,6 +880,11 @@ function ActionModal({ player, playerName, onClose, onRebuy, onAddon, onUndo, on
                             </div>
                         </div>
                     </div>
+
+                    {/* Quitar inscripción errada (borra registro + cobros; ≠ Eliminar/bust) */}
+                    <button onClick={onUnregister} disabled={loading} className="w-full text-red-400 hover:text-red-300 hover:bg-red-900/20 border border-red-500/20 hover:border-red-500/40 py-3 rounded-xl text-[11px] font-bold uppercase tracking-wider transition-colors disabled:opacity-30">
+                        🗑️ Quitar del torneo (mal inscrito)
+                    </button>
 
                     {/* Cerrar */}
                     <button onClick={onClose} className="w-full bg-gray-700 hover:bg-gray-600 py-4 rounded-xl text-white font-bold uppercase tracking-wider transition-colors active:scale-[0.98]">

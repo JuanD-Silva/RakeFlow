@@ -10,7 +10,7 @@ import {
 } from '@heroicons/react/24/solid';
 import { useAuth } from '../context/AuthContext';
 
-export default function Navigation({ currentView, setView }) {
+export default function Navigation({ currentView, setView, clubName }) {
   const { isOwner, isManager, canSeeReports } = useAuth();
   const [showMoreDrawer, setShowMoreDrawer] = useState(false);
 
@@ -52,7 +52,7 @@ export default function Navigation({ currentView, setView }) {
               <div className="flex items-center gap-1.5 opacity-60 group-hover:opacity-100 transition-opacity">
                  <span className="w-1 h-1 bg-emerald-500 rounded-full"></span>
                  <span className="text-[10px] text-gray-400 font-bold tracking-[0.3em] uppercase">
-                   Mambo SaS
+                   {clubName || 'Panel del club'}
                  </span>
               </div>
             </div>

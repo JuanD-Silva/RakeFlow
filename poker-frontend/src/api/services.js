@@ -358,6 +358,11 @@ endTournament: async (tournamentId) => {
     const response = await api.post(`/tournaments/${tournamentId}/players/${playerId}/eliminate`);
     return response.data;
   },
+  // Quitar inscripción errada: borra el registro Y sus cobros (≠ eliminar/bust)
+  unregisterPlayer: async (tournamentId, playerId) => {
+    const response = await api.delete(`/tournaments/${tournamentId}/players/${playerId}`);
+    return response.data;
+  },
   undoAction: async (tournamentId, playerId, action, type) => {
     const response = await api.post(`/tournaments/${tournamentId}/undo`, { player_id: playerId, action, type });
     return response.data;
