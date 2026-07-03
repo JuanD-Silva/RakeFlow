@@ -164,6 +164,15 @@ export default function TournamentPlayerTable({ tournament, onUpdate }) {
             try { await tournamentService.eliminatePlayer(tournament.id, pid); onUpdate(); showToast("Eliminado"); } catch(e){ console.error("Error eliminando jugador:", e.response?.data || e.message || e); showToast(e.response?.data?.detail || "Error al eliminar","error"); } finally { setLoading(false); setConfirmModal(prev=>({...prev,isOpen:false})); }
         }});
     };
+
+    // Quitar inscripción ERRADA: borra el registro y sus cobros del torneo
+    // (distinto de Eliminar, que es el bust y conserva la plata en el pozo).
+    const handleUnregister = (pid, name) => {
+        setConfirmModal({ isOpen: true, title: "Quitar del torneo", message: `¿Quitar a ${name} del torneo?`, subMessage: "Se borra la inscripción y TODOS sus cobros (entrada, tips, rebuys, add-ons). Usalo solo si se inscribió por error. Si quebró jugando, usá Eliminar.", type: "danger", onConfirm: async () => {
+            setLoading(true);
+            try { await tournamentService.unregisterPlayer(tournament.id, pid); setActionPlayer(null); onUpdate(); showToast("Inscripción quitada"); } catch(e){ showToast(e.response?.data?.detail || "Error al quitar","error"); } finally { setLoading(false); setConfirmModal(prev=>({...prev,isOpen:false})); }
+        }});
+    };
     
     const handlePayTip = (pid) => { setConfirmModal({ isOpen: true, title: "Cobrar Tip", message: "¿Cobrar tip?", subMessage: formatCurrency(prices.tip), type: "success", onConfirm: async () => {
         setLoading(true);
@@ -436,7 +445,7 @@ export default function TournamentPlayerTable({ tournament, onUpdate }) {
             )}
             
             {isRegisterOpen && <RegisterModal onClose={() => setIsRegisterOpen(false)} onConfirm={handleRegister} activeTab={activeTab} setActiveTab={setActiveTab} availablePlayers={allPlayers.filter(ap => !tournament.players?.find(tp => tp.player_id === ap.id))} selectedPlayerId={selectedPlayerId} setSelectedPlayerId={setSelectedPlayerId} newPlayerName={newPlayerName} setNewPlayerName={setNewPlayerName} newPlayerPhone={newPlayerPhone} setNewPlayerPhone={setNewPlayerPhone} regOptions={regOptions} setRegOptions={setRegOptions} prices={prices} loading={loading} />}
-            {actionPlayer && <ActionModal player={actionPlayer} playerName={getPlayerName(actionPlayer.player_id)} rebuysClosed={rebuysClosed} addonsClosed={addonsClosed} rebuyUntil={tournament.rebuy_until_level} addonUntil={tournament.addon_until_level} onClose={() => setActionPlayer(null)} onRebuy={(t) => handleTransaction("Rebuy", t)} onAddon={(t) => handleTransaction("Addon", t)} onUndo={(action, type) => { setConfirmModal({ isOpen: true, title: "Deshacer", message: `¿Deshacer ${action} ${type}?`, type: "danger", onConfirm: async () => { setLoading(true); try { await tournamentService.undoAction(tournament.id, actionPlayer.player_id, action, type); setActionPlayer(null); onUpdate(); showToast("Deshecho"); } catch(e) { showToast(e.response?.data?.detail || "Error", "error"); } finally { setLoading(false); setConfirmModal(prev => ({...prev, isOpen: false})); } } }); }} onPayTip={() => { handlePayTip(actionPlayer.player_id); }} prices={prices} loading={loading} />}
+            {actionPlayer && <ActionModal player={actionPlayer} playerName={getPlayerName(actionPlayer.player_id)} rebuysClosed={rebuysClosed} addonsClosed={addonsClosed} rebuyUntil={tournament.rebuy_until_level} addonUntil={tournament.addon_until_level} onClose={() => setActionPlayer(null)} onRebuy={(t) => handleTransaction("Rebuy", t)} onAddon={(t) => handleTransaction("Addon", t)} onUndo={(action, type) => { setConfirmModal({ isOpen: true, title: "Deshacer", message: action === "tip" ? "¿Deshacer el último tip cobrado?" : `¿Deshacer ${action} ${type}?`, type: "danger", onConfirm: async () => { setLoading(true); try { await tournamentService.undoAction(tournament.id, actionPlayer.player_id, action, type); setActionPlayer(null); onUpdate(); showToast("Deshecho"); } catch(e) { showToast(e.response?.data?.detail || "Error", "error"); } finally { setLoading(false); setConfirmModal(prev => ({...prev, isOpen: false})); } } }); }} onPayTip={() => { handlePayTip(actionPlayer.player_id); }} onUnregister={() => handleUnregister(actionPlayer.player_id, getPlayerName(actionPlayer.player_id))} prices={prices} loading={loading} />}
         </div>
     );
 }
@@ -759,7 +768,7 @@ function RegisterModal({ onClose, onConfirm, activeTab, setActiveTab, availableP
     );
 }
 
-function ActionModal({ player, playerName, onClose, onRebuy, onAddon, onUndo, onPayTip, prices, loading, rebuysClosed, addonsClosed, rebuyUntil, addonUntil }) {
+function ActionModal({ player, playerName, onClose, onRebuy, onAddon, onUndo, onPayTip, onUnregister, prices, loading, rebuysClosed, addonsClosed, rebuyUntil, addonUntil }) {
     const singleRebuys = (player.rebuys_count || 0) - (player.double_rebuys_count || 0);
     const singleAddons = (player.addons_count || 0) - (player.double_addons_count || 0);
 
@@ -784,8 +793,8 @@ function ActionModal({ player, playerName, onClose, onRebuy, onAddon, onUndo, on
 
                 <div className="p-5 space-y-5">
 
-                    {/* DEALER TIP */}
-                    {prices.tip > 0 && (
+                    {/* DEALER TIP (visible también con precio 0 si hay tips que deshacer) */}
+                    {(prices.tip > 0 || (player.tips_count || 0) > 0) && (
                         <div>
                             <label className="text-pink-400 text-xs font-bold uppercase tracking-widest mb-3 block px-1 flex items-center gap-2">
                                 <HeartIcon className="w-4 h-4" /> Staff Bonus (Tip)
@@ -799,10 +808,17 @@ function ActionModal({ player, playerName, onClose, onRebuy, onAddon, onUndo, on
                                     </div>
                                 </div>
                             )}
-                            <button onClick={onPayTip} disabled={loading} className="w-full bg-pink-900/20 border border-pink-500/30 hover:border-pink-400 hover:bg-pink-900/40 text-white p-4 rounded-xl text-center transition-all active:scale-[0.97] disabled:opacity-30">
-                                <div className="text-xs font-bold uppercase tracking-wider text-pink-300 mb-1">+ Cobrar Tip</div>
-                                <div className="text-xl font-black font-mono">{formatMoney(prices.tip)}</div>
-                            </button>
+                            {prices.tip > 0 && (
+                                <button onClick={onPayTip} disabled={loading} className="w-full bg-pink-900/20 border border-pink-500/30 hover:border-pink-400 hover:bg-pink-900/40 text-white p-4 rounded-xl text-center transition-all active:scale-[0.97] disabled:opacity-30">
+                                    <div className="text-xs font-bold uppercase tracking-wider text-pink-300 mb-1">+ Cobrar Tip</div>
+                                    <div className="text-xl font-black font-mono">{formatMoney(prices.tip)}</div>
+                                </button>
+                            )}
+                            {(player.tips_count || 0) > 0 && (
+                                <button onClick={()=>onUndo("tip","SINGLE")} disabled={loading} className="w-full mt-2 text-red-400 hover:text-red-300 hover:bg-red-900/20 border border-gray-700 hover:border-red-500/30 py-2 rounded-lg text-[10px] font-bold uppercase transition-colors">
+                                    Deshacer tip ({player.tips_count})
+                                </button>
+                            )}
                         </div>
                     )}
 
@@ -871,6 +887,11 @@ function ActionModal({ player, playerName, onClose, onRebuy, onAddon, onUndo, on
                             </div>
                         </div>
                     </div>
+
+                    {/* Quitar inscripción errada (borra registro + cobros; ≠ Eliminar/bust) */}
+                    <button onClick={onUnregister} disabled={loading} className="w-full text-red-400 hover:text-red-300 hover:bg-red-900/20 border border-red-500/20 hover:border-red-500/40 py-3 rounded-xl text-[11px] font-bold uppercase tracking-wider transition-colors disabled:opacity-30">
+                        🗑️ Quitar del torneo (mal inscrito)
+                    </button>
 
                     {/* Cerrar */}
                     <button onClick={onClose} className="w-full bg-gray-700 hover:bg-gray-600 py-4 rounded-xl text-white font-bold uppercase tracking-wider transition-colors active:scale-[0.98]">

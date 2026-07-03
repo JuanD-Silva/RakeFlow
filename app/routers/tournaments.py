@@ -1,6 +1,6 @@
 # app/routers/tournaments.py
 import secrets
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, delete, func
@@ -20,6 +20,11 @@ router = APIRouter(
     prefix="/tournaments",
     tags=["Tournaments"]
 )
+
+# Estados terminales de un torneo: END lo deja FINISHED (sin premios),
+# FINALIZE lo deja COMPLETED (con premios). En cualquiera de los dos no se
+# aceptan más jugadas ni inscripciones.
+TERMINAL_STATUSES = ("FINISHED", "COMPLETED")
 
 # --- ESQUEMAS INTERNOS (Input) ---
 class PlayerRegistration(BaseModel):
@@ -963,7 +968,7 @@ async def end_tournament(
     if not tournament:
         raise HTTPException(status_code=404, detail="Torneo no encontrado")
 
-    if tournament.status == "FINISHED":
+    if tournament.status in TERMINAL_STATUSES:
         raise HTTPException(status_code=400, detail="El torneo ya finalizó")
 
     tournament.status = "FINISHED"
@@ -991,10 +996,21 @@ async def register_player(
     )
     tournament = result.scalars().first()
 
-    if not tournament or tournament.status == "FINISHED":
+    if not tournament or tournament.status in TERMINAL_STATUSES:
         raise HTTPException(status_code=400, detail="Torneo no válido o finalizado")
 
-    # B. Verificar duplicados
+    # B. El jugador debe ser del club: sin este check se podía inscribir un
+    # player_id ajeno, creando Transaction/TournamentPlayer cross-tenant (y de
+    # paso rompiendo el borrado de cuenta del otro club por FK huérfana).
+    player_result = await db.execute(
+        select(models.Player)
+        .where(models.Player.id == registration.player_id)
+        .where(models.Player.club_id == current_club.id)
+    )
+    if not player_result.scalars().first():
+        raise HTTPException(status_code=404, detail="Jugador no encontrado")
+
+    # C. Verificar duplicados
     existing = await db.execute(
         select(models.TournamentPlayer)
         .where(models.TournamentPlayer.tournament_id == tournament_id)
@@ -1037,8 +1053,11 @@ async def register_player(
         status="ACTIVE",
         rebuys_count=0,
         addons_count=0,
-        is_tip_paid=registration.pay_tip,
+        # coherente con tips_count: un torneo sin tip (monto 0) no marca pagado
+        is_tip_paid=tips_count > 0,
         tips_count=tips_count,
+        # false = debe la entrada; un freeroll (buyin 0) no debe nada.
+        is_buyin_paid=bool(registration.pay_buyin) or tournament.buyin_amount <= 0,
     )
     db.add(new_player)
     await db.commit()
@@ -1066,7 +1085,20 @@ async def pay_late_dealer_tip(
     db: AsyncSession = Depends(get_db),
     current_club: models.Club = Depends(get_current_club)
 ):
-    # A. Buscar jugador
+    # A. Validar ownership del torneo ANTES de consultar al jugador: si no, la
+    # respuesta distingue jugador-existe vs no-existe en torneos ajenos (oráculo
+    # de enumeración cross-tenant).
+    tournament_result = await db.execute(
+        select(models.Tournament)
+        .where(models.Tournament.id == tournament_id)
+        .where(models.Tournament.club_id == current_club.id)
+    )
+    tournament = tournament_result.scalars().first()
+
+    if not tournament:
+        raise HTTPException(status_code=404, detail="Torneo no encontrado")
+
+    # B. Buscar jugador
     result = await db.execute(
         select(models.TournamentPlayer)
         .where(models.TournamentPlayer.tournament_id == tournament_id)
@@ -1076,14 +1108,6 @@ async def pay_late_dealer_tip(
 
     if not t_player:
         raise HTTPException(status_code=404, detail="Jugador no encontrado en este torneo")
-
-    # B. Obtener monto del torneo (validando que pertenezca al club)
-    tournament_result = await db.execute(
-        select(models.Tournament)
-        .where(models.Tournament.id == tournament_id)
-        .where(models.Tournament.club_id == current_club.id)
-    )
-    tournament = tournament_result.scalars().first()
 
     if tournament.dealer_tip_amount <= 0:
         raise HTTPException(status_code=400, detail="Este torneo no tiene Dealer Tip configurado")
@@ -1111,6 +1135,22 @@ async def pay_late_dealer_tip(
 
 
 # 6. REGISTRAR REBUY (Sencillo o Doble)
+def _ensure_money_play_allowed(tournament: models.Tournament, t_player: models.TournamentPlayer, label: str) -> None:
+    """Guard de estado para jugadas de plata (rebuy/addon): el torneo debe estar
+    en curso y el jugador vivo. Sin esto se podía cobrar en un torneo finalizado
+    o a un jugador ya eliminado (auditoría 2026-05-22)."""
+    if tournament.status not in ("REGISTERING", "RUNNING"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"No se puede registrar {label}: el torneo no está en curso (estado {tournament.status}).",
+        )
+    if t_player.status != "ACTIVE":
+        raise HTTPException(
+            status_code=400,
+            detail=f"No se puede registrar {label}: el jugador ya fue eliminado.",
+        )
+
+
 def _ensure_window_open(tournament: models.Tournament, until_level, label: str) -> None:
     """Ventana de rebuy/addon (T4): si hay un nivel límite y el reloj ya lo pasó,
     rechaza. NULL/0 = sin límite. Usa el nivel EFECTIVO (acotado a la estructura)."""
@@ -1146,6 +1186,7 @@ async def register_rebuy(
     if not tournament or not t_player:
         raise HTTPException(status_code=404, detail="Torneo o Jugador no encontrado")
 
+    _ensure_money_play_allowed(tournament, t_player, "un rebuy")
     _ensure_window_open(tournament, tournament.rebuy_until_level, "rebuys")
 
     # 2. Determinar precio según el tipo
@@ -1212,6 +1253,7 @@ async def register_addon(
     if not tournament or not t_player:
         raise HTTPException(status_code=404, detail="Datos no encontrados")
 
+    _ensure_money_play_allowed(tournament, t_player, "un add-on")
     _ensure_window_open(tournament, tournament.addon_until_level, "add-ons")
 
     amount = 0
@@ -1252,8 +1294,10 @@ async def register_addon(
 
 class UndoRequest(BaseModel):
     player_id: int
-    action: str  # "rebuy" o "addon"
-    type: str    # "SINGLE" o "DOUBLE"
+    action: str  # "rebuy", "addon" o "tip"
+    # "SINGLE" o "DOUBLE"; el tip lo ignora. Sin default: un rebuy/addon sin
+    # type debe dar 400, no deshacer un Sencillo en silencio.
+    type: Optional[str] = None
 
 @router.post("/{tournament_id}/undo", response_model=schemas.TournamentPlayerSchema)
 async def undo_action(
@@ -1269,15 +1313,24 @@ async def undo_action(
     )
     tournament = t_result.scalars().first()
 
+    # with_for_update: dos undos simultáneos (doble click) no pueden leer el
+    # mismo contador y borrar dos transacciones dejando ledger != contadores.
     p_result = await db.execute(
         select(models.TournamentPlayer)
         .where(models.TournamentPlayer.tournament_id == tournament_id)
         .where(models.TournamentPlayer.player_id == request.player_id)
+        .with_for_update()
     )
     t_player = p_result.scalars().first()
 
     if not tournament or not t_player:
         raise HTTPException(status_code=404, detail="Torneo o Jugador no encontrado")
+
+    # Deshacer solo con el torneo vivo: tras finalizar, los premios ya se
+    # calcularon sobre estos contadores y tocarlos desincroniza ledger vs pozo.
+    # (Sí se permite sobre un jugador eliminado: es una herramienta de corrección.)
+    if tournament.status in TERMINAL_STATUSES:
+        raise HTTPException(status_code=400, detail="No se puede deshacer: el torneo ya finalizó.")
 
     if request.action == "rebuy":
         if request.type == "SINGLE":
@@ -1305,6 +1358,12 @@ async def undo_action(
             t_player.addons_count -= 1
         else:
             raise HTTPException(status_code=400, detail="Tipo invalido")
+    elif request.action == "tip":
+        # Deshacer un dealer tip cobrado por error (registro o pay-tip tardío).
+        if (t_player.tips_count or 0) <= 0:
+            raise HTTPException(status_code=400, detail="No hay tips para deshacer")
+        t_player.tips_count -= 1
+        t_player.is_tip_paid = t_player.tips_count > 0
     else:
         raise HTTPException(status_code=400, detail="Accion invalida")
 
@@ -1312,17 +1371,22 @@ async def undo_action(
     # Las descripciones distinguen "Sencillo" vs "Doble"; sin este filtro se borraba
     # la transaccion mas reciente sin importar el tipo, desincronizando el ledger de
     # transacciones contra los contadores (ej: deshacer un single borraba un double).
-    tx_type = models.TransactionType.TOURNAMENT_REBUY if request.action == "rebuy" else models.TransactionType.TOURNAMENT_ADDON
-    desc_keyword = "Doble" if request.type == "DOUBLE" else "Sencillo"
-    last_tx = await db.execute(
+    # El tip no tiene subtipos: se borra el TOURNAMENT_TIP más reciente sin filtro.
+    if request.action == "tip":
+        tx_type = models.TransactionType.TOURNAMENT_TIP
+        desc_keyword = None
+    else:
+        tx_type = models.TransactionType.TOURNAMENT_REBUY if request.action == "rebuy" else models.TransactionType.TOURNAMENT_ADDON
+        desc_keyword = "Doble" if request.type == "DOUBLE" else "Sencillo"
+    tx_query = (
         select(models.Transaction)
         .where(models.Transaction.tournament_id == tournament_id)
         .where(models.Transaction.player_id == request.player_id)
         .where(models.Transaction.type == tx_type)
-        .where(models.Transaction.description.ilike(f"%{desc_keyword}%"))
-        .order_by(models.Transaction.timestamp.desc())
-        .limit(1)
     )
+    if desc_keyword:
+        tx_query = tx_query.where(models.Transaction.description.ilike(f"%{desc_keyword}%"))
+    last_tx = await db.execute(tx_query.order_by(models.Transaction.timestamp.desc()).limit(1))
     tx = last_tx.scalars().first()
     if tx:
         await db.execute(delete(models.Transaction).where(models.Transaction.id == tx.id))
@@ -1358,6 +1422,9 @@ async def eliminate_player(
     if not t_player:
         raise HTTPException(status_code=404, detail="Jugador no encontrado en el torneo")
 
+    if tournament.status in TERMINAL_STATUSES:
+        raise HTTPException(status_code=400, detail="El torneo ya finalizó; no se puede eliminar jugadores.")
+
     if t_player.status == "ELIMINATED":
         raise HTTPException(status_code=400, detail="El jugador ya fue eliminado")
 
@@ -1368,6 +1435,99 @@ async def eliminate_player(
     await db.commit()
     await db.refresh(t_player)
     return t_player
+
+
+# QUITAR INSCRIPCIÓN (mal inscrito). Distinto de "Eliminar" (bust): el bust
+# conserva el registro y sus cobros porque el pozo se calcula con los inscritos.
+# Quitar es para un registro ERRADO: borra la inscripción Y sus transacciones
+# (entrada, propinas, rebuys, add-ons), como si nunca hubiera entrado.
+@router.delete("/{tournament_id}/players/{player_id}", status_code=200)
+async def unregister_player(
+    tournament_id: int,
+    player_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+    current_user: models.User = Depends(require_role([
+        models.UserRole.OWNER, models.UserRole.MANAGER, models.UserRole.CASHIER,
+    ])),
+):
+    t_result = await db.execute(
+        select(models.Tournament)
+        .where(models.Tournament.id == tournament_id)
+        .where(models.Tournament.club_id == current_club.id)
+    )
+    tournament = t_result.scalars().first()
+    if not tournament:
+        raise HTTPException(status_code=404, detail="Torneo no encontrado")
+
+    if tournament.status in TERMINAL_STATUSES:
+        raise HTTPException(status_code=400, detail="El torneo ya finalizó; no se puede quitar inscripciones.")
+
+    # with_for_update: un rebuy/addon/tip en vuelo sobre este registro bloquea acá
+    # y muere con el registro borrado, en vez de dejar una transacción huérfana.
+    p_result = await db.execute(
+        select(models.TournamentPlayer)
+        .where(models.TournamentPlayer.tournament_id == tournament_id)
+        .where(models.TournamentPlayer.player_id == player_id)
+        .with_for_update()
+    )
+    t_player = p_result.scalars().first()
+    if not t_player:
+        raise HTTPException(status_code=404, detail="Jugador no encontrado en el torneo")
+
+    # Solo los cobros del torneo al jugador; si mañana aparece otro tipo colgado
+    # del torneo (ej. pago de premio), este delete NO debe barrerlo en silencio.
+    money_types = (
+        models.TransactionType.TOURNAMENT_ENTRY, models.TransactionType.TOURNAMENT_TIP,
+        models.TransactionType.TOURNAMENT_REBUY, models.TransactionType.TOURNAMENT_ADDON,
+    )
+    try:
+        # Snapshot con detalle: si después borran el torneo entero, este meta queda
+        # como única fuente para reconstruir la plata que se evaporó.
+        txs = (await db.execute(
+            select(models.Transaction)
+            .where(models.Transaction.tournament_id == tournament_id)
+            .where(models.Transaction.player_id == player_id)
+            .where(models.Transaction.type.in_(money_types))
+        )).scalars().all()
+
+        await db.execute(
+            delete(models.Transaction)
+            .where(models.Transaction.tournament_id == tournament_id)
+            .where(models.Transaction.player_id == player_id)
+            .where(models.Transaction.type.in_(money_types))
+        )
+        await db.execute(delete(models.TournamentPlayer).where(models.TournamentPlayer.id == t_player.id))
+
+        await log_action(
+            db, request=request, club=current_club, user=current_user,
+            action=AuditAction.TOURNAMENT_PLAYER_UNREGISTER,
+            entity_type="TournamentPlayer", entity_id=t_player.id,
+            meta={
+                "tournament_id": tournament_id, "player_id": player_id,
+                "status": t_player.status,
+                "is_buyin_paid": t_player.is_buyin_paid, "is_tip_paid": t_player.is_tip_paid,
+                "rebuys_count": t_player.rebuys_count, "addons_count": t_player.addons_count,
+                "double_rebuys_count": t_player.double_rebuys_count,
+                "double_addons_count": t_player.double_addons_count,
+                "tips_count": t_player.tips_count,
+                "transactions_deleted": len(txs),
+                "amount_deleted": float(sum(t.amount for t in txs)),
+                "transactions": [
+                    {"type": str(t.type.value if hasattr(t.type, "value") else t.type),
+                     "amount": t.amount, "is_paid": t.is_paid, "method": t.method}
+                    for t in txs
+                ],
+            },
+        )
+        await db.commit()
+        return {"message": "Inscripción quitada. Sus cobros del torneo fueron borrados."}
+    except Exception as e:
+        await db.rollback()
+        logger.error("Error quitando inscripción t=%d p=%d: %s", tournament_id, player_id, e)
+        raise HTTPException(status_code=500, detail="Error interno al quitar la inscripción")
+
 
 @router.post("/{tournament_id}/finalize", response_model=schemas.TournamentResponse)
 async def finalize_tournament(
@@ -1423,7 +1583,8 @@ async def finalize_tournament(
             
             p.status = "WINNER"
             p.rank = rank
-            p.prize_collected = int(prize)
+            # round, no truncar: int() a secas se comía pesos del pozo repartido
+            p.prize_collected = int(round(prize))
         else:
             # Si no está en la lista de ganadores, es eliminado automáticamente
             p.status = "ELIMINATED"
