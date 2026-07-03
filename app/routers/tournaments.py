@@ -1431,7 +1431,7 @@ async def unregister_player(
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_club: models.Club = Depends(get_current_club),
-    _: models.User = Depends(require_role([
+    current_user: models.User = Depends(require_role([
         models.UserRole.OWNER, models.UserRole.MANAGER, models.UserRole.CASHIER,
     ])),
 ):
@@ -1447,42 +1447,61 @@ async def unregister_player(
     if tournament.status in TERMINAL_STATUSES:
         raise HTTPException(status_code=400, detail="El torneo ya finalizó; no se puede quitar inscripciones.")
 
+    # with_for_update: un rebuy/addon/tip en vuelo sobre este registro bloquea acá
+    # y muere con el registro borrado, en vez de dejar una transacción huérfana.
     p_result = await db.execute(
         select(models.TournamentPlayer)
         .where(models.TournamentPlayer.tournament_id == tournament_id)
         .where(models.TournamentPlayer.player_id == player_id)
+        .with_for_update()
     )
     t_player = p_result.scalars().first()
     if not t_player:
         raise HTTPException(status_code=404, detail="Jugador no encontrado en el torneo")
 
+    # Solo los cobros del torneo al jugador; si mañana aparece otro tipo colgado
+    # del torneo (ej. pago de premio), este delete NO debe barrerlo en silencio.
+    money_types = (
+        models.TransactionType.TOURNAMENT_ENTRY, models.TransactionType.TOURNAMENT_TIP,
+        models.TransactionType.TOURNAMENT_REBUY, models.TransactionType.TOURNAMENT_ADDON,
+    )
     try:
-        # Snapshot de la plata que se evapora (para auditoría)
-        tx_stats = (await db.execute(
-            select(func.count(models.Transaction.id), func.coalesce(func.sum(models.Transaction.amount), 0))
+        # Snapshot con detalle: si después borran el torneo entero, este meta queda
+        # como única fuente para reconstruir la plata que se evaporó.
+        txs = (await db.execute(
+            select(models.Transaction)
             .where(models.Transaction.tournament_id == tournament_id)
             .where(models.Transaction.player_id == player_id)
-        )).first()
+            .where(models.Transaction.type.in_(money_types))
+        )).scalars().all()
 
         await db.execute(
             delete(models.Transaction)
             .where(models.Transaction.tournament_id == tournament_id)
             .where(models.Transaction.player_id == player_id)
+            .where(models.Transaction.type.in_(money_types))
         )
         await db.execute(delete(models.TournamentPlayer).where(models.TournamentPlayer.id == t_player.id))
 
         await log_action(
-            db, request=request, club=current_club,
+            db, request=request, club=current_club, user=current_user,
             action=AuditAction.TOURNAMENT_PLAYER_UNREGISTER,
             entity_type="TournamentPlayer", entity_id=t_player.id,
             meta={
                 "tournament_id": tournament_id, "player_id": player_id,
                 "status": t_player.status,
+                "is_buyin_paid": t_player.is_buyin_paid, "is_tip_paid": t_player.is_tip_paid,
                 "rebuys_count": t_player.rebuys_count, "addons_count": t_player.addons_count,
                 "double_rebuys_count": t_player.double_rebuys_count,
                 "double_addons_count": t_player.double_addons_count,
                 "tips_count": t_player.tips_count,
-                "transactions_deleted": tx_stats[0], "amount_deleted": float(tx_stats[1]),
+                "transactions_deleted": len(txs),
+                "amount_deleted": float(sum(t.amount for t in txs)),
+                "transactions": [
+                    {"type": str(t.type.value if hasattr(t.type, "value") else t.type),
+                     "amount": t.amount, "is_paid": t.is_paid, "method": t.method}
+                    for t in txs
+                ],
             },
         )
         await db.commit()
