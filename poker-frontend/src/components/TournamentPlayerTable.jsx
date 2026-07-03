@@ -793,8 +793,8 @@ function ActionModal({ player, playerName, onClose, onRebuy, onAddon, onUndo, on
 
                 <div className="p-5 space-y-5">
 
-                    {/* DEALER TIP */}
-                    {prices.tip > 0 && (
+                    {/* DEALER TIP (visible también con precio 0 si hay tips que deshacer) */}
+                    {(prices.tip > 0 || (player.tips_count || 0) > 0) && (
                         <div>
                             <label className="text-pink-400 text-xs font-bold uppercase tracking-widest mb-3 block px-1 flex items-center gap-2">
                                 <HeartIcon className="w-4 h-4" /> Staff Bonus (Tip)
@@ -808,10 +808,12 @@ function ActionModal({ player, playerName, onClose, onRebuy, onAddon, onUndo, on
                                     </div>
                                 </div>
                             )}
-                            <button onClick={onPayTip} disabled={loading} className="w-full bg-pink-900/20 border border-pink-500/30 hover:border-pink-400 hover:bg-pink-900/40 text-white p-4 rounded-xl text-center transition-all active:scale-[0.97] disabled:opacity-30">
-                                <div className="text-xs font-bold uppercase tracking-wider text-pink-300 mb-1">+ Cobrar Tip</div>
-                                <div className="text-xl font-black font-mono">{formatMoney(prices.tip)}</div>
-                            </button>
+                            {prices.tip > 0 && (
+                                <button onClick={onPayTip} disabled={loading} className="w-full bg-pink-900/20 border border-pink-500/30 hover:border-pink-400 hover:bg-pink-900/40 text-white p-4 rounded-xl text-center transition-all active:scale-[0.97] disabled:opacity-30">
+                                    <div className="text-xs font-bold uppercase tracking-wider text-pink-300 mb-1">+ Cobrar Tip</div>
+                                    <div className="text-xl font-black font-mono">{formatMoney(prices.tip)}</div>
+                                </button>
+                            )}
                             {(player.tips_count || 0) > 0 && (
                                 <button onClick={()=>onUndo("tip","SINGLE")} disabled={loading} className="w-full mt-2 text-red-400 hover:text-red-300 hover:bg-red-900/20 border border-gray-700 hover:border-red-500/30 py-2 rounded-lg text-[10px] font-bold uppercase transition-colors">
                                     Deshacer tip ({player.tips_count})

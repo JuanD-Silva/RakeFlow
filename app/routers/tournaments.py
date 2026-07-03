@@ -1,6 +1,6 @@
 # app/routers/tournaments.py
 import secrets
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, delete, func
@@ -1053,7 +1053,8 @@ async def register_player(
         status="ACTIVE",
         rebuys_count=0,
         addons_count=0,
-        is_tip_paid=registration.pay_tip,
+        # coherente con tips_count: un torneo sin tip (monto 0) no marca pagado
+        is_tip_paid=tips_count > 0,
         tips_count=tips_count,
         # false = debe la entrada; un freeroll (buyin 0) no debe nada.
         is_buyin_paid=bool(registration.pay_buyin) or tournament.buyin_amount <= 0,
@@ -1294,7 +1295,9 @@ async def register_addon(
 class UndoRequest(BaseModel):
     player_id: int
     action: str  # "rebuy", "addon" o "tip"
-    type: str = "SINGLE"  # "SINGLE" o "DOUBLE" (el tip no distingue tipo)
+    # "SINGLE" o "DOUBLE"; el tip lo ignora. Sin default: un rebuy/addon sin
+    # type debe dar 400, no deshacer un Sencillo en silencio.
+    type: Optional[str] = None
 
 @router.post("/{tournament_id}/undo", response_model=schemas.TournamentPlayerSchema)
 async def undo_action(
@@ -1310,10 +1313,13 @@ async def undo_action(
     )
     tournament = t_result.scalars().first()
 
+    # with_for_update: dos undos simultáneos (doble click) no pueden leer el
+    # mismo contador y borrar dos transacciones dejando ledger != contadores.
     p_result = await db.execute(
         select(models.TournamentPlayer)
         .where(models.TournamentPlayer.tournament_id == tournament_id)
         .where(models.TournamentPlayer.player_id == request.player_id)
+        .with_for_update()
     )
     t_player = p_result.scalars().first()
 
