@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import delete
+from sqlalchemy import delete, or_
 from pydantic import BaseModel
 from .. import models, schemas, auth_utils
 from ..phone_utils import normalize_phone
@@ -247,42 +247,71 @@ async def delete_my_account(
     Útil para reiniciar el ejercicio de desarrollo.
     """
     cid = current_club.id
-    # Log antes de borrar para preservar trazabilidad (el log sobrevive al delete)
     await log_standalone(
         db, club_id=cid, actor_email=current_club.email,
         action=AuditAction.ACCOUNT_DELETE, request=request,
         meta={"club_name": current_club.name},
     )
 
-    # 1. Borrar Distribuciones (Dinero repartido)
-    # Buscamos las sesiones del club para borrar sus distribuciones
-    subquery_sessions = select(models.Session.id).where(models.Session.club_id == cid)
-    await db.execute(delete(models.FinancialDistribution).where(
-        models.FinancialDistribution.session_id.in_(subquery_sessions)
-    ))
+    # No hay ON DELETE CASCADE en la DB: hay que borrar TODO lo que referencia
+    # (directa o transitivamente) al club, hijos antes que padres. Mismo bug de
+    # FKs que delete_session (#36): si falta una tabla, el DELETE final viola la
+    # FK y el endpoint da 500.
+    try:
+        session_ids = select(models.Session.id).where(models.Session.club_id == cid)
+        tournament_ids = select(models.Tournament.id).where(models.Tournament.club_id == cid)
+        player_ids = select(models.Player.id).where(models.Player.club_id == cid)
+        dealer_ids = select(models.Dealer.id).where(models.Dealer.club_id == cid)
 
-    # 2. Borrar Transacciones (Buyins, Cashouts)
-    # Las transacciones están ligadas a sesiones o jugadores del club
-    await db.execute(delete(models.Transaction).where(
-        models.Transaction.session_id.in_(subquery_sessions)
-    ))
+        # 1. Distribuciones del cierre (FK -> sessions, sin club_id propio)
+        await db.execute(delete(models.FinancialDistribution).where(
+            models.FinancialDistribution.session_id.in_(session_ids)
+        ))
 
-    # 3. Borrar Sesiones
-    await db.execute(delete(models.Session).where(models.Session.club_id == cid))
+        # 2. Transacciones: no tienen club_id; cuelgan de sesiones, torneos,
+        # jugadores o dealers del club (cash, torneo, cortesías).
+        await db.execute(delete(models.Transaction).where(or_(
+            models.Transaction.session_id.in_(session_ids),
+            models.Transaction.tournament_id.in_(tournament_ids),
+            models.Transaction.player_id.in_(player_ids),
+            models.Transaction.dealer_id.in_(dealer_ids),
+        )))
 
-    # 4. Borrar Jugadores
-    await db.execute(delete(models.Player).where(models.Player.club_id == cid))
+        # 3. Todo lo de dealers (referencia sessions/tournaments/tables/users/dealers)
+        await db.execute(delete(models.DealerAlert).where(models.DealerAlert.club_id == cid))
+        await db.execute(delete(models.DealerShift).where(models.DealerShift.club_id == cid))
+        await db.execute(delete(models.TournamentDealerShift).where(models.TournamentDealerShift.club_id == cid))
+        await db.execute(delete(models.DealerPayout).where(models.DealerPayout.club_id == cid))
 
-    # 5. Borrar Reglas de Distribución
-    await db.execute(delete(models.DistributionRule).where(models.DistributionRule.club_id == cid))
+        # 4. Torneos: registros (FK -> tournaments/players/tables), luego mesas, luego torneos
+        await db.execute(delete(models.TournamentPlayer).where(
+            models.TournamentPlayer.tournament_id.in_(tournament_ids)
+        ))
+        await db.execute(delete(models.TournamentTable).where(models.TournamentTable.club_id == cid))
+        await db.execute(delete(models.Tournament).where(models.Tournament.club_id == cid))
 
-    # 6. Borrar audit logs del club (FK constraint hacia clubs.id)
-    await db.execute(delete(models.AuditLog).where(models.AuditLog.club_id == cid))
+        # 5. Sesiones, jugadores y dealers (los dealers referencian users)
+        await db.execute(delete(models.Session).where(models.Session.club_id == cid))
+        await db.execute(delete(models.Player).where(models.Player.club_id == cid))
+        await db.execute(delete(models.Dealer).where(models.Dealer.club_id == cid))
 
-    # 7. FINALMENTE: Borrar el Club
-    await db.execute(delete(models.Club).where(models.Club.id == cid))
+        # 6. Config del club
+        await db.execute(delete(models.DistributionRule).where(models.DistributionRule.club_id == cid))
+        await db.execute(delete(models.BlindTemplate).where(models.BlindTemplate.club_id == cid))
 
-    await db.commit()
+        # 7. Usuarios: al final de sus referentes (dealers, payouts, alertas);
+        # el self-FK invited_by_user_id se resuelve dentro del mismo DELETE.
+        await db.execute(delete(models.User).where(models.User.club_id == cid))
+
+        # 8. Audit logs (FK -> clubs) y el club
+        await db.execute(delete(models.AuditLog).where(models.AuditLog.club_id == cid))
+        await db.execute(delete(models.Club).where(models.Club.id == cid))
+
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        logger.error("Error borrando la cuenta del club %d: %s", cid, e)
+        raise HTTPException(status_code=500, detail="Error interno al eliminar la cuenta")
 
     return {"message": "Cuenta eliminada. Ahora puedes registrarte de nuevo desde cero."}
 

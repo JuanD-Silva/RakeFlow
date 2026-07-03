@@ -963,7 +963,7 @@ async def end_tournament(
     if not tournament:
         raise HTTPException(status_code=404, detail="Torneo no encontrado")
 
-    if tournament.status == "FINISHED":
+    if tournament.status in TERMINAL_STATUSES:
         raise HTTPException(status_code=400, detail="El torneo ya finalizó")
 
     tournament.status = "FINISHED"
@@ -991,7 +991,7 @@ async def register_player(
     )
     tournament = result.scalars().first()
 
-    if not tournament or tournament.status == "FINISHED":
+    if not tournament or tournament.status in TERMINAL_STATUSES:
         raise HTTPException(status_code=400, detail="Torneo no válido o finalizado")
 
     # B. Verificar duplicados
@@ -1039,6 +1039,8 @@ async def register_player(
         addons_count=0,
         is_tip_paid=registration.pay_tip,
         tips_count=tips_count,
+        # false = debe la entrada; un freeroll (buyin 0) no debe nada.
+        is_buyin_paid=bool(registration.pay_buyin) or tournament.buyin_amount <= 0,
     )
     db.add(new_player)
     await db.commit()
@@ -1085,6 +1087,9 @@ async def pay_late_dealer_tip(
     )
     tournament = tournament_result.scalars().first()
 
+    if not tournament:
+        raise HTTPException(status_code=404, detail="Torneo no encontrado")
+
     if tournament.dealer_tip_amount <= 0:
         raise HTTPException(status_code=400, detail="Este torneo no tiene Dealer Tip configurado")
 
@@ -1111,6 +1116,25 @@ async def pay_late_dealer_tip(
 
 
 # 6. REGISTRAR REBUY (Sencillo o Doble)
+TERMINAL_STATUSES = ("FINISHED", "COMPLETED")
+
+
+def _ensure_money_play_allowed(tournament: models.Tournament, t_player: models.TournamentPlayer, label: str) -> None:
+    """Guard de estado para jugadas de plata (rebuy/addon): el torneo debe estar
+    en curso y el jugador vivo. Sin esto se podía cobrar en un torneo finalizado
+    o a un jugador ya eliminado (auditoría 2026-05-22)."""
+    if tournament.status not in ("REGISTERING", "RUNNING"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"No se puede registrar {label}: el torneo no está en curso (estado {tournament.status}).",
+        )
+    if t_player.status != "ACTIVE":
+        raise HTTPException(
+            status_code=400,
+            detail=f"No se puede registrar {label}: el jugador ya fue eliminado.",
+        )
+
+
 def _ensure_window_open(tournament: models.Tournament, until_level, label: str) -> None:
     """Ventana de rebuy/addon (T4): si hay un nivel límite y el reloj ya lo pasó,
     rechaza. NULL/0 = sin límite. Usa el nivel EFECTIVO (acotado a la estructura)."""
@@ -1146,6 +1170,7 @@ async def register_rebuy(
     if not tournament or not t_player:
         raise HTTPException(status_code=404, detail="Torneo o Jugador no encontrado")
 
+    _ensure_money_play_allowed(tournament, t_player, "un rebuy")
     _ensure_window_open(tournament, tournament.rebuy_until_level, "rebuys")
 
     # 2. Determinar precio según el tipo
@@ -1212,6 +1237,7 @@ async def register_addon(
     if not tournament or not t_player:
         raise HTTPException(status_code=404, detail="Datos no encontrados")
 
+    _ensure_money_play_allowed(tournament, t_player, "un add-on")
     _ensure_window_open(tournament, tournament.addon_until_level, "add-ons")
 
     amount = 0
@@ -1278,6 +1304,12 @@ async def undo_action(
 
     if not tournament or not t_player:
         raise HTTPException(status_code=404, detail="Torneo o Jugador no encontrado")
+
+    # Deshacer solo con el torneo vivo: tras finalizar, los premios ya se
+    # calcularon sobre estos contadores y tocarlos desincroniza ledger vs pozo.
+    # (Sí se permite sobre un jugador eliminado: es una herramienta de corrección.)
+    if tournament.status in TERMINAL_STATUSES:
+        raise HTTPException(status_code=400, detail="No se puede deshacer: el torneo ya finalizó.")
 
     if request.action == "rebuy":
         if request.type == "SINGLE":
@@ -1358,6 +1390,9 @@ async def eliminate_player(
     if not t_player:
         raise HTTPException(status_code=404, detail="Jugador no encontrado en el torneo")
 
+    if tournament.status in TERMINAL_STATUSES:
+        raise HTTPException(status_code=400, detail="El torneo ya finalizó; no se puede eliminar jugadores.")
+
     if t_player.status == "ELIMINATED":
         raise HTTPException(status_code=400, detail="El jugador ya fue eliminado")
 
@@ -1423,7 +1458,8 @@ async def finalize_tournament(
             
             p.status = "WINNER"
             p.rank = rank
-            p.prize_collected = int(prize)
+            # round, no truncar: int() a secas se comía pesos del pozo repartido
+            p.prize_collected = int(round(prize))
         else:
             # Si no está en la lista de ganadores, es eliminado automáticamente
             p.status = "ELIMINATED"

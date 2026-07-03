@@ -310,6 +310,19 @@ class TournamentCreate(BaseModel):
     double_rebuy_price: int = 0
     double_addon_price: int = 0
     payout_structure: List[int] = []
+
+    @field_validator('payout_structure')
+    @classmethod
+    def payouts_must_sum_100(cls, v):
+        # El wizard ya lo valida en el cliente; este es el guard de verdad — una
+        # estructura que no suma 100% reparte un pozo distinto al pozo neto.
+        if v:
+            if any(pct <= 0 for pct in v):
+                raise ValueError("Cada puesto debe llevar un porcentaje mayor a 0")
+            if sum(v) != 100:
+                raise ValueError(f"Los premios deben sumar 100% (suman {sum(v)}%)")
+        return v
+
     # Estructura de blinds (T3). Si no viene (None), el backend usa la plantilla
     # default; si viene, debe tener al menos 1 nivel (una vacía rompería el reloj).
     blind_structure: Optional[List[BlindLevel]] = Field(default=None, min_length=1)
