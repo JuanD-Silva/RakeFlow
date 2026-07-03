@@ -55,7 +55,8 @@ async def session_players(db: AsyncSession, session_id: int) -> list[dict]:
     última entrada (BUYIN/REBUY) — el cashout también libera el cupo (bug
     2026-07-03: solo contaba el BUST). Si recompra después, vuelve a estar dentro.
     busted_at = timestamp de la salida vigente (congela el reloj); is_busted =
-    está fuera por cualquiera de las dos vías (mantiene los conteos existentes);
+    está fuera por cualquiera de las dos vías (se mantiene la CLAVE del campo
+    para no romper a los consumidores, pero su valor ahora incluye el cashout);
     cashed_out distingue el cobro: ahí el front NO ofrece "Volvió" (volver es un
     buy-in nuevo que registra el cajero, no un toggle del dealer)."""
     rows = (await db.execute(text("""
