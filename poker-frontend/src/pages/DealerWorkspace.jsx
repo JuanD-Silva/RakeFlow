@@ -217,15 +217,19 @@ function TableTab({ now }) {
           <div key={p.player_id} className={`rounded-xl px-4 py-3 flex items-center justify-between gap-3 border ${p.is_busted ? 'bg-gray-800/30 border-gray-700/40 opacity-60' : 'bg-gray-800/60 border-gray-700/60'}`}>
             <div className="min-w-0">
               <p className={`font-bold truncate ${p.is_busted ? 'text-gray-400 line-through' : 'text-white'}`}>{p.name}</p>
-              <p className="text-xs mt-0.5 text-gray-400">{p.is_busted ? '👋 Salió · ' : '⏱ '}{dur(p.seated_at, p.busted_at, now)} en mesa</p>
+              <p className="text-xs mt-0.5 text-gray-400">{p.cashed_out ? '💰 Cobró · ' : p.is_busted ? '👋 Salió · ' : '⏱ '}{dur(p.seated_at, p.busted_at, now)} en mesa</p>
             </div>
-            <button
-              onClick={() => toggleBust(p.player_id)}
-              disabled={busy[p.player_id]}
-              className={`shrink-0 text-xs font-bold px-3 py-2 rounded-lg transition-all active:scale-95 disabled:opacity-40 ${p.is_busted ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-red-600/90 hover:bg-red-500 text-white'}`}
-            >
-              {busy[p.player_id] ? '…' : p.is_busted ? 'Volvió' : 'Salió'}
-            </button>
+            {p.cashed_out ? (
+              <span className="shrink-0 text-[10px] font-bold uppercase px-3 py-2 rounded-lg bg-gray-800 text-gray-500">Cobró</span>
+            ) : (
+              <button
+                onClick={() => toggleBust(p.player_id)}
+                disabled={busy[p.player_id]}
+                className={`shrink-0 text-xs font-bold px-3 py-2 rounded-lg transition-all active:scale-95 disabled:opacity-40 ${p.is_busted ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-red-600/90 hover:bg-red-500 text-white'}`}
+              >
+                {busy[p.player_id] ? '…' : p.is_busted ? 'Volvió' : 'Salió'}
+              </button>
+            )}
           </div>
         ))}
       </section>

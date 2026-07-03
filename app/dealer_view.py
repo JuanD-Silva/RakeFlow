@@ -50,12 +50,21 @@ async def current_dealer_name(db: AsyncSession, session_id: int) -> Optional[str
 
 async def session_players(db: AsyncSession, session_id: int) -> list[dict]:
     """Jugadores sentados en la mesa.
-    seated_at = primer buy-in (arranca su reloj de tiempo en mesa);
-    busted_at = BUST (congela el reloj, baja el conteo y libera el cupo)."""
+    seated_at = primer buy-in (arranca su reloj de tiempo en mesa).
+    Un jugador está FUERA si su última salida (CASHOUT o BUST) es posterior a su
+    última entrada (BUYIN/REBUY) — el cashout también libera el cupo (bug
+    2026-07-03: solo contaba el BUST). Si recompra después, vuelve a estar dentro.
+    busted_at = timestamp de la salida vigente (congela el reloj); is_busted =
+    está fuera por cualquiera de las dos vías (se mantiene la CLAVE del campo
+    para no romper a los consumidores, pero su valor ahora incluye el cashout);
+    cashed_out distingue el cobro: ahí el front NO ofrece "Volvió" (volver es un
+    buy-in nuevo que registra el cajero, no un toggle del dealer)."""
     rows = (await db.execute(text("""
         SELECT p.id, p.name,
             MIN(CASE WHEN CAST(t.type AS TEXT) IN ('BUYIN','REBUY') THEN t.timestamp END) AS seated_at,
-            MAX(CASE WHEN CAST(t.type AS TEXT) = 'BUST' THEN t.timestamp END) AS busted_at
+            MAX(CASE WHEN CAST(t.type AS TEXT) IN ('BUYIN','REBUY') THEN t.timestamp END) AS last_in,
+            MAX(CASE WHEN CAST(t.type AS TEXT) = 'BUST' THEN t.timestamp END) AS last_bust,
+            MAX(CASE WHEN CAST(t.type AS TEXT) = 'CASHOUT' THEN t.timestamp END) AS last_cashout
         FROM players p
         JOIN transactions t ON p.id = t.player_id
         WHERE t.session_id = :sid
@@ -63,10 +72,19 @@ async def session_players(db: AsyncSession, session_id: int) -> list[dict]:
         HAVING MIN(CASE WHEN CAST(t.type AS TEXT) IN ('BUYIN','REBUY') THEN t.timestamp END) IS NOT NULL
         ORDER BY MIN(CASE WHEN CAST(t.type AS TEXT) IN ('BUYIN','REBUY') THEN t.timestamp END)
     """), {"sid": session_id})).fetchall()
-    return [{
-        "player_id": r.id,
-        "name": r.name,
-        "seated_at": utc_iso(r.seated_at),
-        "busted_at": utc_iso(r.busted_at),
-        "is_busted": r.busted_at is not None,
-    } for r in rows]
+    out = []
+    for r in rows:
+        exits = [ts for ts in (r.last_bust, r.last_cashout) if ts is not None]
+        out_ts = max(exits) if exits else None
+        is_out = out_ts is not None and (r.last_in is None or out_ts >= r.last_in)
+        cashed_out = bool(is_out and r.last_cashout is not None
+                          and (r.last_bust is None or r.last_cashout >= r.last_bust))
+        out.append({
+            "player_id": r.id,
+            "name": r.name,
+            "seated_at": utc_iso(r.seated_at),
+            "busted_at": utc_iso(out_ts) if is_out else None,
+            "is_busted": is_out,
+            "cashed_out": cashed_out,
+        })
+    return out

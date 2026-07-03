@@ -90,12 +90,10 @@ async def get_active_sessions_summary(
             s.max_players,
             s.start_time,
             CAST(s.status AS TEXT) AS status,
-            -- Jugadores en mesa = con buy-in y SIN quebrar. Un BUST implica buy-in
-            -- previo, así que los quebrados son un subconjunto: basta restarlos.
-            GREATEST(0,
-                COUNT(DISTINCT t.player_id) FILTER (WHERE CAST(t.type AS TEXT) IN ('BUYIN', 'REBUY'))
-                - COUNT(DISTINCT t.player_id) FILTER (WHERE CAST(t.type AS TEXT) = 'BUST')
-            ) AS players_count,
+            -- Jugador EN MESA = su última entrada (BUYIN/REBUY) es posterior a su
+            -- última salida (CASHOUT o BUST). El cashout también libera el cupo
+            -- (bug 2026-07-03: solo se restaba el BUST); si recompra, cuenta de nuevo.
+            COALESCE(a.cnt, 0) AS players_count,
             COALESCE(SUM(CASE WHEN CAST(t.type AS TEXT) IN ('BUYIN', 'REBUY')
                               THEN t.amount ELSE 0 END), 0) AS total_buyin,
             COALESCE(SUM(CASE WHEN CAST(t.type AS TEXT) = 'CASHOUT'
@@ -103,9 +101,21 @@ async def get_active_sessions_summary(
             MAX(t.timestamp) AS last_activity_at
         FROM sessions s
         LEFT JOIN transactions t ON t.session_id = s.id
+        LEFT JOIN (
+            SELECT session_id, COUNT(*) AS cnt FROM (
+                SELECT tx.session_id, tx.player_id,
+                    MAX(CASE WHEN CAST(tx.type AS TEXT) IN ('BUYIN','REBUY') THEN tx.timestamp END) AS in_ts,
+                    MAX(CASE WHEN CAST(tx.type AS TEXT) IN ('CASHOUT','BUST') THEN tx.timestamp END) AS out_ts
+                FROM transactions tx
+                WHERE tx.session_id IN (SELECT id FROM sessions WHERE club_id = :cid AND status = 'OPEN')
+                GROUP BY tx.session_id, tx.player_id
+            ) x
+            WHERE x.in_ts IS NOT NULL AND (x.out_ts IS NULL OR x.in_ts > x.out_ts)
+            GROUP BY session_id
+        ) a ON a.session_id = s.id
         WHERE s.club_id = :cid
           AND s.status = 'OPEN'
-        GROUP BY s.id, s.name, s.max_players, s.start_time, s.status
+        GROUP BY s.id, s.name, s.max_players, s.start_time, s.status, a.cnt
         ORDER BY s.id DESC
     """)
     rows = (await db.execute(sql, {"cid": current_club.id})).fetchall()
