@@ -445,7 +445,7 @@ export default function TournamentPlayerTable({ tournament, onUpdate }) {
             )}
             
             {isRegisterOpen && <RegisterModal onClose={() => setIsRegisterOpen(false)} onConfirm={handleRegister} activeTab={activeTab} setActiveTab={setActiveTab} availablePlayers={allPlayers.filter(ap => !tournament.players?.find(tp => tp.player_id === ap.id))} selectedPlayerId={selectedPlayerId} setSelectedPlayerId={setSelectedPlayerId} newPlayerName={newPlayerName} setNewPlayerName={setNewPlayerName} newPlayerPhone={newPlayerPhone} setNewPlayerPhone={setNewPlayerPhone} regOptions={regOptions} setRegOptions={setRegOptions} prices={prices} loading={loading} />}
-            {actionPlayer && <ActionModal player={actionPlayer} playerName={getPlayerName(actionPlayer.player_id)} rebuysClosed={rebuysClosed} addonsClosed={addonsClosed} rebuyUntil={tournament.rebuy_until_level} addonUntil={tournament.addon_until_level} onClose={() => setActionPlayer(null)} onRebuy={(t) => handleTransaction("Rebuy", t)} onAddon={(t) => handleTransaction("Addon", t)} onUndo={(action, type) => { setConfirmModal({ isOpen: true, title: "Deshacer", message: `¿Deshacer ${action} ${type}?`, type: "danger", onConfirm: async () => { setLoading(true); try { await tournamentService.undoAction(tournament.id, actionPlayer.player_id, action, type); setActionPlayer(null); onUpdate(); showToast("Deshecho"); } catch(e) { showToast(e.response?.data?.detail || "Error", "error"); } finally { setLoading(false); setConfirmModal(prev => ({...prev, isOpen: false})); } } }); }} onPayTip={() => { handlePayTip(actionPlayer.player_id); }} onUnregister={() => handleUnregister(actionPlayer.player_id, getPlayerName(actionPlayer.player_id))} prices={prices} loading={loading} />}
+            {actionPlayer && <ActionModal player={actionPlayer} playerName={getPlayerName(actionPlayer.player_id)} rebuysClosed={rebuysClosed} addonsClosed={addonsClosed} rebuyUntil={tournament.rebuy_until_level} addonUntil={tournament.addon_until_level} onClose={() => setActionPlayer(null)} onRebuy={(t) => handleTransaction("Rebuy", t)} onAddon={(t) => handleTransaction("Addon", t)} onUndo={(action, type) => { setConfirmModal({ isOpen: true, title: "Deshacer", message: action === "tip" ? "¿Deshacer el último tip cobrado?" : `¿Deshacer ${action} ${type}?`, type: "danger", onConfirm: async () => { setLoading(true); try { await tournamentService.undoAction(tournament.id, actionPlayer.player_id, action, type); setActionPlayer(null); onUpdate(); showToast("Deshecho"); } catch(e) { showToast(e.response?.data?.detail || "Error", "error"); } finally { setLoading(false); setConfirmModal(prev => ({...prev, isOpen: false})); } } }); }} onPayTip={() => { handlePayTip(actionPlayer.player_id); }} onUnregister={() => handleUnregister(actionPlayer.player_id, getPlayerName(actionPlayer.player_id))} prices={prices} loading={loading} />}
         </div>
     );
 }
@@ -812,6 +812,11 @@ function ActionModal({ player, playerName, onClose, onRebuy, onAddon, onUndo, on
                                 <div className="text-xs font-bold uppercase tracking-wider text-pink-300 mb-1">+ Cobrar Tip</div>
                                 <div className="text-xl font-black font-mono">{formatMoney(prices.tip)}</div>
                             </button>
+                            {(player.tips_count || 0) > 0 && (
+                                <button onClick={()=>onUndo("tip","SINGLE")} disabled={loading} className="w-full mt-2 text-red-400 hover:text-red-300 hover:bg-red-900/20 border border-gray-700 hover:border-red-500/30 py-2 rounded-lg text-[10px] font-bold uppercase transition-colors">
+                                    Deshacer tip ({player.tips_count})
+                                </button>
+                            )}
                         </div>
                     )}
 

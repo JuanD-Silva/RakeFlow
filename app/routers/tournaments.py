@@ -1293,8 +1293,8 @@ async def register_addon(
 
 class UndoRequest(BaseModel):
     player_id: int
-    action: str  # "rebuy" o "addon"
-    type: str    # "SINGLE" o "DOUBLE"
+    action: str  # "rebuy", "addon" o "tip"
+    type: str = "SINGLE"  # "SINGLE" o "DOUBLE" (el tip no distingue tipo)
 
 @router.post("/{tournament_id}/undo", response_model=schemas.TournamentPlayerSchema)
 async def undo_action(
@@ -1352,6 +1352,12 @@ async def undo_action(
             t_player.addons_count -= 1
         else:
             raise HTTPException(status_code=400, detail="Tipo invalido")
+    elif request.action == "tip":
+        # Deshacer un dealer tip cobrado por error (registro o pay-tip tardío).
+        if (t_player.tips_count or 0) <= 0:
+            raise HTTPException(status_code=400, detail="No hay tips para deshacer")
+        t_player.tips_count -= 1
+        t_player.is_tip_paid = t_player.tips_count > 0
     else:
         raise HTTPException(status_code=400, detail="Accion invalida")
 
@@ -1359,17 +1365,22 @@ async def undo_action(
     # Las descripciones distinguen "Sencillo" vs "Doble"; sin este filtro se borraba
     # la transaccion mas reciente sin importar el tipo, desincronizando el ledger de
     # transacciones contra los contadores (ej: deshacer un single borraba un double).
-    tx_type = models.TransactionType.TOURNAMENT_REBUY if request.action == "rebuy" else models.TransactionType.TOURNAMENT_ADDON
-    desc_keyword = "Doble" if request.type == "DOUBLE" else "Sencillo"
-    last_tx = await db.execute(
+    # El tip no tiene subtipos: se borra el TOURNAMENT_TIP más reciente sin filtro.
+    if request.action == "tip":
+        tx_type = models.TransactionType.TOURNAMENT_TIP
+        desc_keyword = None
+    else:
+        tx_type = models.TransactionType.TOURNAMENT_REBUY if request.action == "rebuy" else models.TransactionType.TOURNAMENT_ADDON
+        desc_keyword = "Doble" if request.type == "DOUBLE" else "Sencillo"
+    tx_query = (
         select(models.Transaction)
         .where(models.Transaction.tournament_id == tournament_id)
         .where(models.Transaction.player_id == request.player_id)
         .where(models.Transaction.type == tx_type)
-        .where(models.Transaction.description.ilike(f"%{desc_keyword}%"))
-        .order_by(models.Transaction.timestamp.desc())
-        .limit(1)
     )
+    if desc_keyword:
+        tx_query = tx_query.where(models.Transaction.description.ilike(f"%{desc_keyword}%"))
+    last_tx = await db.execute(tx_query.order_by(models.Transaction.timestamp.desc()).limit(1))
     tx = last_tx.scalars().first()
     if tx:
         await db.execute(delete(models.Transaction).where(models.Transaction.id == tx.id))
