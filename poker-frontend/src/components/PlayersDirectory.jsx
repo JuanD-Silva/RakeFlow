@@ -125,7 +125,9 @@ export default function PlayersDirectory() {
       </div>
 
       {filtered.length === 0 && (
-        <p className="text-center text-sm text-gray-500 py-10">Ningún jugador coincide con la búsqueda.</p>
+        <p className="text-center text-sm text-gray-500 py-10">
+          {players.length === 0 ? 'Aún no hay jugadores — las fichas se crean desde la mesa activa.' : 'Ningún jugador coincide con la búsqueda.'}
+        </p>
       )}
 
       <div className="space-y-2">

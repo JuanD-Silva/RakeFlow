@@ -173,7 +173,7 @@ function PokerManagerApp() {
           {currentView === 'history' && <SessionHistory />}
           {currentView === 'finance' && <WeeklyReport />}
           {currentView === 'ranking' && <PlayerLeaderboard />}
-          {currentView === 'players' && <PlayersDirectory />}
+          {currentView === 'players' && (isOwner || role === 'manager') && <PlayersDirectory />}
           {currentView === 'team' && <TeamPanel />}
           {currentView === 'config' && <ConfigPanel />}
         </ErrorBoundary>
