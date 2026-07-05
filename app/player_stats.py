@@ -9,8 +9,11 @@ con los rankings del staff.
 - los rankings mensuales (compute_monthly_rankings; /stats/rankings es un wrapper top-3)
 
 Todos los helpers por jugador aceptan `since` (= Player.stats_since): el corte
-de la venta del histórico. None = histórico completo. El corte va por fecha de
-CIERRE (sesión/torneo): una sesión pertenece al panel si cerró después del corte.
+de la venta del histórico. None = histórico completo. Semántica del corte:
+- PLATA (cash_rows / tournament_rows / archive): por fecha de CIERRE — una
+  sesión pertenece al panel si cerró después del corte.
+- VISITAS/RACHA (visit_weeks): por fecha de la actividad (timestamp de la
+  entrada / start_time del torneo) — una visita ocurre cuando el jugador va.
 """
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
