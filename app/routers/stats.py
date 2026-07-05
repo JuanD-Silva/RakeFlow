@@ -1,14 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import func, text, desc, or_
-from sqlalchemy.orm import selectinload
+from sqlalchemy import func, desc, or_
 from typing import List
 from datetime import datetime, timedelta, time
 from zoneinfo import ZoneInfo
 import logging
 
-from .. import models, schemas, services
+from .. import models, schemas, services, player_stats
 from ..dependencies import get_db, get_current_club, require_role
 
 # Mambo y demas clubes operan en Colombia. Railway corre en UTC, asi que
@@ -345,181 +344,23 @@ async def get_rankings(
     """
     Rankings mensuales. Por default mes en curso.
     Si se pasan year y month, devuelve los rankings de ese mes especifico.
+
+    El cálculo vive en player_stats.compute_monthly_rankings (fuente única,
+    compartida con el panel del jugador); acá solo se toma el top 3.
     """
     try:
-        now = datetime.utcnow()
-        if year and month:
-            # Mes historico explicito
-            start_date = datetime(year, month, 1)
-            if month == 12:
-                end_date = datetime(year + 1, 1, 1)
-            else:
-                end_date = datetime(year, month + 1, 1)
-            is_current_month = (year == now.year and month == now.month)
-        else:
-            # Mes en curso (default): respeta rankings_reset_at del club.
-            # Mes en hora Colombia para coincidir con la UI del cliente.
-            start_date = _start_of_month_col_as_utc()
-            if current_club.rankings_reset_at and current_club.rankings_reset_at > start_date:
-                start_date = current_club.rankings_reset_at
-            end_date = now
-            is_current_month = True
+        winners_map, spenders_map, active_map, names_map, period = \
+            await player_stats.compute_monthly_rankings(db, current_club, year, month)
 
-        # Mapas para acumular valores por ID de jugador
-        winners_map = {}
-        spenders_map = {}
-        active_map = {} # 👈 Este faltaba calcular
-        names_map = {}
-
-        # ---------------------------------------------------------
-        # A. PROCESAR CASH (Profit, Spend y TIEMPO)
-        # ---------------------------------------------------------
-        
-        # 1. Profit y Spend (SQL agrupado)
-        sql_cash_stats = text("""
-            SELECT p.id, p.name, 
-                SUM(CASE 
-                    WHEN t.type IN ('CASHOUT', 'JACKPOT_PAYOUT', 'BONUS') THEN t.amount 
-                    WHEN t.type IN ('BUYIN', 'REBUY') THEN -t.amount 
-                    ELSE 0 
-                END) as profit,
-                SUM(CASE 
-                    WHEN t.type IN ('SPEND', 'TIP') THEN t.amount 
-                    ELSE 0 
-                END) as spend
-            FROM players p
-            JOIN transactions t ON p.id = t.player_id
-            JOIN sessions s ON t.session_id = s.id
-            WHERE p.club_id = :cid
-              AND s.end_time >= :start_date
-              AND s.end_time < :end_date
-              AND s.status = 'CLOSED'
-            GROUP BY p.id, p.name
-        """)
-
-        rows_stats = (await db.execute(sql_cash_stats, {"cid": current_club.id, "start_date": start_date, "end_date": end_date})).all()
-        
-        for r in rows_stats:
-            names_map[r.id] = r.name
-            if r.profit > 0: winners_map[r.id] = winners_map.get(r.id, 0) + r.profit
-            if r.spend > 0: spenders_map[r.id] = spenders_map.get(r.id, 0) + r.spend
-
-        # 2. TIEMPO EN MESA (Active) - Por jugador, por sesión.
-        # Entrada = primer BUYIN/REBUY del jugador en la sesión.
-        # Salida  = último CASHOUT o BUST del jugador; si no hubo, el cierre de sesión.
-        # Un jugador que quebró (BUST sin cashout) o se fue no carga las horas restantes.
-        sql_cash_time = text("""
-            SELECT
-                t.player_id,
-                EXTRACT(EPOCH FROM (
-                    COALESCE(
-                        MAX(CASE WHEN CAST(t.type AS TEXT) IN ('CASHOUT', 'BUST') THEN t.timestamp END),
-                        s.end_time
-                    ) - MIN(CASE WHEN CAST(t.type AS TEXT) IN ('BUYIN', 'REBUY') THEN t.timestamp END)
-                )) / 3600 AS hours
-            FROM transactions t
-            JOIN sessions s ON t.session_id = s.id
-            WHERE s.club_id = :cid
-              AND s.end_time >= :start_date
-              AND s.end_time < :end_date
-              AND s.status = 'CLOSED'
-              AND t.player_id IS NOT NULL
-            GROUP BY t.player_id, s.id, s.end_time
-            HAVING MIN(CASE WHEN CAST(t.type AS TEXT) IN ('BUYIN', 'REBUY') THEN t.timestamp END) IS NOT NULL
-        """)
-
-        rows_time = (await db.execute(sql_cash_time, {"cid": current_club.id, "start_date": start_date, "end_date": end_date})).all()
-
-        for r in rows_time:
-            pid = r[0]
-            hours = float(r[1]) if r[1] else 0.0
-            if hours < 0:
-                hours = 0.0
-            active_map[pid] = active_map.get(pid, 0.0) + hours
-
-        # ---------------------------------------------------------
-        # B. PROCESAR TORNEOS (Profit y TIEMPO)
-        # ---------------------------------------------------------
-        q_tourneys = await db.execute(
-            select(models.Tournament)
-            .options(selectinload(models.Tournament.players))
-            .where(
-                models.Tournament.club_id == current_club.id,
-                models.Tournament.status == "COMPLETED",
-                models.Tournament.end_time >= start_date,
-                models.Tournament.end_time < end_date,
-            )
-        )
-        tournaments = q_tourneys.scalars().all()
-
-        # Precargar nombres de jugadores que solo juegan torneos (evita N+1 queries)
-        tourney_player_ids = {p.player_id for t in tournaments for p in t.players if p.player_id not in names_map}
-        if tourney_player_ids:
-            names_result = await db.execute(
-                select(models.Player.id, models.Player.name).where(models.Player.id.in_(tourney_player_ids))
-            )
-            for row in names_result.all():
-                names_map[row.id] = row.name
-
-        # Pesos de horas por posición en torneo.
-        # Base 0.5 para todos (no es viable registrar cada eliminación en torneos grandes);
-        # podio recibe multiplicador para reflejar que realmente duró más.
-        TOURNEY_RANK_WEIGHTS = {1: 1.5, 2: 1.3, 3: 1.2}
-        TOURNEY_BASE_WEIGHT = 0.5
-
-        for t in tournaments:
-            tourney_duration = 0.0
-            if t.start_time and t.end_time:
-                tourney_duration = (t.end_time - t.start_time).total_seconds() / 3600
-
-            for p in t.players:
-                pid = p.player_id
-
-                # 1. Calcular Profit (Premio - Inversión).
-                # rebuys_count/addons_count son TOTALES (singles + dobles):
-                # singles = total - dobles, valuados a precio single; dobles a precio double.
-                single_rebuys = max(0, (p.rebuys_count or 0) - (p.double_rebuys_count or 0))
-                single_addons = max(0, (p.addons_count or 0) - (p.double_addons_count or 0))
-                inv = t.buyin_amount + \
-                      ((p.tips_count or 0) * (t.dealer_tip_amount or 0)) + \
-                      single_rebuys * t.rebuy_price + \
-                      (p.double_rebuys_count or 0) * t.double_rebuy_price + \
-                      single_addons * t.addon_price + \
-                      (p.double_addons_count or 0) * t.double_addon_price
-
-                net = (p.prize_collected or 0) - inv
-                if net > 0:
-                    winners_map[pid] = winners_map.get(pid, 0) + net
-
-                # 2. Tiempo ponderado por rank
-                weight = TOURNEY_RANK_WEIGHTS.get(p.rank, TOURNEY_BASE_WEIGHT)
-                active_map[pid] = active_map.get(pid, 0.0) + tourney_duration * weight
-
-                # 3. Calcular Spends (Si hubiera tips registrados en transacciones vinculadas al torneo)
-                # (Opcional: Si tus torneos generan transacciones de TIP en la tabla transactions, 
-                # deberías hacer un query similar al de cash pero filtrando por tournament_id).
-                # Por ahora asumimos que el gasto fuerte es en Cash.
-
-        # ---------------------------------------------------------
-        # C. ORDENAR Y RETORNAR TOP 3
-        # ---------------------------------------------------------
         def get_top_3(data_map):
-            # Convertir dict {id: val} a lista [{name, value}]
             lista = [{"name": names_map.get(k, "Unknown"), "value": v} for k, v in data_map.items()]
-            # Ordenar descendente y tomar 3
             return sorted(lista, key=lambda x: x["value"], reverse=True)[:3]
 
         return {
             "winners": get_top_3(winners_map),
             "spenders": get_top_3(spenders_map),
             "active": get_top_3(active_map),
-            "period": {
-                "year": start_date.year,
-                "month": start_date.month,
-                "is_current_month": is_current_month,
-                "start_date": start_date.isoformat(),
-                "end_date": end_date.isoformat(),
-            }
+            "period": period,
         }
 
     except Exception as e:
