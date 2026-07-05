@@ -9,7 +9,7 @@ Corte del histórico: todo se calcula desde Player.stats_since (None = todo;
 ver player_stats). La posición en rankings NO se corta: es el ranking real del
 mes del club, igual para todos.
 """
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
@@ -44,7 +44,7 @@ async def _jackpot_count(db: AsyncSession, club_id: int, player_id: int, since) 
         WHERE s.club_id = :cid AND t.player_id = :pid
           AND t.type = 'JACKPOT_PAYOUT' AND s.end_time >= :since
     """), {"cid": club_id, "pid": player_id,
-           "since": since or player_stats._EPOCH})).scalar() or 0
+           "since": since or player_stats.EPOCH})).scalar() or 0
 
 
 def _totals(cash_rows, tour_rows):
@@ -64,9 +64,11 @@ def _totals(cash_rows, tour_rows):
         # Mínimo 30 min de muestra: con minutos en mesa la división da números
         # absurdos y de todos modos no significa nada.
         "profit_per_hour": round(cash_profit / hours) if hours >= 0.5 else None,
-        "cash_sessions": len(cash_rows),
+        # Visitas = sesiones JUGADAS (con entrada); las filas solo-corrección
+        # suman plata pero no visitas.
+        "cash_sessions": sum(1 for r in cash_rows if r.get("played", True)),
         "tournaments": len(tour_rows),
-        "visits": len(cash_rows) + len(tour_rows),
+        "visits": sum(1 for r in cash_rows if r.get("played", True)) + len(tour_rows),
     }
 
 
@@ -175,7 +177,7 @@ async def my_achievements(
         streak_weeks_max=player_stats.longest_streak(weeks),
         jackpot_count=jk,
     )
-    visits = len(cash_rows) + len(tour_rows)
+    visits = sum(1 for r in cash_rows if r.get("played", True)) + len(tour_rows)
     return {"badges": badges, "level": player_stats.compute_level(visits),
             "unlocked_count": sum(1 for b in badges if b["achieved"])}
 
@@ -199,6 +201,9 @@ async def my_rank(
     winners, spenders, active, _names, period = \
         await player_stats.compute_monthly_rankings(db, club, year, month)
 
+    # Empates: competition ranking (1 + #{estrictamente mayores}) — dos
+    # empatados comparten posición; el top-3 del staff corta por orden estable,
+    # así que un empatado en el 3er valor puede ver "#3" sin salir en el card.
     def my_pos(data_map, value_key):
         if player.id not in data_map:
             return None
@@ -266,7 +271,11 @@ async def monthly_summary(
     else:
         start = player_stats.start_of_month_col_as_utc()
         end = now
-    # El corte de la venta manda: no mostrar meses anteriores a stats_since
+    period = {"year": start.year, "month": start.month}  # SIEMPRE el mes pedido
+    # El corte de la venta manda: no mostrar plata anterior a stats_since.
+    # partial = el corte parte el mes; locked = el mes entero quedó bajo el corte.
+    partial = bool(since and start < since < end)
+    locked = bool(since and since >= end)
     if since and since > start:
         start = since
 
@@ -292,7 +301,9 @@ async def monthly_summary(
     return {
         "player_name": player.name,
         "club_name": club.name,
-        "period": {"year": start.year, "month": start.month},
+        "period": period,
+        "partial": partial,   # el corte del histórico parte este mes
+        "locked": locked,     # mes enteramente anterior al corte: todo en 0
         "visits": t["visits"],
         "hours": t["hours"],
         "invested": t["invested"],

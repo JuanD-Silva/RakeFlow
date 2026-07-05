@@ -30,7 +30,7 @@ UTC = ZoneInfo("UTC")
 
 # Fecha "cero" para queries con corte opcional: si since es None se usa esto
 # (todo el histórico). Evita duplicar cada SQL en variante con/sin filtro.
-_EPOCH = datetime(2000, 1, 1)
+EPOCH = datetime(2000, 1, 1)
 
 # Pesos de horas por posición en torneo (rankings "fieles"). Base 0.5 para
 # todos (no se registra cada eliminación); el podio duró más.
@@ -213,22 +213,28 @@ async def cash_rows_for_player(db: AsyncSession, club_id: int, player_id: int,
             SUM(CASE WHEN t.type IN ('BUYIN','REBUY') THEN t.amount ELSE 0 END) AS invested,
             SUM(CASE WHEN t.type IN ('CASHOUT','JACKPOT_PAYOUT','BONUS') THEN t.amount ELSE 0 END) AS returned,
             SUM(CASE WHEN t.type IN ('SPEND','TIP') THEN t.amount ELSE 0 END) AS spend,
-            GREATEST(0, EXTRACT(EPOCH FROM (
-                COALESCE(
-                    MAX(CASE WHEN CAST(t.type AS TEXT) IN ('CASHOUT','BUST') THEN t.timestamp END),
-                    s.end_time
-                ) - MIN(CASE WHEN CAST(t.type AS TEXT) IN ('BUYIN','REBUY') THEN t.timestamp END)
-            )) / 3600) AS hours
+            -- Horas solo si hubo entrada (BUYIN/REBUY). Sin HAVING: una sesión
+            -- con solo cashout/jackpot/consumo (corrección de staff) igual debe
+            -- mostrar su plata en el panel — los rankings del staff la cuentan.
+            CASE WHEN MIN(CASE WHEN CAST(t.type AS TEXT) IN ('BUYIN','REBUY') THEN t.timestamp END) IS NULL
+                 THEN 0
+                 ELSE GREATEST(0, EXTRACT(EPOCH FROM (
+                    COALESCE(
+                        MAX(CASE WHEN CAST(t.type AS TEXT) IN ('CASHOUT','BUST') THEN t.timestamp END),
+                        s.end_time
+                    ) - MIN(CASE WHEN CAST(t.type AS TEXT) IN ('BUYIN','REBUY') THEN t.timestamp END)
+                 )) / 3600)
+            END AS hours,
+            BOOL_OR(t.type IN ('BUYIN','REBUY')) AS played
         FROM transactions t
         JOIN sessions s ON s.id = t.session_id
         WHERE s.club_id = :cid AND t.player_id = :pid
           AND s.status = 'CLOSED' AND s.end_time >= :since
         GROUP BY s.id, s.name, s.end_time
-        HAVING MIN(CASE WHEN CAST(t.type AS TEXT) IN ('BUYIN','REBUY') THEN t.timestamp END) IS NOT NULL
         ORDER BY s.end_time
     """)
     rows = (await db.execute(sql, {"cid": club_id, "pid": player_id,
-                                   "since": since or _EPOCH})).all()
+                                   "since": since or EPOCH})).all()
     return [
         {
             "session_id": r.session_id,
@@ -238,6 +244,9 @@ async def cash_rows_for_player(db: AsyncSession, club_id: int, player_id: int,
             "returned": float(r.returned or 0),
             "spend": float(r.spend or 0),
             "hours": float(r.hours or 0),
+            # played=False: fila solo-corrección (sin entrada) — cuenta la plata
+            # pero NO cuenta como visita/sesión jugada.
+            "played": bool(r.played),
         }
         for r in rows
     ]
@@ -253,7 +262,7 @@ async def tournament_rows_for_player(db: AsyncSession, club_id: int, player_id: 
             models.Tournament.club_id == club_id,
             models.TournamentPlayer.player_id == player_id,
             models.Tournament.status == "COMPLETED",
-            models.Tournament.end_time >= (since or _EPOCH),
+            models.Tournament.end_time >= (since or EPOCH),
         )
         .order_by(models.Tournament.end_time)
     )
@@ -292,7 +301,7 @@ async def visit_weeks(db: AsyncSession, club_id: int, player_id: int,
         ORDER BY 1
     """)
     rows = (await db.execute(sql, {"cid": club_id, "pid": player_id,
-                                   "since": since or _EPOCH})).all()
+                                   "since": since or EPOCH})).all()
     return [r[0] for r in rows]
 
 

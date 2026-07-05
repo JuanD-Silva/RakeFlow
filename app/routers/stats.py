@@ -1,8 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import func, text, desc, or_
-from sqlalchemy.orm import selectinload
+from sqlalchemy import func, desc, or_
 from typing import List
 from datetime import datetime, timedelta, time
 from zoneinfo import ZoneInfo
