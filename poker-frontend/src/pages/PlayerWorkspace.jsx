@@ -436,11 +436,20 @@ const BadgeCard = ({ badge, isNew }) => {
 // Ranking: posición propia en los rankings del mes (jamás
 // nombres ni montos de otros — eso es privado de cada uno)
 // ---------------------------------------------------------
+// El fallback de cada card distingue "jugaste pero no aplicás a ESTE ranking"
+// de "no viniste": en winners solo entran los que cerraron el mes en verde, y
+// decir "sin actividad" a alguien que jugó 11 noches se lee como datos perdidos
+// (pasó con el abril en rojo de Juan).
 const RANK_CARDS = [
-  { key: 'winners', emoji: '🏆', label: 'Ganadores del mes', fmt: (r) => signCop(r.value) },
-  { key: 'active', emoji: '⏱️', label: 'Horas en mesa', fmt: (r) => `${r.hours} h` },
+  { key: 'winners', emoji: '🏆', label: 'Ganadores del mes', fmt: (r) => signCop(r.value),
+    empty: (d) => (d.active || d.spenders)
+      ? 'Ese mes no cerraste en verde — acá solo entran los que terminan ganando'
+      : 'Sin actividad este mes' },
+  { key: 'active', emoji: '⏱️', label: 'Horas en mesa', fmt: (r) => `${r.hours} h`,
+    empty: () => 'Sin horas en mesa este mes' },
   // spenders = consumo + propinas (SPEND/TIP), no buy-ins
-  { key: 'spenders', emoji: '🥂', label: 'Los que más invitan', fmt: (r) => cop(r.value) },
+  { key: 'spenders', emoji: '🥂', label: 'Los que más invitan', fmt: (r) => cop(r.value),
+    empty: () => 'Sin consumo registrado este mes' },
 ];
 
 function RankingTab() {
@@ -488,7 +497,7 @@ function RankingTab() {
           subtitle="Jugá una noche en el club y entrás a la tabla." />
       )}
 
-      {inAny && RANK_CARDS.map(({ key, emoji, label, fmt }) => {
+      {inAny && RANK_CARDS.map(({ key, emoji, label, fmt, empty }) => {
         const r = data[key];
         return (
           <div key={key} className="bg-gray-800/50 border border-gray-700/60 rounded-2xl px-4 py-3 flex items-center gap-3">
@@ -496,7 +505,7 @@ function RankingTab() {
             <div className="min-w-0 flex-1">
               <p className="text-white font-bold text-sm">{label}</p>
               <p className="text-xs text-gray-400">
-                {r ? <>Puesto <b className="text-emerald-300">#{r.rank}</b> de {r.total} jugador{r.total !== 1 ? 'es' : ''}</> : 'Sin actividad este mes'}
+                {r ? <>Puesto <b className="text-emerald-300">#{r.rank}</b> de {r.total} jugador{r.total !== 1 ? 'es' : ''}</> : empty(data)}
               </p>
             </div>
             {r && <span className="shrink-0 font-black text-white">{fmt(r)}</span>}
