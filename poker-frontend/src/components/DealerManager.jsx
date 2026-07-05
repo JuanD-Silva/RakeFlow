@@ -265,6 +265,18 @@ export default function DealerManager() {
                           Invitar a la app
                         </button>
                       )}
+                      {/* Pendiente: re-invitar regenera el código y permite CORREGIR
+                          el teléfono (mismo patrón que PlayerTable; el backend ya lo
+                          soportaba pero la UI no lo exponía y el número quedaba preso) */}
+                      {d.is_active && d.has_account && d.invitation_pending && (
+                        <button
+                          onClick={() => startInvite(d)}
+                          className="text-[10px] font-bold px-2.5 py-1.5 rounded-lg border text-gray-300 border-gray-600 hover:bg-gray-700 transition-all"
+                          title="Genera un código nuevo y permite corregir el teléfono si se invitó a un número equivocado"
+                        >
+                          Re-invitar
+                        </button>
+                      )}
                       {d.is_active && d.has_account && !d.invitation_pending && (
                         <button
                           onClick={() => startInvite(d, true)}
