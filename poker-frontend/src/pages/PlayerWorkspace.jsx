@@ -214,13 +214,43 @@ function HomeTab() {
         </div>
       )}
 
-      {/* El mes en curso */}
+      {/* El mes en curso. Peak-end rule + finding on-domain: mostrar la pérdida
+          como número gigante de apertura baja las visitas al local. Lideramos
+          con lo no-monetario (visitas, horas, mejor noche — donde el que pierde
+          también gana); la plata del mes luce en verde si ganó, o queda como un
+          renglón chico y honesto si perdió. La plata NO se esconde: el total
+          real vive en "Tu juego" abajo. */}
       <section>
         <p className="text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-2">Este mes</p>
         <div className="grid grid-cols-2 gap-3">
-          <Stat label="Resultado del mes" value={signCop(data.month.profit)} tone={data.month.profit >= 0 ? 'good' : 'bad'} />
           <Stat label="Visitas del mes" value={`${data.month.visits}`} />
+          <Stat label="Horas del mes" value={`${data.month.hours} h`} />
         </div>
+
+        {/* Mejor noche: el peak positivo. Solo si de verdad ganó una noche —
+            no fabricamos un peak con la noche "menos mala". */}
+        {data.best_session && data.best_session.profit > 0 && (
+          <div className="mt-3 rounded-2xl p-4 border bg-emerald-900/20 border-emerald-600/40">
+            <p className="text-[11px] text-emerald-400/80 font-bold uppercase tracking-wide">🌟 Tu mejor noche del mes</p>
+            <p className="mt-1 text-white font-bold truncate">
+              {data.best_session.name} <span className="text-emerald-300">{signCop(data.best_session.profit)}</span>
+            </p>
+            <p className="text-[11px] text-gray-400">{fmtDate(data.best_session.date)}</p>
+          </div>
+        )}
+
+        {/* Resultado en plata del mes: el ganador luce arriba; el que pierde lo
+            ve honesto pero chico, no como número gigante en rojo. */}
+        {data.month.profit >= 0 ? (
+          <div className="mt-3">
+            <Stat label="Resultado del mes" value={signCop(data.month.profit)} tone="good" />
+          </div>
+        ) : (
+          <p className="mt-3 text-[12px] text-gray-500">
+            Este mes vas <b className="text-gray-400">{signCop(data.month.profit)}</b> — tu historia completa está abajo.
+          </p>
+        )}
+
         <button onClick={() => setShowShare(true)}
           className="w-full mt-3 py-3 rounded-xl bg-gray-800/70 hover:bg-gray-700 border border-gray-700/60 text-emerald-300 text-sm font-black uppercase tracking-wide">
           📤 Compartir mi mes
@@ -452,6 +482,17 @@ const RANK_CARDS = [
     empty: () => 'Sin consumo registrado este mes' },
 ];
 
+// Encuadre favorable del ranking (evidencia: el puesto crudo bajo — "#47 de 50" —
+// hunde al jugador recreativo). Podio → "#1"; tercio superior → "Top X%"; de la
+// mitad para abajo NO se muestra el puesto, solo participación neutra (el valor
+// de la métrica sigue visible a la derecha, así que no se esconde su desempeño).
+function rankLabel(r) {
+  if (r.rank === 1) return { text: `#1 de ${r.total}`, good: true };
+  const pct = Math.ceil((r.rank / r.total) * 100);
+  if (pct <= 33) return { text: `Top ${pct}%`, good: true };
+  return { text: `En la tabla · ${r.total} jugador${r.total !== 1 ? 'es' : ''}`, good: false };
+}
+
 function RankingTab() {
   const [period, setPeriod] = useState(null); // null = mes en curso
   const fetcher = useCallback(
@@ -499,13 +540,14 @@ function RankingTab() {
 
       {inAny && RANK_CARDS.map(({ key, emoji, label, fmt, empty }) => {
         const r = data[key];
+        const rl = r ? rankLabel(r) : null;
         return (
           <div key={key} className="bg-gray-800/50 border border-gray-700/60 rounded-2xl px-4 py-3 flex items-center gap-3">
             <span className="text-2xl shrink-0">{emoji}</span>
             <div className="min-w-0 flex-1">
               <p className="text-white font-bold text-sm">{label}</p>
               <p className="text-xs text-gray-400">
-                {r ? <>Puesto <b className="text-emerald-300">#{r.rank}</b> de {r.total} jugador{r.total !== 1 ? 'es' : ''}</> : empty(data)}
+                {rl ? <b className={rl.good ? 'text-emerald-300' : 'text-gray-400 font-normal'}>{rl.text}</b> : empty(data)}
               </p>
             </div>
             {r && <span className="shrink-0 font-black text-white">{fmt(r)}</span>}
