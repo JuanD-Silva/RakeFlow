@@ -101,6 +101,7 @@ class AuditAction:
     DEALER_INVITE = "DEALER_INVITE"
     DEALER_RESET_ACCESS = "DEALER_RESET_ACCESS"
     DEALER_DELETE = "DEALER_DELETE"
+    DEALER_UNLINK_ACCOUNT = "DEALER_UNLINK_ACCOUNT"
 
     # Panel del jugador (cuentas rol PLAYER + venta del histórico)
     PLAYER_INVITE = "PLAYER_INVITE"
