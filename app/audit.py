@@ -102,6 +102,12 @@ class AuditAction:
     DEALER_RESET_ACCESS = "DEALER_RESET_ACCESS"
     DEALER_DELETE = "DEALER_DELETE"
 
+    # Panel del jugador (cuentas rol PLAYER + venta del histórico)
+    PLAYER_INVITE = "PLAYER_INVITE"
+    PLAYER_RESET_ACCESS = "PLAYER_RESET_ACCESS"
+    PLAYER_ACTIVATE = "PLAYER_ACTIVATE"
+    PLAYER_HISTORY_UNLOCK = "PLAYER_HISTORY_UNLOCK"
+
 
 async def log_action(
     db: AsyncSession,
