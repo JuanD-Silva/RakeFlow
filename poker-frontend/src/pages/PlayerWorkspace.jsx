@@ -202,7 +202,7 @@ function HomeTab() {
             {/* Solo se menciona lo que HAY: "y 0 torneos" mata el pitch */}
             Tenés{' '}
             {data.archive.sessions > 0 && (
-              <b>{data.archive.sessions} sesion{data.archive.sessions !== 1 ? 'es' : ''}</b>
+              <b>{data.archive.sessions} {data.archive.sessions !== 1 ? 'sesiones' : 'sesión'}</b>
             )}
             {data.archive.sessions > 0 && data.archive.tournaments > 0 && ' y '}
             {data.archive.tournaments > 0 && (
