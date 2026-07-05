@@ -149,6 +149,7 @@ function HomeTab() {
   const t = data.totals;
   const lvl = data.level;
   const st = data.streak;
+  const sc = data.self_compare || {};
 
   return (
     <div className="space-y-5">
@@ -184,6 +185,31 @@ function HomeTab() {
             <p className="text-sm font-bold text-white">{st.weeks} semana{st.weeks !== 1 ? 's' : ''} seguida{st.weeks !== 1 ? 's' : ''} viniendo</p>
             {st.at_risk && <p className="text-[11px] text-amber-300 font-bold">Tu racha se corta el domingo — pasá por el club esta semana</p>}
           </div>
+        </div>
+      )}
+
+      {/* Horas esta semana — métrica-héroe donde el que pierde también progresa,
+          con barra hacia el récord (goal-gradient). Solo si hay historia de horas
+          (el jugador solo-torneo no tiene horas → no se muestra). */}
+      {(sc.week_hours > 0 || sc.best_week_hours > 0) && (
+        <div className="bg-gray-800/50 border border-gray-700/60 rounded-2xl p-4">
+          <div className="flex items-baseline justify-between">
+            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wide">⏱️ Horas esta semana</p>
+            <p className="text-xl font-black text-white">{sc.week_hours} h</p>
+          </div>
+          {sc.best_week_hours > 0 && (
+            <>
+              <div className="mt-2 h-2 rounded-full bg-gray-700/70 overflow-hidden">
+                <div className="h-full bg-emerald-500 rounded-full transition-all"
+                  style={{ width: `${Math.min(100, Math.round((100 * sc.week_hours) / sc.best_week_hours))}%` }} />
+              </div>
+              <p className="text-[11px] text-gray-500 mt-1.5">
+                {sc.week_hours >= sc.best_week_hours
+                  ? '🔥 ¡Récord de horas en una semana!'
+                  : <>Tu récord: <b className="text-gray-300">{sc.best_week_hours} h</b> · promedio {sc.avg_week_hours} h</>}
+              </p>
+            </>
+          )}
         </div>
       )}
 
@@ -228,6 +254,16 @@ function HomeTab() {
           <Stat label="Visitas del mes" value={`${data.month.visits}`} />
           {data.month.hours > 0 && <Stat label="Horas del mes" value={`${data.month.hours} h`} />}
         </div>
+
+        {/* Comparación contra uno mismo (no social): nudge positivo si va por
+            encima de su promedio histórico de visitas/mes. */}
+        {sc.avg_month_visits > 0 && (
+          <p className="text-[11px] text-gray-500 mt-2">
+            {data.month.visits >= sc.avg_month_visits
+              ? <>👏 Vas por encima de tu promedio (<b className="text-gray-400">{sc.avg_month_visits}/mes</b>)</>
+              : <>Tu promedio son <b className="text-gray-400">{sc.avg_month_visits} visitas</b> al mes.</>}
+          </p>
+        )}
 
         {/* Mejor noche: el peak positivo. Solo si de verdad ganó una noche —
             no fabricamos un peak con la noche "menos mala". */}

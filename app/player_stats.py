@@ -49,6 +49,55 @@ def start_of_month_col_as_utc() -> datetime:
     return col_start.astimezone(UTC).replace(tzinfo=None)
 
 
+def _col_week_monday(dt_utc_naive):
+    """Lunes (date, hora Colombia) de la semana ISO a la que pertenece un
+    timestamp naive-UTC. Mismo criterio de semana que visit_weeks."""
+    col = dt_utc_naive.replace(tzinfo=UTC).astimezone(COL_TZ)
+    return (col - timedelta(days=col.weekday())).date()
+
+
+def _col_month_key(dt_utc_naive):
+    """(año, mes) en hora Colombia de un timestamp naive-UTC."""
+    col = dt_utc_naive.replace(tzinfo=UTC).astimezone(COL_TZ)
+    return (col.year, col.month)
+
+
+def self_compare_stats(cash_rows: list[dict], tour_rows: list[dict], today=None) -> dict:
+    """Comparación contra uno mismo (goal-gradient + "vs tu promedio"). Todo
+    sobre las filas ya cortadas por `since`. Horas = solo cash (única fuente).
+    - week_hours: horas de la semana ISO en curso (Colombia).
+    - best_week_hours: máximo de horas en una sola semana (récord = meta de la barra).
+    - avg_week_hours: promedio de horas por semana ACTIVA (con horas > 0).
+    - avg_month_visits: promedio de visitas por mes ACTIVO."""
+    col_now = today or datetime.now(COL_TZ)
+    this_week = (col_now - timedelta(days=col_now.weekday())).date()
+
+    week_hours: dict = {}
+    for r in cash_rows:
+        if not r["date"] or not r["hours"]:
+            continue
+        wk = _col_week_monday(r["date"])
+        week_hours[wk] = week_hours.get(wk, 0.0) + r["hours"]
+    active = [h for h in week_hours.values() if h > 0]
+
+    month_visits: dict = {}
+    for r in cash_rows:
+        if r.get("played", True) and r["date"]:
+            key = _col_month_key(r["date"])
+            month_visits[key] = month_visits.get(key, 0) + 1
+    for r in tour_rows:
+        if r["date"]:
+            key = _col_month_key(r["date"])
+            month_visits[key] = month_visits.get(key, 0) + 1
+
+    return {
+        "week_hours": round(week_hours.get(this_week, 0.0), 1),
+        "best_week_hours": round(max(active), 1) if active else 0.0,
+        "avg_week_hours": round(sum(active) / len(active), 1) if active else 0.0,
+        "avg_month_visits": round(sum(month_visits.values()) / len(month_visits), 1) if month_visits else 0.0,
+    }
+
+
 def tournament_investment(t: models.Tournament, p: models.TournamentPlayer) -> float:
     """Inversión total del jugador en un torneo. rebuys_count/addons_count son
     TOTALES (singles + dobles): singles = total − dobles, cada uno a su precio.
