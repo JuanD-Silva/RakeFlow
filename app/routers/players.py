@@ -6,6 +6,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import and_
 from sqlalchemy.future import select
 from typing import List, Optional
 from datetime import datetime, timedelta
@@ -63,7 +64,12 @@ async def read_players(skip: int = 0, limit: int = 10000, db: AsyncSession = Dep
     """
     query = (
         select(models.Player, models.User.hashed_password)
-        .outerjoin(models.User, models.User.id == models.Player.user_id)
+        # Guard de club en el join (defensa en profundidad): si el vínculo 1:1
+        # se rompiera algún día, jamás leer el user de otro club.
+        .outerjoin(models.User, and_(
+            models.User.id == models.Player.user_id,
+            models.User.club_id == models.Player.club_id,
+        ))
         .where(models.Player.club_id == current_club.id)
         .order_by(models.Player.name.asc())
         .offset(skip)
@@ -340,7 +346,10 @@ async def activate_player(
     # Solo la primera: si ya activó antes (reset de clave), stats_since NULL
     # significa "compró el histórico" y NO debe re-bloquearse.
     player = (await db.execute(
-        select(models.Player).where(models.Player.user_id == user.id)
+        select(models.Player).where(
+            models.Player.user_id == user.id,
+            models.Player.club_id == user.club_id,  # defensa en profundidad
+        )
     )).scalars().first()
     if player and player.stats_since is None and es_primera_activacion:
         player.stats_since = datetime.utcnow()
