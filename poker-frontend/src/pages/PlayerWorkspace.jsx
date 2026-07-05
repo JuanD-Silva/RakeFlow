@@ -162,7 +162,7 @@ function HomeTab() {
           <span className={`text-xs font-black uppercase tracking-wider px-3 py-1.5 rounded-full bg-gradient-to-r ${TIER_STYLE[lvl.tier] || TIER_STYLE.Bronce}`}>
             {lvl.tier === 'Diamante' ? '💎' : lvl.tier === 'Oro' ? '🥇' : lvl.tier === 'Plata' ? '🥈' : '🥉'} {lvl.tier}
           </span>
-          <span className="text-xs text-gray-400 font-bold">{lvl.visits} visitas</span>
+          <span className="text-xs text-gray-400 font-bold">{lvl.visits} visita{lvl.visits !== 1 ? 's' : ''}</span>
         </div>
         {lvl.next_tier && (
           <>
@@ -190,6 +190,28 @@ function HomeTab() {
       {/* Aviso sesión en curso */}
       {data.open_session && (
         <p className="text-center text-[11px] text-emerald-300/80 font-bold">🎲 Tenés una sesión abierta — se suma a tus números al cerrar la mesa</p>
+      )}
+
+      {/* Archivo bloqueado: el gancho de la venta. Va ARRIBA de los números:
+          el jugador recién activado tiene que verlo sin scrollear. */}
+      {data.archive?.locked && (
+        <div className="bg-gradient-to-br from-violet-900/40 to-gray-900/40 border border-violet-500/40 rounded-2xl p-4 text-center">
+          <p className="text-3xl mb-1">🗄️</p>
+          <p className="text-white font-black">Tu historia completa te espera</p>
+          <p className="text-sm text-violet-200 mt-1">
+            {/* Solo se menciona lo que HAY: "y 0 torneos" mata el pitch */}
+            Tenés{' '}
+            {data.archive.sessions > 0 && (
+              <b>{data.archive.sessions} sesion{data.archive.sessions !== 1 ? 'es' : ''}</b>
+            )}
+            {data.archive.sessions > 0 && data.archive.tournaments > 0 && ' y '}
+            {data.archive.tournaments > 0 && (
+              <b>{data.archive.tournaments} torneo{data.archive.tournaments !== 1 ? 's' : ''}</b>
+            )}
+            {' '}en el archivo{data.archive.oldest ? ` desde ${fmtDate(data.archive.oldest)}` : ''}.
+          </p>
+          <p className="text-[11px] text-violet-300/80 font-bold uppercase tracking-wide mt-2">Preguntá en caja para desbloquearla</p>
+        </div>
       )}
 
       {/* El mes en curso */}
@@ -220,20 +242,6 @@ function HomeTab() {
           <p className="text-[11px] text-gray-500 mt-2">Además gastaste {cop(t.expenses)} en consumo y propinas (no cuenta en tu ROI).</p>
         )}
       </section>
-
-      {/* Archivo bloqueado: el gancho de la venta */}
-      {data.archive?.locked && (
-        <div className="bg-gradient-to-br from-violet-900/40 to-gray-900/40 border border-violet-500/40 rounded-2xl p-4 text-center">
-          <p className="text-3xl mb-1">🗄️</p>
-          <p className="text-white font-black">Tu historia completa te espera</p>
-          <p className="text-sm text-violet-200 mt-1">
-            Tenés <b>{data.archive.sessions} sesion{data.archive.sessions !== 1 ? 'es' : ''}</b> y{' '}
-            <b>{data.archive.tournaments} torneo{data.archive.tournaments !== 1 ? 's' : ''}</b> en el archivo
-            {data.archive.oldest ? ` desde ${fmtDate(data.archive.oldest)}` : ''}.
-          </p>
-          <p className="text-[11px] text-violet-300/80 font-bold uppercase tracking-wide mt-2">Preguntá en caja para desbloquearla</p>
-        </div>
-      )}
 
       {/* Razones de volver: anuncio + próximos torneos */}
       {club && (club.announcement || (club.scheduled || []).length > 0) && (
