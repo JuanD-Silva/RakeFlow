@@ -222,9 +222,11 @@ function HomeTab() {
           real vive en "Tu juego" abajo. */}
       <section>
         <p className="text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-2">Este mes</p>
-        <div className="grid grid-cols-2 gap-3">
+        {/* Horas = solo cash; para el jugador solo-torneo son 0 y no aportan
+            protagonismo — se oculta y visitas ocupa el ancho. */}
+        <div className={`grid gap-3 ${data.month.hours > 0 ? 'grid-cols-2' : 'grid-cols-1'}`}>
           <Stat label="Visitas del mes" value={`${data.month.visits}`} />
-          <Stat label="Horas del mes" value={`${data.month.hours} h`} />
+          {data.month.hours > 0 && <Stat label="Horas del mes" value={`${data.month.hours} h`} />}
         </div>
 
         {/* Mejor noche: el peak positivo. Solo si de verdad ganó una noche —
