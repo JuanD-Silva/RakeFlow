@@ -3,6 +3,7 @@ import { dealerService } from '../api/services';
 import { useAuth } from '../context/AuthContext';
 import { PlusIcon, PencilSquareIcon, CheckIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { formatMoney } from '../utils/formatters';
+import ConfirmModal from './ConfirmModal';
 
 /**
  * Gestión de dealers y sus tarifas (ConfigPanel).
@@ -25,6 +26,8 @@ export default function DealerManager() {
   const [inviteBusy, setInviteBusy] = useState(false);
   const [inviteResult, setInviteResult] = useState(null); // {wa_url, message} para reenviar
   const [resetMode, setResetMode] = useState(false);       // true = resetear acceso (cuenta ya activada)
+  const [confirmAction, setConfirmAction] = useState(null);  // {dealer, type: 'delete'|'unlink'}
+  const [confirmBusy, setConfirmBusy] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -127,14 +130,22 @@ export default function DealerManager() {
     }
   };
 
-  const removeDealer = async (dealer) => {
+  // Eliminar / liberar cuenta usan el ConfirmModal de la app (nada de window.confirm)
+  const runConfirmed = async () => {
+    if (!confirmAction) return;
+    const { dealer, type } = confirmAction;
     setError(null);
-    if (!window.confirm(`¿Eliminar definitivamente a "${dealer.name}"? Esto borra su cuenta y no se puede deshacer. (Si tiene historial de turnos/pagos no se podrá eliminar; quedará archivado.)`)) return;
+    setConfirmBusy(true);
     try {
-      await dealerService.remove(dealer.id);
+      if (type === 'delete') await dealerService.remove(dealer.id);
+      else await dealerService.unlinkAccount(dealer.id);
+      setConfirmAction(null);
       load();
     } catch (err) {
-      setError(err.response?.data?.detail || "No se pudo eliminar el dealer.");
+      setConfirmAction(null);
+      setError(err.response?.data?.detail || (type === 'delete' ? "No se pudo eliminar el dealer." : "No se pudo liberar la cuenta."));
+    } finally {
+      setConfirmBusy(false);
     }
   };
 
@@ -220,6 +231,12 @@ export default function DealerManager() {
 
       {creating && editForm}
 
+      {/* Errores de acciones de la lista (eliminar/liberar): el error del form
+          de edición solo se ve editando — este banner sí se ve siempre */}
+      {error && editingId === null && !creating && (
+        <p className="text-red-400 text-xs bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{error}</p>
+      )}
+
       {loading ? (
         <p className="text-gray-500 text-sm py-4 text-center">Cargando...</p>
       ) : dealers.length === 0 && !creating ? (
@@ -303,9 +320,18 @@ export default function DealerManager() {
                       >
                         {d.is_active ? 'Desactivar' : 'Activar'}
                       </button>
+                      {!d.is_active && d.has_account && (
+                        <button
+                          onClick={() => { setError(null); setConfirmAction({ dealer: d, type: 'unlink' }); }}
+                          className="text-[10px] font-bold px-2.5 py-1.5 rounded-lg border text-violet-300 border-violet-500/40 hover:bg-violet-500/15 transition-all"
+                          title="Borra solo su cuenta de la app y libera el número. El historial de turnos y pagos se conserva."
+                        >
+                          Liberar cuenta
+                        </button>
+                      )}
                       {!d.is_active && (
                         <button
-                          onClick={() => removeDealer(d)}
+                          onClick={() => { setError(null); setConfirmAction({ dealer: d, type: 'delete' }); }}
                           className="text-[10px] font-bold px-2.5 py-1.5 rounded-lg border text-red-400 border-red-500/40 hover:bg-red-500/15 transition-all"
                           title="Eliminar definitivamente (solo si no tiene historial)"
                         >
@@ -356,6 +382,19 @@ export default function DealerManager() {
           ))}
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={!!confirmAction}
+        onClose={() => setConfirmAction(null)}
+        onConfirm={runConfirmed}
+        isDeleting={confirmBusy}
+        title={confirmAction?.type === 'unlink' ? 'Liberar cuenta del dealer' : '¿Eliminar definitivamente?'}
+        confirmText={confirmAction?.type === 'unlink' ? 'Sí, liberar' : 'Sí, eliminar'}
+        loadingText={confirmAction?.type === 'unlink' ? 'Liberando…' : 'Eliminando…'}
+        message={confirmAction?.type === 'unlink'
+          ? `Se borra la cuenta de la app de "${confirmAction?.dealer?.name}" y su número queda libre para otra cuenta. Su historial de turnos y pagos se conserva intacto.`
+          : `"${confirmAction?.dealer?.name}" se borra junto con su cuenta y no se puede deshacer. Si tiene historial de turnos o pagos no se eliminará: quedará archivado.`}
+      />
     </div>
   );
 }

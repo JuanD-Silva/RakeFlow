@@ -433,12 +433,21 @@ async def _set_linked_user_active(db: AsyncSession, dealer: models.Dealer, activ
 
 
 async def _dealer_has_history(db: AsyncSession, dealer_id: int) -> bool:
-    """True si el dealer tiene turnos, pagos o propinas asociados (borrar rompería
-    el historial financiero). Los dealers con historial NO se eliminan: se archivan."""
+    """True si el dealer tiene turnos (cash o TORNEO), pagos o propinas asociados
+    (borrar rompería el historial financiero). Los dealers con historial NO se
+    eliminan: se archivan. OJO: esta lista debe cubrir TODAS las FK a dealers —
+    cuando faltó tournament_dealer_shifts, el delete pasaba el chequeo y reventaba
+    en la FK con un 500 (bug encontrado en prod, jul-2026)."""
     shifts = (await db.execute(
         select(models.DealerShift.id).where(models.DealerShift.dealer_id == dealer_id).limit(1)
     )).first()
     if shifts:
+        return True
+    t_shifts = (await db.execute(
+        select(models.TournamentDealerShift.id)
+        .where(models.TournamentDealerShift.dealer_id == dealer_id).limit(1)
+    )).first()
+    if t_shifts:
         return True
     payouts = (await db.execute(
         select(models.DealerPayout.id).where(models.DealerPayout.dealer_id == dealer_id).limit(1)
@@ -529,13 +538,73 @@ async def delete_dealer_permanent(
         action=AuditAction.DEALER_DELETE, entity_type="Dealer", entity_id=dealer.id,
         meta={"name": name, "had_account": bool(dealer.user_id)},
     )
-    await _hard_delete_dealer(db, dealer)
+    # El try cubre TAMBIÉN el flush de _hard_delete_dealer: una FK que falte en
+    # _dealer_has_history debe degradar a 409 con mensaje, jamás a 500.
+    try:
+        await _hard_delete_dealer(db, dealer)
+        await db.commit()
+    except IntegrityError:
+        # Backstop: el dealer o su cuenta quedaron referenciados por otra fila (FK).
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="No se pudo eliminar: el dealer o su cuenta tienen referencias. Quedó desactivado (archivado).")
+
+
+@router.post("/{dealer_id}/unlink-account", status_code=200)
+async def unlink_dealer_account(
+    dealer_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+    current_user: models.User = Depends(require_role([models.UserRole.OWNER, models.UserRole.MANAGER])),
+):
+    """Borra SOLO la cuenta de login del dealer y libera su teléfono, conservando
+    la ficha y TODO su historial (turnos/pagos/propinas cuelgan del dealer_id, no
+    de la cuenta). Es la salida para el dealer archivado que no se puede eliminar
+    por historial pero cuyo número se necesita en otra cuenta (ej: el dueño que
+    probó como dealer y ahora quiere su número para la app de jugador)."""
+    dealer = (await db.execute(
+        select(models.Dealer).where(
+            models.Dealer.id == dealer_id,
+            models.Dealer.club_id == current_club.id,
+        )
+    )).scalars().first()
+    if not dealer:
+        raise HTTPException(status_code=404, detail="Dealer no encontrado")
+    if not dealer.user_id:
+        raise HTTPException(status_code=409, detail="Este dealer no tiene cuenta vinculada")
+    if dealer.is_active:
+        # Alineado con la UI: liberar la cuenta es para dealers ARCHIVADOS.
+        # A un dealer activo se le resetea el acceso, no se le mata el login.
+        raise HTTPException(status_code=409, detail="El dealer está activo: desactivalo primero para liberar su cuenta")
+
+    # Defensa en profundidad: SOLO se borra una cuenta DEALER del propio club.
+    # Si el vínculo apuntara a otra cosa (datos corruptos), se desvincula el
+    # dealer sin tocar esa cuenta.
+    user = (await db.execute(
+        select(models.User).where(
+            models.User.id == dealer.user_id,
+            models.User.club_id == current_club.id,
+            models.User.role == models.UserRole.DEALER,
+        )
+    )).scalars().first()
+    freed_phone = user.phone if user else None
+
+    dealer.user_id = None  # primero se suelta el FK, después se borra la cuenta
+    await db.flush()
+    if user:
+        await db.delete(user)
+
+    await log_action(
+        db, request=request, club=current_club,
+        action=AuditAction.DEALER_UNLINK_ACCOUNT, entity_type="Dealer", entity_id=dealer.id,
+        meta={"name": dealer.name, "freed_phone": freed_phone, "by": current_user.email},
+    )
     try:
         await db.commit()
     except IntegrityError:
-        # Backstop: la cuenta vinculada quedó referenciada por otra fila (FK).
         await db.rollback()
-        raise HTTPException(status_code=409, detail="No se pudo eliminar: la cuenta del dealer tiene referencias. Quedó desactivada.")
+        raise HTTPException(status_code=409, detail="No se pudo desvincular: la cuenta tiene referencias.")
+    return {"status": "unlinked", "freed_phone": freed_phone}
 
 
 # ---------------------------------------------------------

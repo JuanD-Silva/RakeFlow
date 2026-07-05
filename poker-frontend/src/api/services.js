@@ -463,6 +463,8 @@ export const dealerService = {
         await api.delete(`/dealers/${dealerId}`);
     },
     // Borrado definitivo (solo si no tiene historial; el backend lo valida)
+    unlinkAccount: async (dealerId) =>
+        (await api.post(`/dealers/${dealerId}/unlink-account`)).data,
     remove: async (dealerId) => {
         await api.delete(`/dealers/${dealerId}/permanent`);
     },
