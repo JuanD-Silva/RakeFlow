@@ -110,7 +110,10 @@ async def my_profile(
         "level": level,
         "streak": streak,
         "month": {"invested": m["invested"], "returned": m["returned"],
-                  "profit": m["profit"], "visits": m["visits"]},
+                  "profit": m["profit"], "visits": m["visits"], "hours": m["hours"]},
+        # "Mejor noche" del mes: métrica donde el que pierde también tiene algo
+        # que mostrar. Del mes en curso (m_cash/m_tour), no del histórico entero.
+        "best_session": player_stats.best_session_of(m_cash, m_tour),
         "open_session": await _has_open_session(db, user.club_id, player.id),
         "archive": None,
     }
@@ -285,12 +288,7 @@ async def monthly_summary(
     tour_rows = [r for r in tour_all if r["date"] and start <= r["date"] < end]
     t = _totals(cash_rows, tour_rows)
 
-    best = None
-    rows = cash_rows + tour_rows
-    if rows:
-        b = max(rows, key=lambda r: r["returned"] - r["invested"])
-        best = {"name": b["name"], "profit": b["returned"] - b["invested"],
-                "date": b["date"].isoformat() if b["date"] else None}
+    best = player_stats.best_session_of(cash_rows, tour_rows)
 
     weeks = await player_stats.visit_weeks(db, user.club_id, player.id, since)
     streak = player_stats.compute_streak(weeks)

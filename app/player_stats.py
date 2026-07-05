@@ -279,6 +279,17 @@ async def tournament_rows_for_player(db: AsyncSession, club_id: int, player_id: 
     return out
 
 
+def best_session_of(cash_rows: list[dict], tour_rows: list[dict]) -> dict | None:
+    """La "mejor noche": fila (cash o torneo) de mayor profit (returned − invested).
+    None si no hay filas. Fuente única — la usan my-profile y monthly-summary."""
+    rows = cash_rows + tour_rows
+    if not rows:
+        return None
+    b = max(rows, key=lambda r: r["returned"] - r["invested"])
+    return {"name": b["name"], "profit": b["returned"] - b["invested"],
+            "date": b["date"].isoformat() if b["date"] else None}
+
+
 async def visit_weeks(db: AsyncSession, club_id: int, player_id: int,
                       since: datetime | None = None) -> list:
     """Semanas ISO (lunes, hora Colombia) con ≥1 visita: BUYIN/REBUY en cash
