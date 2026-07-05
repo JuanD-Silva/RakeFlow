@@ -572,9 +572,20 @@ async def unlink_dealer_account(
         raise HTTPException(status_code=404, detail="Dealer no encontrado")
     if not dealer.user_id:
         raise HTTPException(status_code=409, detail="Este dealer no tiene cuenta vinculada")
+    if dealer.is_active:
+        # Alineado con la UI: liberar la cuenta es para dealers ARCHIVADOS.
+        # A un dealer activo se le resetea el acceso, no se le mata el login.
+        raise HTTPException(status_code=409, detail="El dealer está activo: desactivalo primero para liberar su cuenta")
 
+    # Defensa en profundidad: SOLO se borra una cuenta DEALER del propio club.
+    # Si el vínculo apuntara a otra cosa (datos corruptos), se desvincula el
+    # dealer sin tocar esa cuenta.
     user = (await db.execute(
-        select(models.User).where(models.User.id == dealer.user_id)
+        select(models.User).where(
+            models.User.id == dealer.user_id,
+            models.User.club_id == current_club.id,
+            models.User.role == models.UserRole.DEALER,
+        )
     )).scalars().first()
     freed_phone = user.phone if user else None
 
