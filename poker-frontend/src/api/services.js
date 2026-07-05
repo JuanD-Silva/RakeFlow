@@ -12,6 +12,9 @@ export const publicService = {
     // Activación de cuenta de dealer (verifica número + crea contraseña)
     activateDealer: async ({ phone, code, name, password }) =>
         (await publicApi.post('/dealers/activate', { phone, code, name, password })).data,
+    // Activación de cuenta de JUGADOR (panel del jugador; mismo flujo OTP)
+    activatePlayer: async ({ phone, code, password }) =>
+        (await publicApi.post('/players/activate', { phone, code, password })).data,
     // Vista TV pública del torneo (reloj + blinds + conteos, sin login)
     getTournamentTV: async (token) => (await publicApi.get(`/public/tournaments/${token}/tv`)).data,
 };
@@ -113,6 +116,15 @@ export const playerService = {
         const response = await api.get('/players/');
         return response.data;
     },
+
+    // --- Cuenta del panel del jugador (staff OWNER/MANAGER) ---
+    invite: async (playerId, phone) =>
+        (await api.post(`/players/${playerId}/invite`, { phone })).data,
+    resetAccess: async (playerId, phone = null) =>
+        (await api.post(`/players/${playerId}/reset-access`, { phone })).data,
+    // Venta del histórico: se cobra EN CAJA, esto solo destraba (toggle reversible)
+    unlockHistory: async (playerId) =>
+        (await api.post(`/players/${playerId}/unlock-history`)).data,
 
    create: async (data, phone = null) => {
         // Lógica inteligente:
@@ -556,3 +568,17 @@ export default {
 };
 
 
+
+
+// --- PANEL DEL JUGADOR (self-service, rol PLAYER) ---
+export const playerSelfService = {
+    getProfile: async () => (await api.get('/player/my-profile')).data,
+    getSessions: async (skip = 0, limit = 20) =>
+        (await api.get('/player/my-sessions', { params: { skip, limit } })).data,
+    getAchievements: async () => (await api.get('/player/my-achievements')).data,
+    getRank: async (year = null, month = null) =>
+        (await api.get('/player/my-rank', { params: year && month ? { year, month } : {} })).data,
+    getClubInfo: async () => (await api.get('/player/club-info')).data,
+    getMonthlySummary: async (year = null, month = null) =>
+        (await api.get('/player/monthly-summary', { params: year && month ? { year, month } : {} })).data,
+};
