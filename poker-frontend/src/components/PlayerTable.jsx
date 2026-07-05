@@ -259,7 +259,7 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
               {/* DETALLES EXPANDIDOS */}
               {isExpanded && (
                 <div className="mt-3 bg-gray-900/50 rounded-lg p-3 space-y-3 animate-fade-in">
-                  <PlayerAppAccount player={p} account={accounts[p.player_id]} canManage={canManageApp} onChanged={loadAccounts} />
+                  <div className="md:col-span-2"><PlayerAppAccount player={p} account={accounts[p.player_id]} canManage={canManageApp} onChanged={loadAccounts} /></div>
                   <div className="flex items-center justify-between">
                     <h4 className="text-emerald-400 text-[10px] font-bold uppercase tracking-widest flex items-center gap-1">
                       <ClockIcon className="w-3 h-3" /> Entradas
@@ -475,7 +475,7 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
                     <tr className="bg-gray-900/50 animate-fade-in border-b border-gray-700">
                       <td colSpan="7" className="p-0">
                         <div className="p-4 pl-14 grid grid-cols-1 md:grid-cols-2 gap-6">
-                          <PlayerAppAccount player={p} account={accounts[p.player_id]} canManage={canManageApp} onChanged={loadAccounts} />
+                          <div className="md:col-span-2"><PlayerAppAccount player={p} account={accounts[p.player_id]} canManage={canManageApp} onChanged={loadAccounts} /></div>
                           <div>
                              <div className="flex items-center justify-between mb-3 gap-2">
                                <h4 className="text-emerald-400 text-xs font-bold uppercase tracking-widest flex items-center gap-2">
@@ -603,6 +603,7 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
 // ---------------------------------------------------------
 function PlayerAppAccount({ player, account, canManage, onChanged }) {
   const [inviting, setInviting] = useState(false);
+  const [resetMode, setResetMode] = useState(false); // reset de clave (cuenta ya activa)
   const [phone, setPhone] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
@@ -615,7 +616,9 @@ function PlayerAppAccount({ player, account, canManage, onChanged }) {
     if (phone.replace(/\D/g, '').length < 7) { setErr('Teléfono inválido.'); return; }
     setBusy(true);
     try {
-      const res = await playerService.invite(player.player_id, phone.trim());
+      const res = resetMode
+        ? await playerService.resetAccess(player.player_id, phone.trim())
+        : await playerService.invite(player.player_id, phone.trim());
       if (res.wa_url) window.open(res.wa_url, '_blank'); // abre WhatsApp con el código listo
       setInviting(false);
       onChanged();
@@ -645,7 +648,7 @@ function PlayerAppAccount({ player, account, canManage, onChanged }) {
     <div className="flex flex-wrap items-center gap-2 pb-2 border-b border-gray-700/60">
       <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">App del jugador:</span>
       {!account.has_account && !inviting && (
-        <button onClick={() => { setInviting(true); setPhone(account.phone || ''); setErr(null); }}
+        <button onClick={() => { setInviting(true); setResetMode(false); setPhone(account.phone || ''); setErr(null); }}
           className="text-[10px] font-bold uppercase px-2 py-1 rounded border bg-emerald-500/10 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/20 transition-all active:scale-95">
           📲 Invitar a la app
         </button>
@@ -653,14 +656,23 @@ function PlayerAppAccount({ player, account, canManage, onChanged }) {
       {account.has_account && account.invitation_pending && !inviting && (
         <>
           <span className="text-[10px] font-bold uppercase px-2 py-1 rounded bg-amber-500/10 text-amber-300">⏳ Invitación pendiente</span>
-          <button onClick={() => { setInviting(true); setPhone(account.phone || ''); setErr(null); }}
+          <button onClick={() => { setInviting(true); setResetMode(false); setPhone(account.phone || ''); setErr(null); }}
             className="text-[10px] font-bold uppercase px-2 py-1 rounded border border-gray-600 text-gray-300 hover:bg-gray-700 transition-all active:scale-95">
             Re-invitar
           </button>
         </>
       )}
       {account.has_account && !account.invitation_pending && (
-        <span className="text-[10px] font-bold uppercase px-2 py-1 rounded bg-emerald-500/10 text-emerald-300">✓ App activa</span>
+        <>
+          <span className="text-[10px] font-bold uppercase px-2 py-1 rounded bg-emerald-500/10 text-emerald-300">✓ App activa</span>
+          {!inviting && (
+            <button onClick={() => { setInviting(true); setResetMode(true); setPhone(account.phone || ''); setErr(null); }}
+              title="Olvidó su clave: genera un código nuevo por WhatsApp"
+              className="text-[10px] font-bold uppercase px-2 py-1 rounded border border-gray-600 text-gray-400 hover:bg-gray-700 transition-all active:scale-95">
+              🔑 Resetear clave
+            </button>
+          )}
+        </>
       )}
       {account.has_account && (
         <button onClick={doUnlock} disabled={busy}
