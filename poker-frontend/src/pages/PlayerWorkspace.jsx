@@ -1,14 +1,23 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
+import confetti from 'canvas-confetti';
 import { playerSelfService } from '../api/services';
 import { useAuth } from '../context/AuthContext';
+import ProfitSparkline from '../components/ProfitSparkline';
+import PlayerShareCard from '../components/PlayerShareCard';
 
 // Panel del Jugador (clon estructural de DealerWorkspace: móvil-first, max-w-md,
-// bottom-nav). PR3: Inicio + Historial. Logros y Ranking se completan en el
-// siguiente PR (placeholder mientras tanto).
+// bottom-nav). PR3: Inicio + Historial. PR4: Logros (badges + confetti),
+// Ranking (posición propia) y card mensual compartible.
 
 const cop = (n) => '$' + Math.round(n || 0).toLocaleString('es-CO');
 const signCop = (n) => (n >= 0 ? '+' : '−') + cop(Math.abs(n || 0));
-const fmtDate = (iso) => iso ? new Date(iso).toLocaleDateString('es-CO', { day: '2-digit', month: 'short' }) : '';
+// Los timestamps de sesiones/transacciones llegan naive-UTC (sin 'Z'): hay que
+// parsearlos como UTC o una sesión cerrada después de las 7pm Colombia se
+// muestra con el día corrido. (scheduled_start de torneos NO: ese viaja local.)
+const fmtDate = (iso) => iso
+  ? new Date(/Z|\+/.test(iso) ? iso : iso + 'Z').toLocaleDateString('es-CO', { day: '2-digit', month: 'short' })
+  : '';
+const monthName = (y, m) => new Date(y, m - 1, 1).toLocaleDateString('es-CO', { month: 'long' });
 
 const TABS = [
   { key: 'inicio', label: 'Inicio', emoji: '🏠' },
@@ -38,8 +47,8 @@ export default function PlayerWorkspace() {
 
         {tab === 'inicio' && <HomeTab />}
         {tab === 'historial' && <HistoryTab />}
-        {tab === 'logros' && <ComingSoon emoji="🏆" title="Logros" />}
-        {tab === 'ranking' && <ComingSoon emoji="🥇" title="Ranking" />}
+        {tab === 'logros' && <AchievementsTab />}
+        {tab === 'ranking' && <RankingTab />}
       </div>
 
       <nav className="fixed bottom-0 inset-x-0 bg-[#0a0f1a]/95 backdrop-blur border-t border-gray-800">
@@ -122,11 +131,11 @@ const Reconnecting = () => (
   </div>
 );
 
-const ComingSoon = ({ emoji, title }) => (
+const EmptyState = ({ emoji, title, subtitle }) => (
   <div className="text-center py-20">
     <p className="text-5xl mb-4">{emoji}</p>
     <p className="font-bold text-white">{title}</p>
-    <p className="text-sm text-gray-400 mt-1">Muy pronto en tu panel.</p>
+    <p className="text-sm text-gray-400 mt-1">{subtitle}</p>
   </div>
 );
 
@@ -136,6 +145,7 @@ const ComingSoon = ({ emoji, title }) => (
 function HomeTab() {
   const { data, loadedOnce, error } = usePlayerResource(playerSelfService.getProfile);
   const { data: club } = usePlayerResource(playerSelfService.getClubInfo);
+  const [showShare, setShowShare] = useState(false);
   if (!loadedOnce) return error ? <Reconnecting /> : <Spinner />;
   if (!data) return null;
 
@@ -192,6 +202,10 @@ function HomeTab() {
           <Stat label="Resultado del mes" value={signCop(data.month.profit)} tone={data.month.profit >= 0 ? 'good' : 'bad'} />
           <Stat label="Visitas del mes" value={`${data.month.visits}`} />
         </div>
+        <button onClick={() => setShowShare(true)}
+          className="w-full mt-3 py-3 rounded-xl bg-gray-800/70 hover:bg-gray-700 border border-gray-700/60 text-emerald-300 text-sm font-black uppercase tracking-wide">
+          📤 Compartir mi mes
+        </button>
       </section>
 
       {/* Totales de la historia visible */}
@@ -244,6 +258,8 @@ function HomeTab() {
           ))}
         </section>
       )}
+
+      {showShare && <PlayerShareCard onClose={() => setShowShare(false)} />}
     </div>
   );
 }
@@ -254,6 +270,7 @@ function HomeTab() {
 function HistoryTab() {
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
+  const [curve, setCurve] = useState([]);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -263,6 +280,7 @@ function HistoryTab() {
       const d = await playerSelfService.getSessions(skip, 20);
       setItems((prev) => skip === 0 ? d.items : [...prev, ...d.items]);
       setTotal(d.total);
+      setCurve(d.profit_curve || []);
       setHasMore(d.has_more);
       setError(false);
     } catch {
@@ -287,6 +305,21 @@ function HistoryTab() {
   return (
     <div className="space-y-3">
       <h2 className="text-lg font-black text-white">Mis sesiones <span className="text-gray-500 text-sm font-bold">({total})</span></h2>
+
+      {/* Curva de profit acumulado sobre TODO el histórico visible */}
+      {curve.length >= 2 && (
+        <div className="bg-gray-800/50 border border-gray-700/60 rounded-2xl p-4">
+          <div className="flex items-center justify-between mb-1.5">
+            <p className="text-[11px] text-gray-400 font-bold uppercase tracking-wide">Tu curva</p>
+            <span className={`text-sm font-black ${curve[curve.length - 1] >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+              {signCop(curve[curve.length - 1])}
+            </span>
+          </div>
+          <ProfitSparkline points={curve} />
+          <p className="text-[10px] text-gray-500 mt-1.5">Resultado acumulado, de tu primera noche a la última</p>
+        </div>
+      )}
+
       {items.map((s, i) => (
         <div key={`${s.type}-${s.date}-${i}`} className="bg-gray-800/60 border border-gray-700/60 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
           <div className="min-w-0">
@@ -308,6 +341,160 @@ function HistoryTab() {
           Cargar más
         </button>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------
+// Logros: grid de 12 badges + confetti al desbloquear uno nuevo
+// ---------------------------------------------------------
+function AchievementsTab() {
+  const { clubId, userId } = useAuth();
+  const { data, loadedOnce, error } = usePlayerResource(playerSelfService.getAchievements);
+  const [fresh, setFresh] = useState([]);
+  // Línea base leída UNA vez por montaje: el effect escribe localStorage, y si
+  // releyera en cada corrida (StrictMode lo corre doble) se pisaría a sí mismo
+  // y el festejo no saldría nunca. null = primera visita en este dispositivo.
+  const baseRef = useRef(undefined);
+
+  // Diff contra lo último visto en ESTE dispositivo (localStorage): si hay
+  // badges nuevos → confetti. La primera visita solo guarda la línea base
+  // (nada de festejar en cada dispositivo nuevo lo ya ganado).
+  useEffect(() => {
+    if (!data) return;
+    const key = `rf_badges_seen_${clubId}_${userId}`;
+    const achieved = data.badges.filter((b) => b.achieved).map((b) => b.key);
+    if (baseRef.current === undefined) {
+      let prev = null;
+      try { prev = JSON.parse(localStorage.getItem(key)); } catch { prev = null; }
+      baseRef.current = Array.isArray(prev) ? prev : null;
+    }
+    try { localStorage.setItem(key, JSON.stringify(achieved)); } catch { /* sin storage no hay festejo, no pasa nada */ }
+    const base = baseRef.current;
+    const nuevos = base ? achieved.filter((k) => !base.includes(k)) : [];
+    if (nuevos.length === 0) { baseRef.current = achieved; return; }
+    // El festejo va después del primer paint: el grid se ve y AHÍ explota
+    const t = setTimeout(() => {
+      baseRef.current = achieved; // festejado: no repetir en un refetch
+      setFresh(nuevos);
+      confetti({ particleCount: 160, spread: 75, origin: { y: 0.6 } });
+    }, 200);
+    return () => clearTimeout(t);
+  }, [data, clubId, userId]);
+
+  if (!loadedOnce) return error ? <Reconnecting /> : <Spinner />;
+  if (!data) return null;
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-lg font-black text-white">Mis logros</h2>
+        <p className="text-sm text-gray-400 font-bold">{data.unlocked_count} de {data.badges.length} desbloqueados</p>
+        <div className="mt-2 h-2 rounded-full bg-gray-700/70 overflow-hidden">
+          <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${data.badges.length ? (100 * data.unlocked_count) / data.badges.length : 0}%` }} />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        {data.badges.map((b) => <BadgeCard key={b.key} badge={b} isNew={fresh.includes(b.key)} />)}
+      </div>
+      <p className="text-[11px] text-gray-500 text-center">Los logros se ganan jugando: cada visita cuenta.</p>
+    </div>
+  );
+}
+
+const BadgeCard = ({ badge, isNew }) => {
+  const pct = Math.min(100, Math.round((100 * badge.progress.current) / badge.progress.target));
+  return (
+    <div className={`relative rounded-2xl p-4 border ${badge.achieved ? 'bg-emerald-900/20 border-emerald-600/40' : 'bg-gray-800/40 border-gray-700/60'} ${isNew ? 'ring-2 ring-yellow-400' : ''}`}>
+      {isNew && <span className="absolute -top-2 right-2 text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-yellow-400 text-black">¡Nuevo!</span>}
+      <p className={`text-3xl ${badge.achieved ? '' : 'grayscale opacity-40'}`}>{badge.emoji}</p>
+      <p className={`mt-1 font-black text-sm ${badge.achieved ? 'text-white' : 'text-gray-400'}`}>{badge.name}</p>
+      <p className="text-[10px] text-gray-500 leading-tight mt-0.5">{badge.description}</p>
+      {!badge.achieved && badge.progress.target > 1 && (
+        <>
+          <div className="mt-2 h-1.5 rounded-full bg-gray-700/70 overflow-hidden">
+            <div className="h-full bg-gray-500 rounded-full" style={{ width: `${pct}%` }} />
+          </div>
+          <p className="text-[9px] text-gray-500 mt-1 font-bold">{badge.progress.current} / {badge.progress.target}</p>
+        </>
+      )}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------
+// Ranking: posición propia en los rankings del mes (jamás
+// nombres ni montos de otros — eso es privado de cada uno)
+// ---------------------------------------------------------
+const RANK_CARDS = [
+  { key: 'winners', emoji: '🏆', label: 'Ganadores del mes', fmt: (r) => signCop(r.value) },
+  { key: 'active', emoji: '⏱️', label: 'Horas en mesa', fmt: (r) => `${r.hours} h` },
+  // spenders = consumo + propinas (SPEND/TIP), no buy-ins
+  { key: 'spenders', emoji: '🥂', label: 'Los que más invitan', fmt: (r) => cop(r.value) },
+];
+
+function RankingTab() {
+  const [period, setPeriod] = useState(null); // null = mes en curso
+  const fetcher = useCallback(
+    () => playerSelfService.getRank(period?.year, period?.month),
+    [period],
+  );
+  const { data, loadedOnce, error } = usePlayerResource(fetcher);
+
+  if (!loadedOnce) return error ? <Reconnecting /> : <Spinner />;
+  if (!data) return null;
+
+  const now = new Date();
+  const isCurrent = data.period.year === now.getFullYear() && data.period.month === now.getMonth() + 1;
+  const move = (delta) => {
+    let { year, month } = data.period;
+    month += delta;
+    if (month === 0) { month = 12; year -= 1; }
+    if (month === 13) { month = 1; year += 1; }
+    if (year === now.getFullYear() && month === now.getMonth() + 1) setPeriod(null);
+    else setPeriod({ year, month });
+  };
+  const mes = monthName(data.period.year, data.period.month);
+  const inAny = RANK_CARDS.some((c) => data[c.key]);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <button onClick={() => move(-1)} className="px-3 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 font-bold">‹</button>
+        <h2 className="text-sm font-black text-white uppercase tracking-widest">{mes} {data.period.year}</h2>
+        <button onClick={() => move(1)} disabled={isCurrent}
+          className="px-3 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 font-bold disabled:opacity-30">›</button>
+      </div>
+
+      {data.winners?.rank === 1 && (
+        <div className="bg-gradient-to-br from-yellow-600/30 to-gray-900/40 border border-yellow-500/40 rounded-2xl p-4 text-center">
+          <p className="text-3xl">👑</p>
+          <p className="text-white font-black">¡Sos el #1 ganador de {mes}!</p>
+        </div>
+      )}
+
+      {!inAny && (
+        <EmptyState emoji="🥇" title={`Todavía no rankeás en ${mes}`}
+          subtitle="Jugá una noche en el club y entrás a la tabla." />
+      )}
+
+      {inAny && RANK_CARDS.map(({ key, emoji, label, fmt }) => {
+        const r = data[key];
+        return (
+          <div key={key} className="bg-gray-800/50 border border-gray-700/60 rounded-2xl px-4 py-3 flex items-center gap-3">
+            <span className="text-2xl shrink-0">{emoji}</span>
+            <div className="min-w-0 flex-1">
+              <p className="text-white font-bold text-sm">{label}</p>
+              <p className="text-xs text-gray-400">
+                {r ? <>Puesto <b className="text-emerald-300">#{r.rank}</b> de {r.total} jugador{r.total !== 1 ? 'es' : ''}</> : 'Sin actividad este mes'}
+              </p>
+            </div>
+            {r && <span className="shrink-0 font-black text-white">{fmt(r)}</span>}
+          </div>
+        );
+      })}
+
+      <p className="text-[11px] text-gray-500 text-center">Ves solo tu posición — los números de los demás son privados, como los tuyos.</p>
     </div>
   );
 }
