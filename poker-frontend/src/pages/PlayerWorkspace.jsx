@@ -4,20 +4,11 @@ import { playerSelfService } from '../api/services';
 import { useAuth } from '../context/AuthContext';
 import ProfitSparkline from '../components/ProfitSparkline';
 import PlayerShareCard from '../components/PlayerShareCard';
+import { cop, signCop, fmtDate, monthName } from '../utils/formatters';
 
 // Panel del Jugador (clon estructural de DealerWorkspace: móvil-first, max-w-md,
 // bottom-nav). PR3: Inicio + Historial. PR4: Logros (badges + confetti),
 // Ranking (posición propia) y card mensual compartible.
-
-const cop = (n) => '$' + Math.round(n || 0).toLocaleString('es-CO');
-const signCop = (n) => (n >= 0 ? '+' : '−') + cop(Math.abs(n || 0));
-// Los timestamps de sesiones/transacciones llegan naive-UTC (sin 'Z'): hay que
-// parsearlos como UTC o una sesión cerrada después de las 7pm Colombia se
-// muestra con el día corrido. (scheduled_start de torneos NO: ese viaja local.)
-const fmtDate = (iso) => iso
-  ? new Date(/Z|\+/.test(iso) ? iso : iso + 'Z').toLocaleDateString('es-CO', { day: '2-digit', month: 'short' })
-  : '';
-const monthName = (y, m) => new Date(y, m - 1, 1).toLocaleDateString('es-CO', { month: 'long' });
 
 const TABS = [
   { key: 'inicio', label: 'Inicio', emoji: '🏠' },

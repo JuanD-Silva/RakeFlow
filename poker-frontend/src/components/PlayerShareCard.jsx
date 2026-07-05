@@ -1,16 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { toPng } from 'html-to-image';
 import { playerSelfService } from '../api/services';
+import { signCop, monthName } from '../utils/formatters';
 
 // Card mensual compartible del jugador: /player/monthly-summary → imagen PNG
 // (html-to-image) → Web Share API. Fallbacks: descarga del PNG + texto por
 // wa.me. Es la pieza de marketing boca-a-boca del panel: el jugador presume
 // su mes y el club (y RakeFlow) viajan en la imagen.
-
-const cop = (n) => '$' + Math.round(n || 0).toLocaleString('es-CO');
-const signCop = (n) => (n >= 0 ? '+' : '−') + cop(Math.abs(n || 0));
-const monthName = (y, m) =>
-  new Date(y, m - 1, 1).toLocaleDateString('es-CO', { month: 'long' });
 
 const TIER_EMOJI = { Bronce: '🥉', Plata: '🥈', Oro: '🥇', Diamante: '💎' };
 
