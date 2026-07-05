@@ -41,10 +41,19 @@ async def list_users(
     db: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(require_role([models.UserRole.OWNER, models.UserRole.MANAGER])),
 ):
-    """Lista los usuarios del club del usuario autenticado."""
+    """Lista las cuentas de GESTIÓN del club (dueño/encargado/cajero).
+
+    DEALER y PLAYER quedan fuera: son cuentas por teléfono (email NULL) que se
+    administran desde sus propios módulos (gestión de dealers / PlayerTable).
+    Incluirlas rompía el panel Equipo con un 500 (UserResponse.email exigía
+    string) y, con los jugadores activándose, lo inundaría de cuentas ajenas
+    al equipo."""
     result = await db.execute(
         select(models.User)
-        .where(models.User.club_id == current_user.club_id)
+        .where(
+            models.User.club_id == current_user.club_id,
+            models.User.role.notin_([models.UserRole.DEALER, models.UserRole.PLAYER]),
+        )
         .order_by(models.User.created_at.asc())
     )
     users = result.scalars().all()

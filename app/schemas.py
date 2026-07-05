@@ -69,7 +69,9 @@ class UserUpdate(BaseModel):
 
 class UserResponse(BaseSchema):
     id: int
-    email: str
+    # Optional: las cuentas por teléfono (dealer/player) no tienen email, y una
+    # sola fila sin email no debe tumbar el listado entero con un 500.
+    email: Optional[str] = None
     name: Optional[str] = None
     role: str
     is_active: bool
