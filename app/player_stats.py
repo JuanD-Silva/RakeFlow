@@ -56,6 +56,12 @@ def _col_week_monday(dt_utc_naive):
     return (col - timedelta(days=col.weekday())).date()
 
 
+def _col_month_key(dt_utc_naive):
+    """(año, mes) en hora Colombia de un timestamp naive-UTC."""
+    col = dt_utc_naive.replace(tzinfo=UTC).astimezone(COL_TZ)
+    return (col.year, col.month)
+
+
 def self_compare_stats(cash_rows: list[dict], tour_rows: list[dict], today=None) -> dict:
     """Comparación contra uno mismo (goal-gradient + "vs tu promedio"). Todo
     sobre las filas ya cortadas por `since`. Horas = solo cash (única fuente).
@@ -90,11 +96,6 @@ def self_compare_stats(cash_rows: list[dict], tour_rows: list[dict], today=None)
         "avg_week_hours": round(sum(active) / len(active), 1) if active else 0.0,
         "avg_month_visits": round(sum(month_visits.values()) / len(month_visits), 1) if month_visits else 0.0,
     }
-
-
-def _col_month_key(dt_utc_naive):
-    col = dt_utc_naive.replace(tzinfo=UTC).astimezone(COL_TZ)
-    return (col.year, col.month)
 
 
 def tournament_investment(t: models.Tournament, p: models.TournamentPlayer) -> float:
