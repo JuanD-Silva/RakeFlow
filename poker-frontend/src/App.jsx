@@ -31,6 +31,8 @@ import DealerView from './pages/DealerView';
 import TournamentTV from './pages/TournamentTV';
 import DealerWorkspace from './pages/DealerWorkspace';
 import DealerActivate from './pages/DealerActivate';
+import PlayerActivate from './pages/PlayerActivate';
+import PlayerWorkspace from './pages/PlayerWorkspace';
 import AlertWatcher from './components/AlertWatcher';
 import TeamPanel from './components/TeamPanel';
 
@@ -180,10 +182,10 @@ function PokerManagerApp() {
 
 // --- RUTAS Y PROTECCION ---
 function AppRoutes() {
-  const { token, isDealer } = useAuth();
+  const { token, isDealer, isPlayer } = useAuth();
 
   // El dealer logueado va a su workspace dedicado, no al dashboard de gestión.
-  const homeForToken = isDealer ? "/dealer" : "/dashboard";
+  const homeForToken = isDealer ? "/dealer" : isPlayer ? "/jugador" : "/dashboard";
 
   return (
     <Routes>
@@ -210,6 +212,9 @@ function AppRoutes() {
       {/* Activar cuenta de dealer por código WhatsApp (publica) */}
       <Route path="/activar-dealer" element={<DealerActivate />} />
 
+      {/* Activar cuenta de JUGADOR por código WhatsApp (publica) */}
+      <Route path="/activar-jugador" element={<PlayerActivate />} />
+
       {/* Capa publica (sin auth): link del club + vista dealer + TV de torneo */}
       <Route path="/c/:token" element={<PublicClub />} />
       <Route path="/mesa/:token/dealer" element={<DealerView />} />
@@ -221,8 +226,11 @@ function AppRoutes() {
       {/* Workspace del dealer (autenticado, rol DEALER) */}
       <Route path="/dealer" element={token && isDealer ? <DealerWorkspace /> : <Navigate to="/" />} />
 
+      {/* Panel del jugador (autenticado, rol PLAYER) */}
+      <Route path="/jugador" element={token && isPlayer ? <PlayerWorkspace /> : <Navigate to="/" />} />
+
       {/* Dashboard Protegido (el dealer no entra: lo mandamos a su workspace) */}
-      <Route path="/dashboard/*" element={token ? (isDealer ? <Navigate to="/dealer" /> : <PokerManagerApp />) : <Navigate to="/" />} />
+      <Route path="/dashboard/*" element={token ? (isDealer ? <Navigate to="/dealer" /> : isPlayer ? <Navigate to="/jugador" /> : <PokerManagerApp />) : <Navigate to="/" />} />
 
       {/* Fallback */}
       <Route path="*" element={<Navigate to="/" />} />
