@@ -398,6 +398,10 @@ async def unlock_player_history(
     )).scalars().first()
     if not player:
         raise HTTPException(status_code=404, detail="Jugador no encontrado")
+    # Sin cuenta no hay nada que vender/destrabar: evita que un click fuera de
+    # orden deje un corte fantasma que arruine el "arranca de cero" al activar.
+    if not player.user_id:
+        raise HTTPException(status_code=409, detail="Este jugador no tiene cuenta del panel. Invitalo primero.")
 
     if player.stats_since is not None:
         prev = player.stats_since
