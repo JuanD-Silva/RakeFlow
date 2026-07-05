@@ -190,6 +190,8 @@ async def my_rank(
     """Posición propia en los rankings mensuales del club. SOLO posición y
     total de rankeados — jamás nombres ni montos de otros. No se corta por
     stats_since: es el ranking real del mes, igual para todos."""
+    if month is not None and not (1 <= month <= 12):
+        raise HTTPException(status_code=422, detail="Mes inválido")
     player = await _my_player(db, user)
     club = (await db.execute(
         select(models.Club).where(models.Club.id == user.club_id)
@@ -252,6 +254,8 @@ async def monthly_summary(
     user: models.User = Depends(_require_player),
 ):
     """Insumo del resumen compartible (card de WhatsApp)."""
+    if month is not None and not (1 <= month <= 12):
+        raise HTTPException(status_code=422, detail="Mes inválido")
     player = await _my_player(db, user)
     since = player.stats_since
 
