@@ -83,22 +83,28 @@ function usePlayerResource(fetcher, pollMs) {
   const [loadedOnce, setLoadedOnce] = useState(false);
   const [error, setError] = useState(false);
   const loadedRef = useRef(false);
+  // Si el fetcher cambia (ej: Ranking navegando meses), una respuesta en vuelo
+  // del fetcher viejo puede llegar DESPUÉS que la nueva y pisarla. Se descarta
+  // todo lo que no venga del fetcher vigente.
+  const fetcherRef = useRef(fetcher);
 
   const load = useCallback(async () => {
     try {
       const d = await fetcher();
+      if (fetcherRef.current !== fetcher) return true; // respuesta vieja: se descarta
       setData(d);
       setError(false);
       setLoadedOnce(true);
       loadedRef.current = true;
       return true;
     } catch {
-      setError(true);
+      if (fetcherRef.current === fetcher) setError(true);
       return false;
     }
   }, [fetcher]);
 
   useEffect(() => {
+    fetcherRef.current = fetcher;
     let cancelled = false;
     let retryId = null;
     const attempt = async () => {
@@ -119,7 +125,7 @@ function usePlayerResource(fetcher, pollMs) {
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('focus', onVisible);
     };
-  }, [load, pollMs]);
+  }, [load, pollMs, fetcher]);
 
   return { data, loadedOnce, error, reload: load };
 }
@@ -369,13 +375,18 @@ function AchievementsTab() {
       try { prev = JSON.parse(localStorage.getItem(key)); } catch { prev = null; }
       baseRef.current = Array.isArray(prev) ? prev : null;
     }
-    try { localStorage.setItem(key, JSON.stringify(achieved)); } catch { /* sin storage no hay festejo, no pasa nada */ }
     const base = baseRef.current;
     const nuevos = base ? achieved.filter((k) => !base.includes(k)) : [];
-    if (nuevos.length === 0) { baseRef.current = achieved; return; }
-    // El festejo va después del primer paint: el grid se ve y AHÍ explota
+    const persist = () => {
+      baseRef.current = achieved;
+      try { localStorage.setItem(key, JSON.stringify(achieved)); } catch { /* sin storage no hay festejo, no pasa nada */ }
+    };
+    if (nuevos.length === 0) { persist(); return; }
+    // El festejo va después del primer paint: el grid se ve y AHÍ explota.
+    // La línea base se persiste RECIÉN al festejar: si el tab se desmonta antes,
+    // el logro queda pendiente y se celebra en la próxima visita.
     const t = setTimeout(() => {
-      baseRef.current = achieved; // festejado: no repetir en un refetch
+      persist();
       setFresh(nuevos);
       confetti({ particleCount: 160, spread: 75, origin: { y: 0.6 } });
     }, 200);
