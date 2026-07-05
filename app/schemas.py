@@ -111,6 +111,11 @@ class PlayerCreate(PlayerBase):
 class PlayerResponse(PlayerBase):
     id: int
     created_at: datetime
+    # Estado de la cuenta del panel del jugador (rol PLAYER)
+    user_id: Optional[int] = None
+    has_account: bool = False              # True si user_id != None
+    invitation_pending: bool = False       # cuenta creada pero sin activar (sin password)
+    history_unlocked: bool = True          # stats_since IS NULL = histórico completo
 
 
 # --- DEALERS ---

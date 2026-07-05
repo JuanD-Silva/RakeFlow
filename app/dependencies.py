@@ -93,6 +93,13 @@ async def get_current_club(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Los dealers operan desde su panel (/dealer)",
         )
+    # Mismo bloqueo para el rol PLAYER: el jugador solo ve SU panel (/player/*),
+    # jamás los endpoints operativos/financieros del club.
+    if user.role == models.UserRole.PLAYER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Los jugadores operan desde su panel (/player)",
+        )
     club = (await db.execute(
         select(models.Club).where(models.Club.id == user.club_id)
     )).scalars().first()

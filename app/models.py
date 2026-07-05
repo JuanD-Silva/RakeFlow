@@ -30,6 +30,7 @@ class UserRole(str, enum.Enum):
     MANAGER = "manager"        # Encargado: operacion + finanzas, no gestiona usuarios
     CASHIER = "cashier"        # Cajero: solo operacion de mesa, no ve reportes globales
     DEALER = "dealer"          # Dealer: solo su mesa (turno abierto) + su portal (pago/historial)
+    PLAYER = "player"          # Jugador (cliente del club): solo su panel de stats (/player)
 
 class RuleType(str, enum.Enum):
     FIXED = "FIXED"           # Ej: Alquiler diario
@@ -138,10 +139,19 @@ class Player(Base):
     name = Column(String, index=True)
     phone = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    # Vínculo 1:1 con una cuenta de usuario (rol PLAYER). NULL = jugador sin
+    # cuenta (la mayoría). Único parcial garantizado por la migración. Si algún
+    # día se fusionan jugadores, mover user_id al sobreviviente.
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, unique=True, index=True)
+    # Corte del histórico del panel del jugador: NULL = histórico completo
+    # desbloqueado (pagó en caja / club nuevo); con fecha = sus stats corren
+    # desde ahí. Se setea a now() al activar la cuenta.
+    stats_since = Column(DateTime, nullable=True)
 
     # Relaciones
     club = relationship("Club", back_populates="players")
     transactions = relationship("Transaction", back_populates="player")
+    user = relationship("User")
 
 
 class Dealer(Base):
