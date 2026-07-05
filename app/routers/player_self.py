@@ -114,6 +114,9 @@ async def my_profile(
         # "Mejor noche" del mes: métrica donde el que pierde también tiene algo
         # que mostrar. Del mes en curso (m_cash/m_tour), no del histórico entero.
         "best_session": player_stats.best_session_of(m_cash, m_tour),
+        # Comparación contra uno mismo (horas de la semana + récord/promedio):
+        # goal-gradient donde el que pierde también progresa.
+        "self_compare": player_stats.self_compare_stats(cash_rows, tour_rows),
         "open_session": await _has_open_session(db, user.club_id, player.id),
         "archive": None,
     }
