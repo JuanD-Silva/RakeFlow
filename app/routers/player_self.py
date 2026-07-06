@@ -11,12 +11,13 @@ mes del club, igual para todos.
 """
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from .. import models, player_stats
+from ..audit import log_standalone, AuditAction
 from ..dependencies import get_db, get_current_user, require_role
 
 router = APIRouter(prefix="/player", tags=["PlayerSelf"])
@@ -83,12 +84,34 @@ async def _has_open_session(db: AsyncSession, club_id: int, player_id: int) -> b
     return n > 0
 
 
+async def _track_panel_open(db: AsyncSession, user: models.User, request: Request) -> None:
+    """Deja rastro de la apertura del panel para medir retención (PR8).
+
+    Throttle diario (día Colombia): máx 1 evento PANEL_OPEN por jugador por día,
+    así audit_logs no crece por cada request y basta para la retención a nivel
+    de día. Best-effort: log_standalone traga cualquier fallo → nunca rompe el
+    my-profile. El meta espeja a LOGIN_SUCCESS (user_id + role) para que el
+    reporte de retención lea ambos eventos igual (meta->>'user_id')."""
+    if not player_stats.should_log_panel_open(user.last_seen_at):
+        return
+    user.last_seen_at = datetime.utcnow()
+    await log_standalone(
+        db, club_id=user.club_id, actor_email=user.email,
+        action=AuditAction.PANEL_OPEN, actor_type="USER", request=request,
+        # role = user.role.value ("player", minúscula) para espejar EXACTAMENTE
+        # el meta de LOGIN_SUCCESS y que el reporte lea ambos con el mismo filtro.
+        meta={"user_id": user.id, "role": user.role.value},
+    )
+
+
 @router.get("/my-profile")
 async def my_profile(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: models.User = Depends(_require_player),
 ):
     player = await _my_player(db, user)
+    await _track_panel_open(db, user, request)
     since = player.stats_since
     cash_rows = await player_stats.cash_rows_for_player(db, user.club_id, player.id, since)
     tour_rows = await player_stats.tournament_rows_for_player(db, user.club_id, player.id, since)

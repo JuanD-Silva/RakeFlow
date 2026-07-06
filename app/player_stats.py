@@ -62,6 +62,21 @@ def _col_month_key(dt_utc_naive):
     return (col.year, col.month)
 
 
+def col_date_of(dt_utc_naive):
+    """Fecha calendario (date) en hora Colombia de un timestamp naive-UTC."""
+    return dt_utc_naive.replace(tzinfo=UTC).astimezone(COL_TZ).date()
+
+
+def should_log_panel_open(last_seen_at, now_utc=None) -> bool:
+    """Throttle del evento PANEL_OPEN: True si la apertura de HOY (día Colombia)
+    aún no se registró. Máx 1 evento por jugador por día → audit_logs no crece
+    por cada request de my-profile, y basta para medir retención a nivel de día."""
+    now = now_utc or datetime.utcnow()
+    if last_seen_at is None:
+        return True
+    return col_date_of(last_seen_at) < col_date_of(now)
+
+
 def self_compare_stats(cash_rows: list[dict], tour_rows: list[dict], today=None) -> dict:
     """Comparación contra uno mismo (goal-gradient + "vs tu promedio"). Todo
     sobre las filas ya cortadas por `since`. Horas = solo cash (única fuente).

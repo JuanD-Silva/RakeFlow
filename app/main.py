@@ -32,7 +32,7 @@ if _sentry_dsn:
     )
 
 # Importamos todos los módulos donde distribuimos la lógica
-from app.routers import auth, players, sessions, transactions, stats, config, tournaments, history, payments, audit, users, dealers, public, dealer_self, player_self, blind_templates
+from app.routers import auth, players, sessions, transactions, stats, config, tournaments, history, payments, audit, users, dealers, public, dealer_self, player_self, blind_templates, reports
 
 setup_logging(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("rakeflow")
@@ -151,6 +151,7 @@ app.include_router(dealers.alerts_router)
 app.include_router(public.router)
 app.include_router(dealer_self.router)
 app.include_router(player_self.router)
+app.include_router(reports.router)
 
 # ---------------------------------------------------------
 # ENDPOINT DE SALUD
