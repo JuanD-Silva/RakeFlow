@@ -269,7 +269,7 @@ function HomeTab() {
 
       {/* Racha (loss-aversion): la llama viva refuerza que hay algo que proteger. */}
       {st.weeks > 0 && (
-        <Section i={1} className={`rounded-2xl px-4 py-3.5 border flex items-center gap-3 ${st.at_risk ? 'bg-amber-900/25 border-amber-600/50' : 'bg-gray-800/50 border-gray-700/60'}`}>
+        <Section i={2} className={`rounded-2xl px-4 py-3.5 border flex items-center gap-3 ${st.at_risk ? 'bg-amber-900/25 border-amber-600/50' : 'bg-gray-800/50 border-gray-700/60'}`}>
           <span className={`text-2xl ${st.at_risk ? 'rf-flame' : ''}`}>🔥</span>
           <div>
             <p className="text-sm font-bold text-white"><span className="nums">{st.weeks}</span> semana{st.weeks !== 1 ? 's' : ''} seguida{st.weeks !== 1 ? 's' : ''} viniendo</p>
@@ -282,7 +282,7 @@ function HomeTab() {
           badges fijos). Progreso atado a competencia sentida (barra hacia meta),
           no a un sticker. La recompensa la entrega el staff en caja. */}
       {challenge && (
-        <Section i={2} className={`rounded-2xl p-4 border ${challenge.progress.done ? 'bg-emerald-900/25 border-emerald-500/50' : 'bg-gradient-to-br from-violet-900/30 to-gray-900/40 border-violet-500/40'}`}>
+        <Section i={3} className={`rounded-2xl p-4 border ${challenge.progress.done ? 'bg-emerald-900/25 border-emerald-500/50' : 'bg-gradient-to-br from-violet-900/30 to-gray-900/40 border-violet-500/40'}`}>
           <div className="flex items-center justify-between gap-2">
             <p className="text-[11px] font-black text-violet-300 uppercase tracking-widest">🎯 Reto del mes</p>
             {challenge.progress.done && <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-500 text-black">¡Logrado!</span>}
@@ -308,7 +308,7 @@ function HomeTab() {
           con barra hacia el récord (goal-gradient). Solo si hay historia de horas
           (el jugador solo-torneo no tiene horas → no se muestra). */}
       {(sc.week_hours > 0 || sc.best_week_hours > 0) && (
-        <Section i={3} className="bg-gray-800/50 border border-gray-700/60 rounded-2xl p-4">
+        <Section i={4} className="bg-gray-800/50 border border-gray-700/60 rounded-2xl p-4">
           <div className="flex items-baseline justify-between">
             <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wide">⏱️ Horas esta semana</p>
             <p className="text-2xl font-black text-white nums">{sc.week_hours} <span className="text-sm text-gray-400 font-bold">h</span></p>

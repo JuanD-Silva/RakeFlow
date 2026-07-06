@@ -15,6 +15,7 @@ de la venta del histórico. None = histórico completo. Semántica del corte:
 - VISITAS/RACHA (visit_weeks): por fecha de la actividad (timestamp de la
   entrada / start_time del torneo) — una visita ocurre cuando el jugador va.
 """
+import time
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -283,11 +284,23 @@ HIGHLIGHT_LABELS = {
     "constancy": "en constancia",
 }
 
+# Cache por club del standings histórico: es idéntico para todos los jugadores y
+# cambia lento, pero /player/my-highlight lo pediría en cada apertura y en cada
+# vuelta a la pestaña Inicio (remonta). TTL corto → se reagrega el club a lo sumo
+# una vez cada _STANDINGS_TTL_S, no por request. Por-worker (aceptable).
+_STANDINGS_CACHE: dict[int, tuple[float, dict]] = {}
+_STANDINGS_TTL_S = 300
+
 
 async def compute_club_standings(db: AsyncSession, club_id: int) -> dict:
     """Standings HISTÓRICOS del club por jugador: {hours, visits, constancy} →
     {player_id: valor}. Base del 'destaque' del panel. Sin corte por stats_since:
-    la posición en el club es la real (mismo criterio que los rankings)."""
+    la posición en el club es la real (mismo criterio que los rankings).
+    Cacheado por club con TTL corto (ver _STANDINGS_CACHE)."""
+    cached = _STANDINGS_CACHE.get(club_id)
+    if cached is not None and (time.monotonic() - cached[0]) < _STANDINGS_TTL_S:
+        return cached[1]
+
     hours_map: dict[int, float] = {}
     visits_map: dict[int, int] = {}
     constancy_map: dict[int, int] = {}
@@ -322,10 +335,14 @@ async def compute_club_standings(db: AsyncSession, club_id: int) -> dict:
         visits_map[r.pid] = visits_map.get(r.pid, 0) + int(r.n or 0)
 
     # Constancia: semanas ISO (hora Colombia) distintas con entrada cash.
+    # OJO timezone (mismo criterio que visit_weeks): t.timestamp es naive-UTC, así
+    # que hay que interpretarlo como UTC y RECIÉN convertir a Bogotá — un solo
+    # `AT TIME ZONE 'America/Bogota'` lo trataría como si ya fuera hora local y
+    # correría de semana a las partidas de domingo por la noche.
     weeks = (await db.execute(text("""
         SELECT player_id AS pid, COUNT(DISTINCT wk) AS weeks FROM (
           SELECT t.player_id,
-                 date_trunc('week', t.timestamp AT TIME ZONE 'America/Bogota') AS wk
+                 date_trunc('week', ((t.timestamp AT TIME ZONE 'UTC') AT TIME ZONE 'America/Bogota')) AS wk
           FROM transactions t JOIN sessions s ON s.id = t.session_id
           WHERE s.club_id = :cid AND CAST(t.type AS TEXT) IN ('BUYIN','REBUY')
                 AND t.player_id IS NOT NULL
@@ -334,7 +351,9 @@ async def compute_club_standings(db: AsyncSession, club_id: int) -> dict:
     for r in weeks:
         constancy_map[r.pid] = int(r.weeks or 0)
 
-    return {"hours": hours_map, "visits": visits_map, "constancy": constancy_map}
+    result = {"hours": hours_map, "visits": visits_map, "constancy": constancy_map}
+    _STANDINGS_CACHE[club_id] = (time.monotonic(), result)
+    return result
 
 
 def best_highlight(standings: dict, player_id: int, threshold_pct: int = 33,
