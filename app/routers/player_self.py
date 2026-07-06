@@ -87,11 +87,14 @@ async def _has_open_session(db: AsyncSession, club_id: int, player_id: int) -> b
 async def _track_panel_open(db: AsyncSession, user: models.User, request: Request) -> None:
     """Deja rastro de la apertura del panel para medir retención (PR8).
 
-    Throttle diario (día Colombia): máx 1 evento PANEL_OPEN por jugador por día,
-    así audit_logs no crece por cada request y basta para la retención a nivel
-    de día. Best-effort: log_standalone traga cualquier fallo → nunca rompe el
-    my-profile. El meta espeja a LOGIN_SUCCESS (user_id + role) para que el
-    reporte de retención lea ambos eventos igual (meta->>'user_id')."""
+    Throttle diario (día Colombia): ~1 evento PANEL_OPEN por jugador por día, así
+    audit_logs no crece por cada request y basta para la retención a nivel de día.
+    (Dos aperturas concurrentes pueden colar un duplicado ese día; es inocuo: el
+    reporte mide "hubo actividad en la ventana", no cuenta eventos.) El update de
+    last_seen_at y el INSERT viajan en el mismo commit (atómicos). Best-effort:
+    log_standalone traga cualquier fallo → nunca rompe el my-profile. El meta
+    espeja a LOGIN_SUCCESS (user_id + role) para que el reporte lea ambos eventos
+    igual (meta->>'user_id')."""
     if not player_stats.should_log_panel_open(user.last_seen_at):
         return
     user.last_seen_at = datetime.utcnow()
