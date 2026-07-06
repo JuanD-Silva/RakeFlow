@@ -208,6 +208,7 @@ function HomeTab() {
   const { data, loadedOnce, error } = usePlayerResource(playerSelfService.getProfile);
   const { data: club } = usePlayerResource(playerSelfService.getClubInfo);
   const { data: challengeData } = usePlayerResource(playerSelfService.getChallenge);
+  const { data: highlightData } = usePlayerResource(playerSelfService.getHighlight);
   const [showShare, setShowShare] = useState(false);
   if (!loadedOnce) return error ? <Reconnecting /> : <HomeSkeleton />;
   if (!data) return null;
@@ -217,6 +218,7 @@ function HomeTab() {
   const st = data.streak;
   const sc = data.self_compare || {};
   const challenge = challengeData?.challenge || null;
+  const highlight = highlightData?.highlight || null;
 
   return (
     <div className="space-y-4">
@@ -251,9 +253,23 @@ function HomeTab() {
         </Section>
       </div>
 
+      {/* Destaque: peak positivo NO-monetario. El mejor "Top X%" del jugador en el
+          club (horas / visitas / constancia) — un estado ganador honesto para el
+          que no tiene profit que lucir. Solo su posición (nunca otros). Si no
+          llega al tercio superior en nada, no aparece: no forzamos un top falso. */}
+      {highlight && (
+        <Section i={1} className="rounded-2xl px-4 py-3.5 border bg-gradient-to-br from-emerald-900/25 to-gray-900/40 border-emerald-500/40 flex items-center gap-3">
+          <span className="text-2xl">🏅</span>
+          <div className="min-w-0">
+            <p className="text-[10px] font-black text-emerald-400/80 uppercase tracking-[0.18em]">Tu lugar en {club?.club_name || 'el club'}</p>
+            <p className="text-white font-black truncate">{highlight.label}</p>
+          </div>
+        </Section>
+      )}
+
       {/* Racha (loss-aversion): la llama viva refuerza que hay algo que proteger. */}
       {st.weeks > 0 && (
-        <Section i={1} className={`rounded-2xl px-4 py-3.5 border flex items-center gap-3 ${st.at_risk ? 'bg-amber-900/25 border-amber-600/50' : 'bg-gray-800/50 border-gray-700/60'}`}>
+        <Section i={2} className={`rounded-2xl px-4 py-3.5 border flex items-center gap-3 ${st.at_risk ? 'bg-amber-900/25 border-amber-600/50' : 'bg-gray-800/50 border-gray-700/60'}`}>
           <span className={`text-2xl ${st.at_risk ? 'rf-flame' : ''}`}>🔥</span>
           <div>
             <p className="text-sm font-bold text-white"><span className="nums">{st.weeks}</span> semana{st.weeks !== 1 ? 's' : ''} seguida{st.weeks !== 1 ? 's' : ''} viniendo</p>
@@ -266,7 +282,7 @@ function HomeTab() {
           badges fijos). Progreso atado a competencia sentida (barra hacia meta),
           no a un sticker. La recompensa la entrega el staff en caja. */}
       {challenge && (
-        <Section i={2} className={`rounded-2xl p-4 border ${challenge.progress.done ? 'bg-emerald-900/25 border-emerald-500/50' : 'bg-gradient-to-br from-violet-900/30 to-gray-900/40 border-violet-500/40'}`}>
+        <Section i={3} className={`rounded-2xl p-4 border ${challenge.progress.done ? 'bg-emerald-900/25 border-emerald-500/50' : 'bg-gradient-to-br from-violet-900/30 to-gray-900/40 border-violet-500/40'}`}>
           <div className="flex items-center justify-between gap-2">
             <p className="text-[11px] font-black text-violet-300 uppercase tracking-widest">🎯 Reto del mes</p>
             {challenge.progress.done && <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-500 text-black">¡Logrado!</span>}
@@ -292,7 +308,7 @@ function HomeTab() {
           con barra hacia el récord (goal-gradient). Solo si hay historia de horas
           (el jugador solo-torneo no tiene horas → no se muestra). */}
       {(sc.week_hours > 0 || sc.best_week_hours > 0) && (
-        <Section i={3} className="bg-gray-800/50 border border-gray-700/60 rounded-2xl p-4">
+        <Section i={4} className="bg-gray-800/50 border border-gray-700/60 rounded-2xl p-4">
           <div className="flex items-baseline justify-between">
             <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wide">⏱️ Horas esta semana</p>
             <p className="text-2xl font-black text-white nums">{sc.week_hours} <span className="text-sm text-gray-400 font-bold">h</span></p>

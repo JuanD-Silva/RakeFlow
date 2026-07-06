@@ -15,6 +15,7 @@ de la venta del histórico. None = histórico completo. Semántica del corte:
 - VISITAS/RACHA (visit_weeks): por fecha de la actividad (timestamp de la
   entrada / start_time del torneo) — una visita ocurre cuando el jugador va.
 """
+import time
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -272,6 +273,115 @@ async def compute_monthly_rankings(
         "end_date": end_date.isoformat(),
     }
     return winners_map, spenders_map, active_map, names_map, period
+
+
+# ---------------------------------------------------------
+# Destaque del jugador (peak positivo NO-monetario para el que pierde)
+# ---------------------------------------------------------
+HIGHLIGHT_LABELS = {
+    "hours": "en horas jugadas",
+    "visits": "en visitas al club",
+    "constancy": "en constancia",
+}
+
+# Cache por club del standings histórico: es idéntico para todos los jugadores y
+# cambia lento, pero /player/my-highlight lo pediría en cada apertura y en cada
+# vuelta a la pestaña Inicio (remonta). TTL corto → se reagrega el club a lo sumo
+# una vez cada _STANDINGS_TTL_S, no por request. Por-worker (aceptable).
+_STANDINGS_CACHE: dict[int, tuple[float, dict]] = {}
+_STANDINGS_TTL_S = 300
+
+
+async def compute_club_standings(db: AsyncSession, club_id: int) -> dict:
+    """Standings HISTÓRICOS del club por jugador: {hours, visits, constancy} →
+    {player_id: valor}. Base del 'destaque' del panel. Sin corte por stats_since:
+    la posición en el club es la real (mismo criterio que los rankings).
+    Cacheado por club con TTL corto (ver _STANDINGS_CACHE)."""
+    cached = _STANDINGS_CACHE.get(club_id)
+    if cached is not None and (time.monotonic() - cached[0]) < _STANDINGS_TTL_S:
+        return cached[1]
+
+    hours_map: dict[int, float] = {}
+    visits_map: dict[int, int] = {}
+    constancy_map: dict[int, int] = {}
+
+    # Horas en mesa + visitas cash (una fila por sesión, sumadas por jugador).
+    cash = (await db.execute(text("""
+        WITH per_session AS (
+          SELECT t.player_id AS pid,
+            GREATEST(0, EXTRACT(EPOCH FROM (
+              COALESCE(MAX(CASE WHEN CAST(t.type AS TEXT) IN ('CASHOUT','BUST') THEN t.timestamp END), s.end_time)
+              - MIN(CASE WHEN CAST(t.type AS TEXT) IN ('BUYIN','REBUY') THEN t.timestamp END)
+            )) / 3600) AS hours
+          FROM transactions t JOIN sessions s ON t.session_id = s.id
+          WHERE s.club_id = :cid AND s.status = 'CLOSED' AND t.player_id IS NOT NULL
+          GROUP BY t.player_id, s.id, s.end_time
+          HAVING MIN(CASE WHEN CAST(t.type AS TEXT) IN ('BUYIN','REBUY') THEN t.timestamp END) IS NOT NULL
+        )
+        SELECT pid, SUM(hours) AS hours, COUNT(*) AS visits FROM per_session GROUP BY pid
+    """), {"cid": club_id})).all()
+    for r in cash:
+        hours_map[r.pid] = float(r.hours or 0)
+        visits_map[r.pid] = int(r.visits or 0)
+
+    # Visitas de torneo (torneos jugados distintos) → se suman a las cash.
+    tour = (await db.execute(text("""
+        SELECT tp.player_id AS pid, COUNT(DISTINCT tp.tournament_id) AS n
+        FROM tournament_players tp JOIN tournaments t ON t.id = tp.tournament_id
+        WHERE t.club_id = :cid AND tp.player_id IS NOT NULL
+        GROUP BY tp.player_id
+    """), {"cid": club_id})).all()
+    for r in tour:
+        visits_map[r.pid] = visits_map.get(r.pid, 0) + int(r.n or 0)
+
+    # Constancia: semanas ISO (hora Colombia) distintas con entrada cash.
+    # OJO timezone (mismo criterio que visit_weeks): t.timestamp es naive-UTC, así
+    # que hay que interpretarlo como UTC y RECIÉN convertir a Bogotá — un solo
+    # `AT TIME ZONE 'America/Bogota'` lo trataría como si ya fuera hora local y
+    # correría de semana a las partidas de domingo por la noche.
+    weeks = (await db.execute(text("""
+        SELECT player_id AS pid, COUNT(DISTINCT wk) AS weeks FROM (
+          SELECT t.player_id,
+                 date_trunc('week', ((t.timestamp AT TIME ZONE 'UTC') AT TIME ZONE 'America/Bogota')) AS wk
+          FROM transactions t JOIN sessions s ON s.id = t.session_id
+          WHERE s.club_id = :cid AND CAST(t.type AS TEXT) IN ('BUYIN','REBUY')
+                AND t.player_id IS NOT NULL
+        ) x GROUP BY player_id
+    """), {"cid": club_id})).all()
+    for r in weeks:
+        constancy_map[r.pid] = int(r.weeks or 0)
+
+    result = {"hours": hours_map, "visits": visits_map, "constancy": constancy_map}
+    _STANDINGS_CACHE[club_id] = (time.monotonic(), result)
+    return result
+
+
+def best_highlight(standings: dict, player_id: int, threshold_pct: int = 33,
+                   min_total: int = 8) -> dict | None:
+    """El mejor 'Top X%' del jugador entre las métricas no-monetarias, o None si
+    en ninguna llega al tercio superior. Es un 'estado ganador' HONESTO (percentil
+    real, solo su posición — nunca nombres/valores de otros) para el que no tiene
+    profit que lucir. Nunca inventa un top falso: si es flojo en todas → None y el
+    panel cae al reencuadre existente (racha/nivel/mejor-noche)."""
+    best = None
+    for metric in ("hours", "visits", "constancy"):
+        m = standings.get(metric, {})
+        val = m.get(player_id, 0)
+        if not val or val <= 0:
+            continue
+        values = [v for v in m.values() if v and v > 0]
+        total = len(values)
+        if total < min_total:
+            continue
+        rank = 1 + sum(1 for v in values if v > val)   # competition ranking
+        pct = max(1, -(-rank * 100 // total))          # ceil(rank/total*100)
+        if pct > threshold_pct:
+            continue
+        cand = {"metric": metric, "rank": rank, "total": total, "pct": pct,
+                "label": f"Top {pct}% {HIGHLIGHT_LABELS[metric]}"}
+        if best is None or pct < best["pct"] or (pct == best["pct"] and rank < best["rank"]):
+            best = cand
+    return best
 
 
 # ---------------------------------------------------------

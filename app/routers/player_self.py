@@ -420,3 +420,18 @@ async def weekly_summary(
         "streak_weeks": streak["weeks"],
         "streak_at_risk": streak["at_risk"],
     }
+
+
+@router.get("/my-highlight")
+async def my_highlight(
+    db: AsyncSession = Depends(get_db),
+    user: models.User = Depends(_require_player),
+):
+    """Destaque del jugador: su mejor posición relativa en el club en una métrica
+    NO-monetaria (horas / visitas / constancia) — un peak positivo honesto para
+    el que no tiene profit que lucir. `null` si no llega al tercio superior en
+    nada (no forzamos un top falso). Solo su posición: jamás nombres ni valores
+    de otros jugadores."""
+    player = await _my_player(db, user)
+    standings = await player_stats.compute_club_standings(db, user.club_id)
+    return {"highlight": player_stats.best_highlight(standings, player.id)}
