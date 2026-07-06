@@ -119,6 +119,10 @@ class User(Base):
     invited_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     last_login_at = Column(DateTime, nullable=True)
+    # Última apertura del panel (rol PLAYER). Se actualiza con throttle diario en
+    # GET /player/my-profile: throttle del evento PANEL_OPEN + "último visto" para
+    # medir retención / segmentar inactivos (PR8). NULL = nunca abrió el panel.
+    last_seen_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Username legacy (se mantiene por compat con datos viejos, no se usa)

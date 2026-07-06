@@ -108,6 +108,10 @@ class AuditAction:
     PLAYER_RESET_ACCESS = "PLAYER_RESET_ACCESS"
     PLAYER_ACTIVATE = "PLAYER_ACTIVATE"
     PLAYER_HISTORY_UNLOCK = "PLAYER_HISTORY_UNLOCK"
+    # Apertura del panel por el jugador (throttle 1/día). Es la serie temporal
+    # que hace medible la retención D7/D30: el login no alcanza porque el token
+    # dura 30 días (un jugador fiel que abre a diario genera un solo LOGIN_SUCCESS).
+    PANEL_OPEN = "PANEL_OPEN"
 
 
 async def log_action(
