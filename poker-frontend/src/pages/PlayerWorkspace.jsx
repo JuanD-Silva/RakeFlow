@@ -208,6 +208,7 @@ function HomeTab() {
   const { data, loadedOnce, error } = usePlayerResource(playerSelfService.getProfile);
   const { data: club } = usePlayerResource(playerSelfService.getClubInfo);
   const { data: challengeData } = usePlayerResource(playerSelfService.getChallenge);
+  const { data: highlightData } = usePlayerResource(playerSelfService.getHighlight);
   const [showShare, setShowShare] = useState(false);
   if (!loadedOnce) return error ? <Reconnecting /> : <HomeSkeleton />;
   if (!data) return null;
@@ -217,6 +218,7 @@ function HomeTab() {
   const st = data.streak;
   const sc = data.self_compare || {};
   const challenge = challengeData?.challenge || null;
+  const highlight = highlightData?.highlight || null;
 
   return (
     <div className="space-y-4">
@@ -250,6 +252,20 @@ function HomeTab() {
           )}
         </Section>
       </div>
+
+      {/* Destaque: peak positivo NO-monetario. El mejor "Top X%" del jugador en el
+          club (horas / visitas / constancia) — un estado ganador honesto para el
+          que no tiene profit que lucir. Solo su posición (nunca otros). Si no
+          llega al tercio superior en nada, no aparece: no forzamos un top falso. */}
+      {highlight && (
+        <Section i={1} className="rounded-2xl px-4 py-3.5 border bg-gradient-to-br from-emerald-900/25 to-gray-900/40 border-emerald-500/40 flex items-center gap-3">
+          <span className="text-2xl">🏅</span>
+          <div className="min-w-0">
+            <p className="text-[10px] font-black text-emerald-400/80 uppercase tracking-[0.18em]">Tu lugar en {club?.club_name || 'el club'}</p>
+            <p className="text-white font-black truncate">{highlight.label}</p>
+          </div>
+        </Section>
+      )}
 
       {/* Racha (loss-aversion): la llama viva refuerza que hay algo que proteger. */}
       {st.weeks > 0 && (

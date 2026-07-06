@@ -584,6 +584,7 @@ export const playerSelfService = {
     getMonthlySummary: async (year = null, month = null) =>
         (await api.get('/player/monthly-summary', { params: year && month ? { year, month } : {} })).data,
     getChallenge: async () => (await api.get('/player/my-challenge')).data,
+    getHighlight: async () => (await api.get('/player/my-highlight')).data,
 };
 
 // Reto rotativo mensual — lado staff (OWNER/MANAGER)
@@ -591,15 +592,4 @@ export const challengeService = {
     get: async () => (await api.get('/config/monthly-challenge')).data,
     upsert: async (payload) => (await api.put('/config/monthly-challenge', payload)).data,
     clear: async () => { await api.delete('/config/monthly-challenge'); },
-};
-
-// Reactivación de inactivos — experimento con grupo de control (OWNER/MANAGER)
-export const reactivationService = {
-    // POST porque asigna grupos a los inactivos nuevos; devuelve solo tratamiento.
-    refreshPool: async (days = null) =>
-        (await api.post('/reports/reengagement/refresh', null, { params: days ? { days } : {} })).data,
-    markSent: async (playerId) =>
-        (await api.post(`/reports/reengagement/${playerId}/sent`)).data,
-    getLift: async (window = null) =>
-        (await api.get('/reports/reengagement/lift', { params: window ? { window } : {} })).data,
 };
