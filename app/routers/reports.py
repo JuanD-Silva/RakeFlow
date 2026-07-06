@@ -24,6 +24,7 @@ from sqlalchemy.future import select
 from .. import models, player_stats
 from ..audit import log_standalone, AuditAction
 from ..dependencies import get_db, get_current_club, require_role
+from ..phone_utils import normalize_phone
 
 router = APIRouter(prefix="/reports", tags=["Analytics"])
 
@@ -206,8 +207,11 @@ async def reengagement_refresh(
     if not (1 <= days <= 365):
         raise HTTPException(status_code=422, detail="days fuera de rango (1–365)")
     cutoff = datetime.utcnow() - timedelta(days=days)
-    # Inactivos con teléfono: sin visita (última transacción) desde el corte.
-    # visits = sesiones/torneos distintos, proxy no-monetario del valor del jugador.
+    # Inactivos con teléfono: sin VISITA REAL (entrada a mesa/torneo) desde el
+    # corte. El JOIN filtra a tipos de entrada — no SPEND/TIP/CASHOUT ni
+    # correcciones tardías — para que una fila fresca sobre una sesión vieja no
+    # enmascare a un jugador como activo. visits = sesiones/torneos distintos,
+    # proxy no-monetario del valor del jugador.
     rows = (await db.execute(text("""
         SELECT p.id, p.name, p.phone,
                p.reengagement_group AS grp,
@@ -215,6 +219,7 @@ async def reengagement_refresh(
                COUNT(DISTINCT COALESCE(t.session_id::text, 'tour-' || t.tournament_id::text)) AS visits
         FROM players p
         JOIN transactions t ON t.player_id = p.id
+          AND t.type IN ('BUYIN', 'REBUY', 'TOURNAMENT_ENTRY', 'TOURNAMENT_REBUY', 'TOURNAMENT_ADDON')
         WHERE p.club_id = :cid AND p.phone IS NOT NULL AND p.phone <> ''
         GROUP BY p.id, p.name, p.phone, p.reengagement_group
         HAVING MAX(t.timestamp) < :cutoff
@@ -239,10 +244,13 @@ async def reengagement_refresh(
     await db.commit()
 
     last_sent = await _last_sent_map(db, current_club.id)
+    # phone normalizado (dígitos + código país) para el link wa.me: la mayoría de
+    # los inactivos se crearon en mesa con el teléfono crudo (sin 57, con espacios),
+    # que rompe wa.me. Mismo normalize_phone que usa el flujo de invitación.
     items = [{
         "player_id": r.id,
         "name": r.name,
-        "phone": r.phone,
+        "phone": normalize_phone(r.phone),
         "visits": r.visits,
         "days_inactive": (now - r.last_visit).days if r.last_visit else None,
         "last_sent_at": (last_sent[r.id].isoformat() + "Z") if r.id in last_sent else None,

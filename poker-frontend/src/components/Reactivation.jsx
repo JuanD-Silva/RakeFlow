@@ -17,9 +17,11 @@ function daysText(n) {
 }
 
 function waLink(phone, name) {
+  // El backend ya normaliza (dígitos + código país); limpiamos por si acaso.
+  const digits = String(phone || '').replace(/\D/g, '');
   const text = `¡Hola ${name || ''}! 🃏 Hace rato no te vemos por la mesa. ` +
     `¿Te sumás esta semana? Escribinos por acá y te contamos qué se viene.`;
-  return `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
+  return `https://wa.me/${digits}?text=${encodeURIComponent(text)}`;
 }
 
 function Stat({ label, value, sub, color }) {
@@ -134,7 +136,8 @@ export default function Reactivation() {
       ) : (
         <div className="space-y-2">
           {list.map((p) => {
-            const done = contacted.has(p.player_id) || p.last_sent_at;
+            const done = contacted.has(p.player_id) || Boolean(p.last_sent_at);
+            const noPhone = !p.phone;
             return (
               <div key={p.player_id} className="bg-gray-800/60 border border-gray-700/60 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
                 <div className="min-w-0">
@@ -146,11 +149,14 @@ export default function Reactivation() {
                 </div>
                 <button
                   onClick={() => contact(p)}
+                  disabled={noPhone}
+                  title={noPhone ? 'Sin teléfono válido' : ''}
                   className={`shrink-0 px-3 py-2 rounded-lg text-sm font-semibold text-white ${
-                    done ? 'bg-gray-600 hover:bg-gray-500' : 'bg-emerald-600 hover:bg-emerald-500'
+                    noPhone ? 'bg-gray-700 opacity-50 cursor-not-allowed'
+                      : done ? 'bg-gray-600 hover:bg-gray-500' : 'bg-emerald-600 hover:bg-emerald-500'
                   }`}
                 >
-                  {done ? 'Enviar de nuevo' : 'WhatsApp'}
+                  {noPhone ? 'Sin teléfono' : done ? 'Enviar de nuevo' : 'WhatsApp'}
                 </button>
               </div>
             );

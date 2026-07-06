@@ -318,13 +318,22 @@ def main():
             check(wk["visits"] >= 1, f"visitas de la semana >= 1 → {wk['visits']}")
             check("streak_weeks" in wk and "best_session" in wk, "recap trae racha + mejor noche")
 
-            step(8, "Autz: PLAYER no accede a /reports/*, sin token 401")
+            step(8, "Teléfono normalizado para wa.me (10 díg sin código → +57)")
+            ph_pid = seed_player(c1, "PR9-PHONE", "3009998877")   # crudo, 10 díg sin 57
+            seed_visit(s1, ph_pid, days_ago=30)
+            psql(f"UPDATE players SET reengagement_group='treatment', reengagement_qualified_at=now() WHERE id={ph_pid};")
+            r = c.post(f"{BASE}/reports/reengagement/refresh", headers=auth1).json()
+            item = next((it for it in r["treatment"] if it["player_id"] == ph_pid), None)
+            check(item is not None and item["phone"] == "573009998877",
+                  f"phone normalizado a 573009998877 → {item and item['phone']}")
+
+            step(9, "Autz: PLAYER no accede a /reports/*, sin token 401")
             r = c.post(f"{BASE}/reports/reengagement/refresh", headers=authw)
             check(r.status_code == 403, f"PLAYER en refresh → 403 (got {r.status_code})")
             r = c.get(f"{BASE}/reports/reengagement/lift")
             check(r.status_code == 401, f"sin token → 401 (got {r.status_code})")
 
-            step(9, "Limpieza")
+            step(10, "Limpieza")
             cleanup(c1, c2)
             ok("data de prueba borrada")
 
