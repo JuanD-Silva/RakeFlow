@@ -44,7 +44,12 @@ export default function PlayerShareCard({ onClose }) {
 
   const shareText = () => {
     const mes = monthName(data.period.year, data.period.month);
-    let txt = `🃏 Mi ${mes} en ${data.club_name}: ${signCop(data.profit)} en ${data.visits} visita${data.visits !== 1 ? 's' : ''}`;
+    // Encuadre adaptativo (igual que el panel): si el mes va en negativo, la plata
+    // NO viaja en el texto — se comparte lo no-monetario (visitas/horas/racha).
+    const vis = `${data.visits} visita${data.visits !== 1 ? 's' : ''}`;
+    let txt = data.profit >= 0
+      ? `🃏 Mi ${mes} en ${data.club_name}: ${signCop(data.profit)} en ${vis}`
+      : `🃏 Mi ${mes} en ${data.club_name}: ${vis}`;
     if (data.hours > 0) txt += ` (${data.hours} h en mesa)`;
     if (data.streak_weeks > 1) txt += ` · ${data.streak_weeks} semanas seguidas 🔥`;
     return txt;
@@ -120,10 +125,21 @@ export default function PlayerShareCard({ onClose }) {
                 Mi {monthName(data.period.year, data.period.month)} {data.period.year}
               </p>
 
-              <p className={`mt-4 text-4xl font-black ${data.profit >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
-                {signCop(data.profit)}
-              </p>
-              <p className="text-[11px] text-gray-500 font-bold uppercase tracking-wide">Resultado del mes</p>
+              {/* Encuadre adaptativo: el ganador luce su profit; el que va en
+                  negativo comparte su actividad (visitas), nunca la pérdida. */}
+              {data.profit >= 0 ? (
+                <>
+                  <p className="mt-4 text-4xl font-black text-emerald-300">{signCop(data.profit)}</p>
+                  <p className="text-[11px] text-gray-500 font-bold uppercase tracking-wide">Resultado del mes</p>
+                </>
+              ) : (
+                <>
+                  <p className="mt-4 text-4xl font-black text-white">
+                    {data.visits} <span className="text-lg text-gray-400 font-bold">visita{data.visits !== 1 ? 's' : ''}</span>
+                  </p>
+                  <p className="text-[11px] text-gray-500 font-bold uppercase tracking-wide">Este mes en la mesa</p>
+                </>
+              )}
 
               <div className="grid grid-cols-3 gap-2 mt-4 text-center">
                 <div className="bg-white/5 rounded-xl py-2">
@@ -140,11 +156,13 @@ export default function PlayerShareCard({ onClose }) {
                 </div>
               </div>
 
-              {data.best_session && (
+              {/* Mejor noche solo si de verdad fue ganadora — no compartimos una
+                  "mejor noche" en rojo (coherente con esconder la pérdida). */}
+              {data.best_session && data.best_session.profit > 0 && (
                 <div className="mt-3 bg-white/5 rounded-xl px-3 py-2">
                   <p className="text-[9px] text-gray-400 font-bold uppercase">Mejor noche</p>
                   <p className="text-sm text-white font-bold truncate">
-                    {data.best_session.name} · <span className={data.best_session.profit >= 0 ? 'text-emerald-300' : 'text-red-300'}>{signCop(data.best_session.profit)}</span>
+                    {data.best_session.name} · <span className="text-emerald-300">{signCop(data.best_session.profit)}</span>
                   </p>
                 </div>
               )}

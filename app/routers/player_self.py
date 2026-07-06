@@ -184,12 +184,24 @@ async def my_sessions(
     page = items[skip:skip + limit]
     # Curva de profit acumulado (orden cronológico, TODO el histórico visible):
     # insumo del sparkline del front sin pedir todas las páginas.
+    # En paralelo, curva de ACTIVIDAD acumulada (horas, o visitas si es solo-torneo):
+    # una línea que SUBE, para reencuadrar el Historial del que va en negativo — la
+    # curva de profit en rojo es la pérdida acumulada, lo que más deprime la visita.
     cum, curve = 0.0, []
+    cum_h, hours_curve = 0.0, []
     for it in sorted(items, key=lambda x: x["date"] or ""):
         cum += it["profit"]
         curve.append(round(cum))
+        cum_h += it.get("hours") or 0
+        hours_curve.append(round(cum_h, 1))
+    if cum_h > 0:
+        activity_curve, activity_total = hours_curve, f"{round(cum_h)} h"
+    else:
+        activity_curve = list(range(1, len(items) + 1))  # 1,2,…N visitas
+        activity_total = f"{len(items)} visita{'s' if len(items) != 1 else ''}"
     return {"items": page, "total": len(items), "has_more": skip + limit < len(items),
-            "profit_curve": curve}
+            "profit_curve": curve,
+            "activity_curve": activity_curve, "activity_total": activity_total}
 
 
 @router.get("/my-achievements")

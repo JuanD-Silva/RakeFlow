@@ -357,11 +357,10 @@ function HomeTab() {
       )}
 
       {/* El mes en curso. Peak-end rule + finding on-domain: mostrar la pérdida
-          como número gigante de apertura baja las visitas al local. Lideramos
-          con lo no-monetario (visitas, horas, mejor noche — donde el que pierde
-          también gana); la plata del mes luce en verde si ganó, o queda como un
-          renglón chico y honesto si perdió. La plata NO se esconde: el total
-          real vive en "Tu juego" abajo. */}
+          como número de apertura baja las visitas al local. Lideramos con lo
+          no-monetario (visitas, horas, mejor noche — donde el que pierde también
+          gana); la plata del mes SOLO se muestra si ganó. El detalle (incluida la
+          pérdida) queda en el Historial, no en la cara al abrir. */}
       <section className="rf-in" style={{ animationDelay: '240ms' }}>
         <p className="text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-2">Este mes</p>
         {/* Horas = solo cash; para el jugador solo-torneo son 0 y no aportan
@@ -393,16 +392,13 @@ function HomeTab() {
           </div>
         )}
 
-        {/* Resultado en plata del mes: el ganador luce arriba; el que pierde lo
-            ve honesto pero chico, no como número gigante en rojo. */}
-        {data.month.profit >= 0 ? (
+        {/* Resultado en plata del mes: SOLO si ganó. Al que va en negativo no se
+            le muestra la pérdida — priorizamos retención (decisión de producto:
+            la pérdida es lo que más deprime la visita, Wohl 2017 + peak-end). */}
+        {data.month.profit >= 0 && (
           <div className="mt-3">
             <Stat label="Resultado del mes" value={signCop(data.month.profit)} tone="good" />
           </div>
-        ) : (
-          <p className="mt-3 text-[12px] text-gray-500">
-            Este mes vas <b className="text-gray-400">{signCop(data.month.profit)}</b> — tu historia completa está abajo.
-          </p>
         )}
 
         <button onClick={() => setShowShare(true)}
@@ -411,20 +407,34 @@ function HomeTab() {
         </button>
       </section>
 
-      {/* Totales de la historia visible. Resultado y ROI destacados (glanceabilidad):
-          la métrica-héroe manda, el resto son soportes. */}
+      {/* Totales de la historia visible. Encuadre ADAPTATIVO por resultado
+          acumulado (priorizamos retención): el que va en verde luce su profit/ROI;
+          al que va en negativo NO se le muestra la pérdida acumulada —que es lo que
+          más deprime la visita (Wohl 2017 + peak-end)— sino su fidelidad: horas,
+          visitas, sesiones. El detalle noche-por-noche sigue en el Historial. */}
       <section className="rf-in" style={{ animationDelay: '300ms' }}>
         <p className="text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-2">Tu juego</p>
-        <div className="grid grid-cols-2 gap-3">
-          <Stat label="Resultado total" value={signCop(t.profit)} tone={t.profit >= 0 ? 'good' : 'bad'} big />
-          <Stat label="ROI" value={t.roi != null ? `${(t.roi * 100).toFixed(1)}%` : '—'} tone={t.roi > 0 ? 'good' : undefined} big />
-          <Stat label="Metiste" value={cop(t.invested)} />
-          <Stat label="Sacaste" value={cop(t.returned)} />
-          <Stat label="$ por hora" value={t.profit_per_hour != null ? signCop(t.profit_per_hour) : '—'} />
-          <Stat label="Horas en mesa" value={`${t.hours} h`} />
-        </div>
-        {t.expenses > 0 && (
-          <p className="text-[11px] text-gray-500 mt-2">Además gastaste {cop(t.expenses)} en consumo y propinas (no cuenta en tu ROI).</p>
+        {t.profit >= 0 ? (
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              <Stat label="Resultado total" value={signCop(t.profit)} tone="good" big />
+              <Stat label="ROI" value={t.roi != null ? `${(t.roi * 100).toFixed(1)}%` : '—'} tone={t.roi > 0 ? 'good' : undefined} big />
+              <Stat label="Metiste" value={cop(t.invested)} />
+              <Stat label="Sacaste" value={cop(t.returned)} />
+              <Stat label="$ por hora" value={t.profit_per_hour != null ? signCop(t.profit_per_hour) : '—'} />
+              <Stat label="Horas en mesa" value={`${t.hours} h`} />
+            </div>
+            {t.expenses > 0 && (
+              <p className="text-[11px] text-gray-500 mt-2">Además gastaste {cop(t.expenses)} en consumo y propinas (no cuenta en tu ROI).</p>
+            )}
+          </>
+        ) : (
+          <div className="grid grid-cols-2 gap-3">
+            <Stat label="Horas en mesa" value={`${t.hours} h`} big />
+            <Stat label="Visitas" value={`${t.visits}`} big />
+            <Stat label="Sesiones cash" value={`${t.cash_sessions}`} />
+            <Stat label="Torneos" value={`${t.tournaments}`} />
+          </div>
         )}
       </section>
 
@@ -461,6 +471,8 @@ function HistoryTab() {
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
   const [curve, setCurve] = useState([]);
+  const [activityCurve, setActivityCurve] = useState([]);
+  const [activityTotal, setActivityTotal] = useState('');
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -471,6 +483,8 @@ function HistoryTab() {
       setItems((prev) => skip === 0 ? d.items : [...prev, ...d.items]);
       setTotal(d.total);
       setCurve(d.profit_curve || []);
+      setActivityCurve(d.activity_curve || []);
+      setActivityTotal(d.activity_total || '');
       setHasMore(d.has_more);
       setError(false);
     } catch {
@@ -492,21 +506,34 @@ function HistoryTab() {
     </div>
   );
 
+  // Reencuadre de la curva (adaptativo por resultado acumulado). `neg` solo si va
+  // en negativo Y ya llegó la curva de actividad — blindaje de orden de deploy: si
+  // el front nuevo sale antes que el backend, activityCurve viene vacío y mostramos
+  // la curva de profit vieja en vez de un bloque "Tu constancia" en blanco.
+  const neg = curve.length >= 2 && curve[curve.length - 1] < 0 && activityCurve.length >= 2;
+  const curveGreen = neg || (curve.length >= 2 && curve[curve.length - 1] >= 0);
+
   return (
     <div className="space-y-3">
       <h2 className="text-xl font-black text-white tracking-tight">Mis sesiones <span className="text-gray-500 text-sm font-bold nums">({total})</span></h2>
 
-      {/* Curva de profit acumulado sobre TODO el histórico visible */}
+      {/* Curva acumulada sobre TODO el histórico visible. Si el resultado va en
+          negativo, en vez de la curva de plata (roja, cae = la pérdida acumulada,
+          lo que más deprime) se muestra la de actividad (horas/visitas, verde,
+          sube = "tu presencia crece"). */}
       {curve.length >= 2 && (
         <div className="rf-in bg-gray-800/50 border border-gray-700/60 rounded-2xl p-4">
           <div className="flex items-center justify-between mb-1.5">
-            <p className="text-[11px] text-gray-400 font-bold uppercase tracking-wide">Tu curva</p>
-            <span className={`text-sm font-black nums ${curve[curve.length - 1] >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-              {signCop(curve[curve.length - 1])}
+            <p className="text-[11px] text-gray-400 font-bold uppercase tracking-wide">{neg ? 'Tu constancia' : 'Tu curva'}</p>
+            <span className={`text-sm font-black nums ${curveGreen ? 'text-emerald-400' : 'text-red-400'}`}>
+              {neg ? activityTotal : signCop(curve[curve.length - 1])}
             </span>
           </div>
-          <ProfitSparkline points={curve} />
-          <p className="text-[10px] text-gray-500 mt-1.5">Resultado acumulado, de tu primera noche a la última</p>
+          <ProfitSparkline points={neg ? activityCurve : curve}
+            label={neg ? 'Constancia acumulada' : 'Resultado acumulado'} />
+          <p className="text-[10px] text-gray-500 mt-1.5">
+            {neg ? 'Tu presencia en el club, de tu primera noche a la última' : 'Resultado acumulado, de tu primera noche a la última'}
+          </p>
         </div>
       )}
 
