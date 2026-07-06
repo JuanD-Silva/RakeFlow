@@ -56,7 +56,7 @@ export default function MonthlyChallengeManager() {
     setError(null);
     const target = parseFloat(form.target);
     if (!form.title.trim()) { setError('Ponele un título al reto.'); return; }
-    if (!(target > 0)) { setError('La meta debe ser un número mayor a 0.'); return; }
+    if (!(target > 0) || target > 1000) { setError('La meta debe ser un número entre 1 y 1000.'); return; }
     setBusy(true);
     try {
       await challengeService.upsert({
@@ -69,7 +69,9 @@ export default function MonthlyChallengeManager() {
       setEditing(false);
       await load();
     } catch (e) {
-      setError(e.response?.data?.detail || 'No se pudo guardar el reto.');
+      // detail puede venir como array (422 de Pydantic); solo mostramos strings.
+      const detail = e.response?.data?.detail;
+      setError(typeof detail === 'string' ? detail : 'No se pudo guardar el reto.');
     } finally {
       setBusy(false);
     }
@@ -108,7 +110,7 @@ export default function MonthlyChallengeManager() {
               className="flex-1 bg-gray-900 text-white border border-gray-600 rounded-lg py-2 px-2 text-sm focus:border-violet-500 outline-none">
               {METRICS.map((m) => <option key={m.key} value={m.key}>{m.label} ({m.hint})</option>)}
             </select>
-            <input type="number" inputMode="numeric" min="1" value={form.target} onChange={(e) => setForm({ ...form, target: e.target.value })}
+            <input type="number" inputMode="numeric" min="1" max="1000" value={form.target} onChange={(e) => setForm({ ...form, target: e.target.value })}
               placeholder="Meta"
               className="w-24 bg-gray-900 text-white border border-gray-600 rounded-lg py-2 px-3 text-sm focus:border-violet-500 outline-none" />
           </div>

@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import delete
+from sqlalchemy import delete, text
 from typing import List
 
 from .. import models, schemas
@@ -207,9 +207,11 @@ async def upsert_monthly_challenge(
     _: models.User = Depends(require_role([models.UserRole.OWNER, models.UserRole.MANAGER])),
 ):
     """Crea o reemplaza el reto del mes en curso. Un reto activo por (club, mes):
-    se desactiva el anterior y se inserta el nuevo (upsert manual, sin depender
-    de una carrera contra el índice único parcial)."""
+    se desactiva el anterior y se inserta el nuevo. Un advisory lock por club
+    serializa PUTs concurrentes del MISMO club (raro: acción de admin), así el
+    'desactivar-luego-insertar' es atómico y no choca contra el índice único."""
     now_col = datetime.now(player_stats.COL_TZ)
+    await db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": current_club.id})
     await db.execute(
         models.MonthlyChallenge.__table__.update()
         .where(
