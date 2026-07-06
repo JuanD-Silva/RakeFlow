@@ -185,6 +185,14 @@ class ClubPublicUpdate(BaseModel):
     public_announcement: Optional[str] = Field(None, max_length=120)
 
 
+class MonthlyChallengeUpsert(BaseModel):
+    title: str = Field(..., min_length=1, max_length=80)
+    description: Optional[str] = Field(None, max_length=160)
+    metric: str = Field(..., pattern="^(visitas|horas|torneos)$")
+    target: float = Field(..., gt=0, le=1000)
+    reward_text: Optional[str] = Field(None, max_length=120)
+
+
 class DealerPayoutCreate(BaseModel):
     amount: float = Field(..., gt=0)
     method: Optional[str] = Field(None, max_length=30)

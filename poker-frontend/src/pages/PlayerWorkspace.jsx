@@ -142,6 +142,7 @@ const EmptyState = ({ emoji, title, subtitle }) => (
 function HomeTab() {
   const { data, loadedOnce, error } = usePlayerResource(playerSelfService.getProfile);
   const { data: club } = usePlayerResource(playerSelfService.getClubInfo);
+  const { data: challengeData } = usePlayerResource(playerSelfService.getChallenge);
   const [showShare, setShowShare] = useState(false);
   if (!loadedOnce) return error ? <Reconnecting /> : <Spinner />;
   if (!data) return null;
@@ -150,6 +151,7 @@ function HomeTab() {
   const lvl = data.level;
   const st = data.streak;
   const sc = data.self_compare || {};
+  const challenge = challengeData?.challenge || null;
 
   return (
     <div className="space-y-5">
@@ -184,6 +186,32 @@ function HomeTab() {
           <div>
             <p className="text-sm font-bold text-white">{st.weeks} semana{st.weeks !== 1 ? 's' : ''} seguida{st.weeks !== 1 ? 's' : ''} viniendo</p>
             {st.at_risk && <p className="text-[11px] text-amber-300 font-bold">Tu racha se corta el domingo — pasá por el club esta semana</p>}
+          </div>
+        </div>
+      )}
+
+      {/* Reto del mes — contenido que ROTA (combate el novelty effect de los
+          badges fijos). Progreso atado a competencia sentida (barra hacia meta),
+          no a un sticker. La recompensa la entrega el staff en caja. */}
+      {challenge && (
+        <div className={`rounded-2xl p-4 border ${challenge.progress.done ? 'bg-emerald-900/25 border-emerald-500/50' : 'bg-gradient-to-br from-violet-900/30 to-gray-900/40 border-violet-500/40'}`}>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[11px] font-black text-violet-300 uppercase tracking-widest">🎯 Reto del mes</p>
+            {challenge.progress.done && <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-500 text-black">¡Logrado!</span>}
+          </div>
+          <p className="mt-1.5 text-white font-black">{challenge.title}</p>
+          {challenge.description && <p className="text-xs text-gray-400 mt-0.5">{challenge.description}</p>}
+          <div className="mt-3 h-2 rounded-full bg-gray-700/70 overflow-hidden">
+            <div className={`h-full rounded-full transition-all ${challenge.progress.done ? 'bg-emerald-500' : 'bg-violet-500'}`}
+              style={{ width: `${Math.min(100, Math.round((100 * challenge.progress.current) / challenge.progress.target))}%` }} />
+          </div>
+          <div className="flex items-center justify-between mt-1.5">
+            <p className="text-[11px] text-gray-500">
+              {challenge.progress.current} / {challenge.progress.target} {challenge.metric}
+            </p>
+            {challenge.reward_text && (
+              <p className="text-[11px] text-violet-300/90 font-bold">🎁 {challenge.reward_text}</p>
+            )}
           </div>
         </div>
       )}

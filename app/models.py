@@ -577,3 +577,27 @@ class TournamentDealerShift(Base):
 
     dealer = relationship("Dealer")
     table = relationship("TournamentTable")
+
+
+class MonthlyChallenge(Base):
+    """Reto rotativo del mes por club (combate el novelty effect de los badges
+    fijos). El staff define un objetivo mensual (métrica + meta + recompensa que
+    entrega en caja) y el panel del jugador muestra su progreso. Un reto activo
+    por (club, año, mes) — índice único parcial en la migración."""
+    __tablename__ = "monthly_challenges"
+
+    id = Column(Integer, primary_key=True, index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False, index=True)
+    year = Column(Integer, nullable=False)
+    month = Column(Integer, nullable=False)  # 1-12
+
+    title = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    # Métrica contable en el mes: 'visitas' | 'horas' | 'torneos'.
+    metric = Column(String, nullable=False)
+    target = Column(Float, nullable=False)          # meta a alcanzar
+    reward_text = Column(String, nullable=True)      # qué gana (lo entrega el staff en caja)
+    active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    club = relationship("Club")
