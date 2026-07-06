@@ -471,6 +471,8 @@ function HistoryTab() {
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
   const [curve, setCurve] = useState([]);
+  const [activityCurve, setActivityCurve] = useState([]);
+  const [activityTotal, setActivityTotal] = useState('');
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -481,6 +483,8 @@ function HistoryTab() {
       setItems((prev) => skip === 0 ? d.items : [...prev, ...d.items]);
       setTotal(d.total);
       setCurve(d.profit_curve || []);
+      setActivityCurve(d.activity_curve || []);
+      setActivityTotal(d.activity_total || '');
       setHasMore(d.has_more);
       setError(false);
     } catch {
@@ -506,19 +510,29 @@ function HistoryTab() {
     <div className="space-y-3">
       <h2 className="text-xl font-black text-white tracking-tight">Mis sesiones <span className="text-gray-500 text-sm font-bold nums">({total})</span></h2>
 
-      {/* Curva de profit acumulado sobre TODO el histórico visible */}
-      {curve.length >= 2 && (
-        <div className="rf-in bg-gray-800/50 border border-gray-700/60 rounded-2xl p-4">
-          <div className="flex items-center justify-between mb-1.5">
-            <p className="text-[11px] text-gray-400 font-bold uppercase tracking-wide">Tu curva</p>
-            <span className={`text-sm font-black nums ${curve[curve.length - 1] >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-              {signCop(curve[curve.length - 1])}
-            </span>
+      {/* Curva acumulada sobre TODO el histórico visible. Encuadre adaptativo: si
+          el resultado acumulado va en negativo, en vez de la curva de plata (roja,
+          cae = la pérdida acumulada, lo que más deprime) se muestra la de actividad
+          (horas/visitas, verde, sube = "tu presencia crece"). */}
+      {curve.length >= 2 && (() => {
+        const neg = curve[curve.length - 1] < 0;
+        return (
+          <div className="rf-in bg-gray-800/50 border border-gray-700/60 rounded-2xl p-4">
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="text-[11px] text-gray-400 font-bold uppercase tracking-wide">{neg ? 'Tu constancia' : 'Tu curva'}</p>
+              {/* Siempre verde: si no va en negativo muestra profit ≥0; si va en
+                  negativo muestra la actividad (horas/visitas), nunca la pérdida. */}
+              <span className="text-sm font-black nums text-emerald-400">
+                {neg ? activityTotal : signCop(curve[curve.length - 1])}
+              </span>
+            </div>
+            <ProfitSparkline points={neg ? activityCurve : curve} />
+            <p className="text-[10px] text-gray-500 mt-1.5">
+              {neg ? 'Tu presencia en el club, de tu primera noche a la última' : 'Resultado acumulado, de tu primera noche a la última'}
+            </p>
           </div>
-          <ProfitSparkline points={curve} />
-          <p className="text-[10px] text-gray-500 mt-1.5">Resultado acumulado, de tu primera noche a la última</p>
-        </div>
-      )}
+        );
+      })()}
 
       {items.map((s, i) => (
         <div key={`${s.type}-${s.date}-${i}`} className="rf-in bg-gray-800/60 border border-gray-700/60 rounded-xl px-4 py-3 flex items-center justify-between gap-3" style={{ animationDelay: `${Math.min(i, 10) * 35}ms` }}>
