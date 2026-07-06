@@ -592,3 +592,14 @@ export const challengeService = {
     upsert: async (payload) => (await api.put('/config/monthly-challenge', payload)).data,
     clear: async () => { await api.delete('/config/monthly-challenge'); },
 };
+
+// Reactivación de inactivos — experimento con grupo de control (OWNER/MANAGER)
+export const reactivationService = {
+    // POST porque asigna grupos a los inactivos nuevos; devuelve solo tratamiento.
+    refreshPool: async (days = null) =>
+        (await api.post('/reports/reengagement/refresh', null, { params: days ? { days } : {} })).data,
+    markSent: async (playerId) =>
+        (await api.post(`/reports/reengagement/${playerId}/sent`)).data,
+    getLift: async (window = null) =>
+        (await api.get('/reports/reengagement/lift', { params: window ? { window } : {} })).data,
+};

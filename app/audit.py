@@ -112,6 +112,10 @@ class AuditAction:
     # que hace medible la retención D7/D30: el login no alcanza porque el token
     # dura 30 días (un jugador fiel que abre a diario genera un solo LOGIN_SUCCESS).
     PANEL_OPEN = "PANEL_OPEN"
+    # Mensaje de reactivación enviado a un jugador inactivo del grupo tratamiento
+    # (el staff lo marca tras mandar el wa.me). Registra quién recibió, para el
+    # experimento con grupo de control (PR9).
+    REENGAGEMENT_SENT = "REENGAGEMENT_SENT"
 
 
 async def log_action(

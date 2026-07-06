@@ -388,3 +388,35 @@ async def monthly_summary(
         "streak_weeks": streak["weeks"],
         "level": player_stats.compute_level(len(cash_all) + len(tour_all))["tier"],
     }
+
+
+@router.get("/weekly-summary")
+async def weekly_summary(
+    db: AsyncSession = Depends(get_db),
+    user: models.User = Depends(_require_player),
+):
+    """Recap de la semana ISO en curso (hora Colombia): insumo del empujón
+    semanal de re-engagement (la ventana del estudio es SEMANAL, no mensual).
+    No-monetario a propósito (mismo criterio del Inicio en PR5): visitas, horas,
+    mejor noche y racha — lo que invita a VOLVER, no la plata."""
+    player = await _my_player(db, user)
+    since = player.stats_since
+    cash_rows = await player_stats.cash_rows_for_player(db, user.club_id, player.id, since)
+    tour_rows = await player_stats.tournament_rows_for_player(db, user.club_id, player.id, since)
+    weeks = await player_stats.visit_weeks(db, user.club_id, player.id, since)
+
+    week_start = player_stats.start_of_week_col_as_utc()
+    w_cash = [r for r in cash_rows if r["date"] and r["date"] >= week_start]
+    w_tour = [r for r in tour_rows if r["date"] and r["date"] >= week_start]
+    t = _totals(w_cash, w_tour)
+    streak = player_stats.compute_streak(weeks)
+
+    return {
+        "player_name": player.name,
+        "week_start": week_start.isoformat() + "Z",
+        "visits": t["visits"],
+        "hours": t["hours"],
+        "best_session": player_stats.best_session_of(w_cash, w_tour),
+        "streak_weeks": streak["weeks"],
+        "streak_at_risk": streak["at_risk"],
+    }

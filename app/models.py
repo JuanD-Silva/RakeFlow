@@ -151,6 +151,13 @@ class Player(Base):
     # desbloqueado (pagó en caja / club nuevo); con fecha = sus stats corren
     # desde ahí. Se setea a now() al activar la cuenta.
     stats_since = Column(DateTime, nullable=True)
+    # Experimento de reactivación (PR9): grupo ESTABLE 'treatment'/'control'
+    # (NULL = todavía no calificó como inactivo). Se asigna la 1ª vez que el
+    # jugador entra al pool de inactivos y NO se re-balancea (cambiarlo
+    # invalidaría el experimento). qualified_at = esa 1ª calificación = baseline
+    # para medir el retorno post-mensaje contra el grupo de control.
+    reengagement_group = Column(String, nullable=True)
+    reengagement_qualified_at = Column(DateTime, nullable=True)
 
     # Relaciones
     club = relationship("Club", back_populates="players")
