@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import delete
+from sqlalchemy import delete, text
 from typing import List
 
 from .. import models, schemas
@@ -160,3 +160,96 @@ async def update_distribution_rules(
         .order_by(models.DistributionRule.priority.asc())
     )
     return result.scalars().all()
+
+# ---------------------------------------------------------
+# Reto rotativo mensual (PR7 retención). El staff define un objetivo del mes
+# (métrica + meta + recompensa que entrega en caja); el panel del jugador
+# muestra el progreso. Combate el desgaste de los badges fijos.
+# ---------------------------------------------------------
+from datetime import datetime
+from .. import player_stats
+
+
+def _challenge_out(ch):
+    return {
+        "id": ch.id, "year": ch.year, "month": ch.month,
+        "title": ch.title, "description": ch.description,
+        "metric": ch.metric, "target": ch.target,
+        "reward_text": ch.reward_text, "active": ch.active,
+    }
+
+
+@router.get("/monthly-challenge")
+async def get_monthly_challenge(
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+    _: models.User = Depends(require_role([models.UserRole.OWNER, models.UserRole.MANAGER])),
+):
+    """Reto activo del mes en curso (hora Colombia). None si no hay."""
+    now_col = datetime.now(player_stats.COL_TZ)
+    ch = (await db.execute(
+        select(models.MonthlyChallenge).where(
+            models.MonthlyChallenge.club_id == current_club.id,
+            models.MonthlyChallenge.year == now_col.year,
+            models.MonthlyChallenge.month == now_col.month,
+            models.MonthlyChallenge.active == True,  # noqa: E712
+        )
+    )).scalars().first()
+    return {"challenge": _challenge_out(ch) if ch else None,
+            "period": {"year": now_col.year, "month": now_col.month}}
+
+
+@router.put("/monthly-challenge")
+async def upsert_monthly_challenge(
+    data: schemas.MonthlyChallengeUpsert,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+    _: models.User = Depends(require_role([models.UserRole.OWNER, models.UserRole.MANAGER])),
+):
+    """Crea o reemplaza el reto del mes en curso. Un reto activo por (club, mes):
+    se desactiva el anterior y se inserta el nuevo. Un advisory lock por club
+    serializa PUTs concurrentes del MISMO club (raro: acción de admin), así el
+    'desactivar-luego-insertar' es atómico y no choca contra el índice único."""
+    now_col = datetime.now(player_stats.COL_TZ)
+    await db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": current_club.id})
+    await db.execute(
+        models.MonthlyChallenge.__table__.update()
+        .where(
+            models.MonthlyChallenge.club_id == current_club.id,
+            models.MonthlyChallenge.year == now_col.year,
+            models.MonthlyChallenge.month == now_col.month,
+            models.MonthlyChallenge.active == True,  # noqa: E712
+        )
+        .values(active=False)
+    )
+    ch = models.MonthlyChallenge(
+        club_id=current_club.id, year=now_col.year, month=now_col.month,
+        title=data.title.strip(), description=(data.description or "").strip() or None,
+        metric=data.metric, target=data.target,
+        reward_text=(data.reward_text or "").strip() or None, active=True,
+    )
+    db.add(ch)
+    await db.commit()
+    await db.refresh(ch)
+    return {"challenge": _challenge_out(ch)}
+
+
+@router.delete("/monthly-challenge", status_code=204)
+async def clear_monthly_challenge(
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+    _: models.User = Depends(require_role([models.UserRole.OWNER, models.UserRole.MANAGER])),
+):
+    """Quita el reto del mes en curso (lo desactiva; el historial se conserva)."""
+    now_col = datetime.now(player_stats.COL_TZ)
+    await db.execute(
+        models.MonthlyChallenge.__table__.update()
+        .where(
+            models.MonthlyChallenge.club_id == current_club.id,
+            models.MonthlyChallenge.year == now_col.year,
+            models.MonthlyChallenge.month == now_col.month,
+            models.MonthlyChallenge.active == True,  # noqa: E712
+        )
+        .values(active=False)
+    )
+    await db.commit()

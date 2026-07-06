@@ -257,6 +257,54 @@ async def club_info(
     }
 
 
+def _challenge_progress(metric: str, m_cash: list, m_tour: list) -> float:
+    """Progreso del jugador en la métrica del reto, sobre las filas del mes ya
+    cortadas por stats_since (mismo criterio que el bloque 'month' del panel)."""
+    if metric == "visitas":
+        return sum(1 for r in m_cash if r.get("played", True)) + len(m_tour)
+    if metric == "horas":
+        return round(sum(r["hours"] for r in m_cash), 1)
+    if metric == "torneos":
+        return len(m_tour)
+    return 0
+
+
+@router.get("/my-challenge")
+async def my_challenge(
+    db: AsyncSession = Depends(get_db),
+    user: models.User = Depends(_require_player),
+):
+    """Reto rotativo del mes del club + progreso propio. None si el club no
+    definió reto este mes. Combate el desgaste de los badges fijos (novelty effect)."""
+    player = await _my_player(db, user)
+    now_col = datetime.now(player_stats.COL_TZ)
+    ch = (await db.execute(
+        select(models.MonthlyChallenge).where(
+            models.MonthlyChallenge.club_id == user.club_id,
+            models.MonthlyChallenge.year == now_col.year,
+            models.MonthlyChallenge.month == now_col.month,
+            models.MonthlyChallenge.active == True,  # noqa: E712
+        )
+    )).scalars().first()
+    if not ch:
+        return {"challenge": None}
+
+    since = player.stats_since
+    cash_rows = await player_stats.cash_rows_for_player(db, user.club_id, player.id, since)
+    tour_rows = await player_stats.tournament_rows_for_player(db, user.club_id, player.id, since)
+    month_start = player_stats.start_of_month_col_as_utc()
+    m_cash = [r for r in cash_rows if r["date"] and r["date"] >= month_start]
+    m_tour = [r for r in tour_rows if r["date"] and r["date"] >= month_start]
+    current = _challenge_progress(ch.metric, m_cash, m_tour)
+    return {"challenge": {
+        "title": ch.title,
+        "description": ch.description,
+        "metric": ch.metric,
+        "reward_text": ch.reward_text,
+        "progress": {"current": current, "target": ch.target, "done": current >= ch.target},
+    }}
+
+
 @router.get("/monthly-summary")
 async def monthly_summary(
     year: int | None = None,

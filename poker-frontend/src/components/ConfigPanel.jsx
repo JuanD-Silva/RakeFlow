@@ -15,6 +15,7 @@ import {
 } from '@heroicons/react/24/outline';
 import DealerManager from './DealerManager';
 import ClubPublicLink from './ClubPublicLink';
+import MonthlyChallengeManager from './MonthlyChallengeManager';
 
 const RULE_OPTIONS = [
   {
@@ -393,6 +394,9 @@ export default function ConfigPanel() {
 
       {/* LINK PÚBLICO DEL CLUB (autocontenido) */}
       <ClubPublicLink />
+
+      {/* RETO DEL MES (autocontenido) */}
+      <MonthlyChallengeManager />
 
       {/* DEALERS Y TARIFAS (autocontenido: guarda por si mismo) */}
       <DealerManager />
