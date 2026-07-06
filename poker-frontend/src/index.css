@@ -99,6 +99,56 @@ body {
 .delay-700 { animation-delay: 0.7s; }
 .delay-800 { animation-delay: 0.8s; }
 
+/* =====================================================================
+   Panel del jugador (PR10) — pulido guiado por la investigación de retención.
+   Cada utilidad sirve a una palanca: glanceabilidad, peak-end, goal-gradient,
+   celebración, loss-aversion. Todo se apaga con prefers-reduced-motion.
+   ===================================================================== */
+
+/* Cifras alineadas ("dato serio", no bailan al cambiar) */
+.nums { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+
+/* Entrada escalonada de las secciones (peak-end: la apertura "respira") */
+@keyframes rf-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+.rf-in { animation: rf-in 0.5s cubic-bezier(0.22,1,0.36,1) both; }
+
+/* Llama de racha viva (loss-aversion: algo que proteger) */
+@keyframes rf-flame { 0%,100% { transform: rotate(-4deg) scale(1); } 50% { transform: rotate(4deg) scale(1.14); } }
+.rf-flame { display: inline-block; transform-origin: bottom center; animation: rf-flame 1.5s ease-in-out infinite; }
+
+/* Barra que se llena desde 0 (goal-gradient: "casi lo lográs") */
+@keyframes rf-fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.rf-bar { transform-origin: left center; animation: rf-fill 0.9s cubic-bezier(0.22,1,0.36,1) both; }
+
+/* Skeleton shimmer (percepción de velocidad, reemplaza el spinner pelado) */
+.rf-skel {
+  background: linear-gradient(100deg, rgba(148,163,184,0.06) 30%, rgba(148,163,184,0.14) 50%, rgba(148,163,184,0.06) 70%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+  border-radius: 1rem;
+}
+
+/* Feedback táctil en lo tocable */
+.rf-tap { transition: transform 0.12s ease, background-color 0.15s ease; }
+.rf-tap:active { transform: scale(0.97); }
+
+/* Glow atmosférico sutil detrás de la apertura (profundidad sin ruido).
+   Queda detrás por orden de árbol (pseudo-::before pinta primero) — depende de
+   que TODOS los hijos de .rf-glow sean posicionados (relative). Si se agrega un
+   hijo sin posicionar, envolverlo en relative o quedará tapado por el glow. */
+.rf-glow::before {
+  content: ''; position: absolute; left: 50%; top: -60px; width: 320px; height: 320px;
+  transform: translateX(-50%); border-radius: 9999px; pointer-events: none; z-index: 0;
+  background: radial-gradient(circle, rgba(16,185,129,0.16), transparent 68%); filter: blur(8px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rf-in, .rf-flame, .rf-bar, .rf-skel { animation: none !important; }
+  .rf-in { opacity: 1; transform: none; }
+  .rf-bar { transform: none; }
+  .rf-tap { transition: none; }
+}
+
 /* Noise texture overlay */
 .noise-bg::before {
   content: '';

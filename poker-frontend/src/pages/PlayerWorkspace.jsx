@@ -24,6 +24,74 @@ const TIER_STYLE = {
   Diamante: 'from-cyan-500 to-blue-500 text-white',
 };
 
+// --- Motion helpers (PR10). Todo respeta prefers-reduced-motion. ---
+function usePrefersReducedMotion() {
+  const [reduce, setReduce] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const on = () => setReduce(mq.matches);
+    mq.addEventListener?.('change', on);
+    return () => mq.removeEventListener?.('change', on);
+  }, []);
+  return reduce;
+}
+
+// Cuenta hacia el valor (celebración/glanceabilidad). render(v) formatea el número
+// en curso. Con reduced-motion salta directo al final.
+function CountUp({ value, render = (v) => Math.round(v), duration = 900, className }) {
+  const reduce = usePrefersReducedMotion();
+  const [v, setV] = useState(reduce ? value : 0);
+  useEffect(() => {
+    if (reduce) { setV(value); return; }
+    let raf, start;
+    const step = (t) => {
+      if (!start) start = t;
+      const p = Math.min(1, (t - start) / duration);
+      setV(value * (1 - Math.pow(1 - p, 3)));   // easeOutCubic
+      if (p < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [value, duration, reduce]);
+  return <span className={className}>{render(v)}</span>;
+}
+
+// Sección que entra escalonada al cargar (peak-end: la apertura "respira").
+const Section = ({ i = 0, className = '', children }) => (
+  <div className={`rf-in ${className}`} style={{ animationDelay: `${Math.min(i, 8) * 60}ms` }}>{children}</div>
+);
+
+// Skeletons de carga (percepción de velocidad; reemplazan el spinner pelado).
+const HomeSkeleton = () => (
+  <div className="space-y-5">
+    <div className="rf-skel h-8 w-2/3 mx-auto" />
+    <div className="rf-skel h-24 w-full" />
+    <div className="rf-skel h-16 w-full" />
+    <div className="grid grid-cols-2 gap-3">
+      <div className="rf-skel h-20" /><div className="rf-skel h-20" />
+    </div>
+    <div className="rf-skel h-28 w-full" />
+  </div>
+);
+const ListSkeleton = () => (
+  <div className="space-y-3">
+    <div className="rf-skel h-6 w-40" />
+    <div className="rf-skel h-24 w-full" />
+    {[0, 1, 2, 3].map((i) => <div key={i} className="rf-skel h-16 w-full" />)}
+  </div>
+);
+const GridSkeleton = () => (
+  <div className="space-y-4">
+    <div className="rf-skel h-6 w-40" />
+    <div className="rf-skel h-2.5 w-full" />
+    <div className="grid grid-cols-2 gap-3">
+      {[0, 1, 2, 3, 4, 5].map((i) => <div key={i} className="rf-skel h-32" />)}
+    </div>
+  </div>
+);
+
 export default function PlayerWorkspace() {
   const { logout } = useAuth();
   const [tab, setTab] = useState('inicio');
@@ -48,11 +116,12 @@ export default function PlayerWorkspace() {
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
-              className={`py-3 flex flex-col items-center gap-0.5 text-[10px] font-bold transition-colors ${
+              className={`relative rf-tap py-3 flex flex-col items-center gap-0.5 text-[10px] font-bold ${
                 tab === t.key ? 'text-emerald-400' : 'text-gray-500'
               }`}
             >
-              <span className="text-lg">{t.emoji}</span>
+              {tab === t.key && <span className="absolute top-0 h-[3px] w-8 rounded-full bg-emerald-400" />}
+              <span className={`text-lg transition-transform duration-200 motion-reduce:transition-none ${tab === t.key ? 'scale-110' : ''}`}>{t.emoji}</span>
               {t.label}
             </button>
           ))}
@@ -61,10 +130,6 @@ export default function PlayerWorkspace() {
     </div>
   );
 }
-
-const Spinner = () => (
-  <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-500" /></div>
-);
 
 // Mismo cargador resiliente del portal del dealer (cold start de Railway /
 // pestaña dormida): reintenta rápido hasta el primer éxito y refetchea al
@@ -144,7 +209,7 @@ function HomeTab() {
   const { data: club } = usePlayerResource(playerSelfService.getClubInfo);
   const { data: challengeData } = usePlayerResource(playerSelfService.getChallenge);
   const [showShare, setShowShare] = useState(false);
-  if (!loadedOnce) return error ? <Reconnecting /> : <Spinner />;
+  if (!loadedOnce) return error ? <Reconnecting /> : <HomeSkeleton />;
   if (!data) return null;
 
   const t = data.totals;
@@ -154,91 +219,98 @@ function HomeTab() {
   const challenge = challengeData?.challenge || null;
 
   return (
-    <div className="space-y-5">
-      <div className="text-center">
-        <h1 className="text-2xl font-black text-white">Hola, {data.player_name} 👋</h1>
-      </div>
-
-      {/* Nivel con progreso */}
-      <div className="bg-gray-800/50 border border-gray-700/60 rounded-2xl p-4">
-        <div className="flex items-center justify-between">
-          <span className={`text-xs font-black uppercase tracking-wider px-3 py-1.5 rounded-full bg-gradient-to-r ${TIER_STYLE[lvl.tier] || TIER_STYLE.Bronce}`}>
-            {lvl.tier === 'Diamante' ? '💎' : lvl.tier === 'Oro' ? '🥇' : lvl.tier === 'Plata' ? '🥈' : '🥉'} {lvl.tier}
-          </span>
-          <span className="text-xs text-gray-400 font-bold">{lvl.visits} visita{lvl.visits !== 1 ? 's' : ''}</span>
+    <div className="space-y-4">
+      {/* Apertura (peak-end): glow atmosférico + nivel como métrica-héroe grande.
+          Los tiers son la palanca de retención del jugador recreativo → protagonista. */}
+      <div className="relative rf-glow pt-1">
+        <div className="relative text-center mb-4">
+          <h1 className="text-[1.7rem] leading-tight font-black text-white tracking-tight">Hola, {data.player_name} 👋</h1>
         </div>
-        {lvl.next_tier && (
-          <>
-            <div className="mt-3 h-2 rounded-full bg-gray-700/70 overflow-hidden">
-              <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${lvl.progress_pct}%` }} />
-            </div>
-            <p className="text-[11px] text-gray-500 mt-1.5">
-              A {lvl.next_tier_at - lvl.visits} visita{lvl.next_tier_at - lvl.visits !== 1 ? 's' : ''} de <b className="text-gray-300">{lvl.next_tier}</b>
-            </p>
-          </>
-        )}
+
+        <Section i={0} className="relative bg-gradient-to-br from-gray-800/70 to-gray-900/50 border border-gray-700/60 rounded-2xl p-5 shadow-lg shadow-black/30">
+          <div className="flex items-center justify-between">
+            <span className={`text-xs font-black uppercase tracking-wider px-3 py-1.5 rounded-full bg-gradient-to-r ${TIER_STYLE[lvl.tier] || TIER_STYLE.Bronce}`}>
+              {lvl.tier === 'Diamante' ? '💎' : lvl.tier === 'Oro' ? '🥇' : lvl.tier === 'Plata' ? '🥈' : '🥉'} {lvl.tier}
+            </span>
+            <span className="text-[10px] text-gray-500 font-black uppercase tracking-[0.2em]">Nivel</span>
+          </div>
+          <div className="mt-2.5 flex items-baseline gap-2">
+            <CountUp value={lvl.visits ?? 0} className="text-[2.75rem] font-black text-white nums leading-none tracking-tight" />
+            <span className="text-sm text-gray-400 font-bold">visita{lvl.visits !== 1 ? 's' : ''}</span>
+          </div>
+          {lvl.next_tier && (
+            <>
+              <div className="mt-3 h-2.5 rounded-full bg-gray-700/60 overflow-hidden">
+                <div className="rf-bar h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full" style={{ width: `${lvl.progress_pct}%` }} />
+              </div>
+              <p className="text-[11px] text-gray-500 mt-1.5">
+                A <b className="text-gray-300 nums">{lvl.next_tier_at - lvl.visits}</b> visita{lvl.next_tier_at - lvl.visits !== 1 ? 's' : ''} de <b className="text-gray-300">{lvl.next_tier}</b>
+              </p>
+            </>
+          )}
+        </Section>
       </div>
 
-      {/* Racha */}
+      {/* Racha (loss-aversion): la llama viva refuerza que hay algo que proteger. */}
       {st.weeks > 0 && (
-        <div className={`rounded-2xl px-4 py-3 border flex items-center gap-3 ${st.at_risk ? 'bg-amber-900/20 border-amber-600/40' : 'bg-gray-800/50 border-gray-700/60'}`}>
-          <span className="text-2xl">🔥</span>
+        <Section i={1} className={`rounded-2xl px-4 py-3.5 border flex items-center gap-3 ${st.at_risk ? 'bg-amber-900/25 border-amber-600/50' : 'bg-gray-800/50 border-gray-700/60'}`}>
+          <span className={`text-2xl ${st.at_risk ? 'rf-flame' : ''}`}>🔥</span>
           <div>
-            <p className="text-sm font-bold text-white">{st.weeks} semana{st.weeks !== 1 ? 's' : ''} seguida{st.weeks !== 1 ? 's' : ''} viniendo</p>
+            <p className="text-sm font-bold text-white"><span className="nums">{st.weeks}</span> semana{st.weeks !== 1 ? 's' : ''} seguida{st.weeks !== 1 ? 's' : ''} viniendo</p>
             {st.at_risk && <p className="text-[11px] text-amber-300 font-bold">Tu racha se corta el domingo — pasá por el club esta semana</p>}
           </div>
-        </div>
+        </Section>
       )}
 
       {/* Reto del mes — contenido que ROTA (combate el novelty effect de los
           badges fijos). Progreso atado a competencia sentida (barra hacia meta),
           no a un sticker. La recompensa la entrega el staff en caja. */}
       {challenge && (
-        <div className={`rounded-2xl p-4 border ${challenge.progress.done ? 'bg-emerald-900/25 border-emerald-500/50' : 'bg-gradient-to-br from-violet-900/30 to-gray-900/40 border-violet-500/40'}`}>
+        <Section i={2} className={`rounded-2xl p-4 border ${challenge.progress.done ? 'bg-emerald-900/25 border-emerald-500/50' : 'bg-gradient-to-br from-violet-900/30 to-gray-900/40 border-violet-500/40'}`}>
           <div className="flex items-center justify-between gap-2">
             <p className="text-[11px] font-black text-violet-300 uppercase tracking-widest">🎯 Reto del mes</p>
             {challenge.progress.done && <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-500 text-black">¡Logrado!</span>}
           </div>
           <p className="mt-1.5 text-white font-black">{challenge.title}</p>
           {challenge.description && <p className="text-xs text-gray-400 mt-0.5">{challenge.description}</p>}
-          <div className="mt-3 h-2 rounded-full bg-gray-700/70 overflow-hidden">
-            <div className={`h-full rounded-full transition-all ${challenge.progress.done ? 'bg-emerald-500' : 'bg-violet-500'}`}
+          <div className="mt-3 h-2.5 rounded-full bg-gray-700/60 overflow-hidden">
+            <div className={`rf-bar h-full rounded-full ${challenge.progress.done ? 'bg-gradient-to-r from-emerald-500 to-emerald-400' : 'bg-gradient-to-r from-violet-500 to-violet-400'}`}
               style={{ width: `${Math.min(100, Math.round((100 * challenge.progress.current) / challenge.progress.target))}%` }} />
           </div>
           <div className="flex items-center justify-between mt-1.5">
-            <p className="text-[11px] text-gray-500">
+            <p className="text-[11px] text-gray-500 nums">
               {challenge.progress.current} / {challenge.progress.target} {challenge.metric}
             </p>
             {challenge.reward_text && (
               <p className="text-[11px] text-violet-300/90 font-bold">🎁 {challenge.reward_text}</p>
             )}
           </div>
-        </div>
+        </Section>
       )}
 
       {/* Horas esta semana — métrica-héroe donde el que pierde también progresa,
           con barra hacia el récord (goal-gradient). Solo si hay historia de horas
           (el jugador solo-torneo no tiene horas → no se muestra). */}
       {(sc.week_hours > 0 || sc.best_week_hours > 0) && (
-        <div className="bg-gray-800/50 border border-gray-700/60 rounded-2xl p-4">
+        <Section i={3} className="bg-gray-800/50 border border-gray-700/60 rounded-2xl p-4">
           <div className="flex items-baseline justify-between">
             <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wide">⏱️ Horas esta semana</p>
-            <p className="text-xl font-black text-white">{sc.week_hours} h</p>
+            <p className="text-2xl font-black text-white nums">{sc.week_hours} <span className="text-sm text-gray-400 font-bold">h</span></p>
           </div>
           {sc.best_week_hours > 0 && (
             <>
-              <div className="mt-2 h-2 rounded-full bg-gray-700/70 overflow-hidden">
-                <div className="h-full bg-emerald-500 rounded-full transition-all"
+              <div className="mt-2 h-2.5 rounded-full bg-gray-700/60 overflow-hidden">
+                <div className="rf-bar h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full"
                   style={{ width: `${Math.min(100, Math.round((100 * sc.week_hours) / sc.best_week_hours))}%` }} />
               </div>
               <p className="text-[11px] text-gray-500 mt-1.5">
                 {sc.week_hours >= sc.best_week_hours
                   ? '🔥 ¡Récord de horas en una semana!'
-                  : <>Tu récord: <b className="text-gray-300">{sc.best_week_hours} h</b> · promedio {sc.avg_week_hours} h</>}
+                  : <>Tu récord: <b className="text-gray-300 nums">{sc.best_week_hours} h</b> · promedio <span className="nums">{sc.avg_week_hours} h</span></>}
               </p>
             </>
           )}
-        </div>
+        </Section>
       )}
 
       {/* Aviso sesión en curso */}
@@ -274,7 +346,7 @@ function HomeTab() {
           también gana); la plata del mes luce en verde si ganó, o queda como un
           renglón chico y honesto si perdió. La plata NO se esconde: el total
           real vive en "Tu juego" abajo. */}
-      <section>
+      <section className="rf-in" style={{ animationDelay: '240ms' }}>
         <p className="text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-2">Este mes</p>
         {/* Horas = solo cash; para el jugador solo-torneo son 0 y no aportan
             protagonismo — se oculta y visitas ocupa el ancho. */}
@@ -299,7 +371,7 @@ function HomeTab() {
           <div className="mt-3 rounded-2xl p-4 border bg-emerald-900/20 border-emerald-600/40">
             <p className="text-[11px] text-emerald-400/80 font-bold uppercase tracking-wide">🌟 Tu mejor noche del mes</p>
             <p className="mt-1 text-white font-bold truncate">
-              {data.best_session.name} <span className="text-emerald-300">{signCop(data.best_session.profit)}</span>
+              {data.best_session.name} <span className="text-emerald-300 nums">{signCop(data.best_session.profit)}</span>
             </p>
             <p className="text-[11px] text-gray-400">{fmtDate(data.best_session.date)}</p>
           </div>
@@ -318,17 +390,18 @@ function HomeTab() {
         )}
 
         <button onClick={() => setShowShare(true)}
-          className="w-full mt-3 py-3 rounded-xl bg-gray-800/70 hover:bg-gray-700 border border-gray-700/60 text-emerald-300 text-sm font-black uppercase tracking-wide">
+          className="rf-tap w-full mt-3 py-3 rounded-xl bg-gray-800/70 hover:bg-gray-700 border border-gray-700/60 text-emerald-300 text-sm font-black uppercase tracking-wide">
           📤 Compartir mi mes
         </button>
       </section>
 
-      {/* Totales de la historia visible */}
-      <section>
+      {/* Totales de la historia visible. Resultado y ROI destacados (glanceabilidad):
+          la métrica-héroe manda, el resto son soportes. */}
+      <section className="rf-in" style={{ animationDelay: '300ms' }}>
         <p className="text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-2">Tu juego</p>
         <div className="grid grid-cols-2 gap-3">
-          <Stat label="Resultado total" value={signCop(t.profit)} tone={t.profit >= 0 ? 'good' : 'bad'} />
-          <Stat label="ROI" value={t.roi != null ? `${(t.roi * 100).toFixed(1)}%` : '—'} tone={t.roi > 0 ? 'good' : undefined} />
+          <Stat label="Resultado total" value={signCop(t.profit)} tone={t.profit >= 0 ? 'good' : 'bad'} big />
+          <Stat label="ROI" value={t.roi != null ? `${(t.roi * 100).toFixed(1)}%` : '—'} tone={t.roi > 0 ? 'good' : undefined} big />
           <Stat label="Metiste" value={cop(t.invested)} />
           <Stat label="Sacaste" value={cop(t.returned)} />
           <Stat label="$ por hora" value={t.profit_per_hour != null ? signCop(t.profit_per_hour) : '—'} />
@@ -341,7 +414,7 @@ function HomeTab() {
 
       {/* Razones de volver: anuncio + próximos torneos */}
       {club && (club.announcement || (club.scheduled || []).length > 0) && (
-        <section className="space-y-2">
+        <section className="space-y-2 rf-in" style={{ animationDelay: '360ms' }}>
           <p className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">{club.club_name}</p>
           {club.announcement && (
             <div className="bg-gray-800/50 border border-gray-700/60 rounded-xl px-4 py-3 text-sm text-gray-200">📣 {club.announcement}</div>
@@ -393,7 +466,7 @@ function HistoryTab() {
 
   useEffect(() => { loadPage(0); }, [loadPage]);
 
-  if (loading) return <Spinner />;
+  if (loading) return <ListSkeleton />;
   if (error && items.length === 0) return <Reconnecting />;
   if (items.length === 0) return (
     <div className="text-center py-20">
@@ -405,14 +478,14 @@ function HistoryTab() {
 
   return (
     <div className="space-y-3">
-      <h2 className="text-lg font-black text-white">Mis sesiones <span className="text-gray-500 text-sm font-bold">({total})</span></h2>
+      <h2 className="text-xl font-black text-white tracking-tight">Mis sesiones <span className="text-gray-500 text-sm font-bold nums">({total})</span></h2>
 
       {/* Curva de profit acumulado sobre TODO el histórico visible */}
       {curve.length >= 2 && (
-        <div className="bg-gray-800/50 border border-gray-700/60 rounded-2xl p-4">
+        <div className="rf-in bg-gray-800/50 border border-gray-700/60 rounded-2xl p-4">
           <div className="flex items-center justify-between mb-1.5">
             <p className="text-[11px] text-gray-400 font-bold uppercase tracking-wide">Tu curva</p>
-            <span className={`text-sm font-black ${curve[curve.length - 1] >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+            <span className={`text-sm font-black nums ${curve[curve.length - 1] >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
               {signCop(curve[curve.length - 1])}
             </span>
           </div>
@@ -422,7 +495,7 @@ function HistoryTab() {
       )}
 
       {items.map((s, i) => (
-        <div key={`${s.type}-${s.date}-${i}`} className="bg-gray-800/60 border border-gray-700/60 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+        <div key={`${s.type}-${s.date}-${i}`} className="rf-in bg-gray-800/60 border border-gray-700/60 rounded-xl px-4 py-3 flex items-center justify-between gap-3" style={{ animationDelay: `${Math.min(i, 10) * 35}ms` }}>
           <div className="min-w-0">
             <p className="text-white font-bold truncate flex items-center gap-1.5">
               <span className="shrink-0">{s.type === 'tournament' ? '🏆' : '🃏'}</span>{s.name}
@@ -433,12 +506,12 @@ function HistoryTab() {
               {fmtDate(s.date)}{s.type === 'cash' && s.hours > 0 ? ` · ${s.hours} h` : ''}{s.type === 'cash' && s.spend > 0 ? ` · consumo ${cop(s.spend)}` : ''}
             </p>
           </div>
-          <span className={`font-bold whitespace-nowrap ${s.profit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{signCop(s.profit)}</span>
+          <span className={`font-bold whitespace-nowrap nums ${s.profit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{signCop(s.profit)}</span>
         </div>
       ))}
       {hasMore && (
         <button onClick={() => loadPage(items.length)}
-          className="w-full py-3 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-bold uppercase tracking-wide">
+          className="rf-tap w-full py-3 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-bold uppercase tracking-wide">
           Cargar más
         </button>
       )}
@@ -488,30 +561,31 @@ function AchievementsTab() {
     return () => clearTimeout(t);
   }, [data, clubId, userId]);
 
-  if (!loadedOnce) return error ? <Reconnecting /> : <Spinner />;
+  if (!loadedOnce) return error ? <Reconnecting /> : <GridSkeleton />;
   if (!data) return null;
 
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="text-lg font-black text-white">Mis logros</h2>
-        <p className="text-sm text-gray-400 font-bold">{data.unlocked_count} de {data.badges.length} desbloqueados</p>
-        <div className="mt-2 h-2 rounded-full bg-gray-700/70 overflow-hidden">
-          <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${data.badges.length ? (100 * data.unlocked_count) / data.badges.length : 0}%` }} />
+      <div className="rf-in">
+        <h2 className="text-xl font-black text-white tracking-tight">Mis logros</h2>
+        <p className="text-sm text-gray-400 font-bold"><span className="nums">{data.unlocked_count}</span> de <span className="nums">{data.badges.length}</span> desbloqueados</p>
+        <div className="mt-2 h-2.5 rounded-full bg-gray-700/60 overflow-hidden">
+          <div className="rf-bar h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full" style={{ width: `${data.badges.length ? (100 * data.unlocked_count) / data.badges.length : 0}%` }} />
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        {data.badges.map((b) => <BadgeCard key={b.key} badge={b} isNew={fresh.includes(b.key)} />)}
+        {data.badges.map((b, i) => <BadgeCard key={b.key} badge={b} isNew={fresh.includes(b.key)} i={i} />)}
       </div>
       <p className="text-[11px] text-gray-500 text-center">Los logros se ganan jugando: cada visita cuenta.</p>
     </div>
   );
 }
 
-const BadgeCard = ({ badge, isNew }) => {
+const BadgeCard = ({ badge, isNew, i = 0 }) => {
   const pct = Math.min(100, Math.round((100 * badge.progress.current) / badge.progress.target));
   return (
-    <div className={`relative rounded-2xl p-4 border ${badge.achieved ? 'bg-emerald-900/20 border-emerald-600/40' : 'bg-gray-800/40 border-gray-700/60'} ${isNew ? 'ring-2 ring-yellow-400' : ''}`}>
+    <div className={`rf-in relative rounded-2xl p-4 border ${badge.achieved ? 'bg-emerald-900/20 border-emerald-600/40' : 'bg-gray-800/40 border-gray-700/60'} ${isNew ? 'ring-2 ring-yellow-400' : ''}`}
+      style={{ animationDelay: `${Math.min(i, 8) * 45}ms` }}>
       {isNew && <span className="absolute -top-2 right-2 text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-yellow-400 text-black">¡Nuevo!</span>}
       <p className={`text-3xl ${badge.achieved ? '' : 'grayscale opacity-40'}`}>{badge.emoji}</p>
       <p className={`mt-1 font-black text-sm ${badge.achieved ? 'text-white' : 'text-gray-400'}`}>{badge.name}</p>
@@ -519,9 +593,9 @@ const BadgeCard = ({ badge, isNew }) => {
       {!badge.achieved && badge.progress.target > 1 && (
         <>
           <div className="mt-2 h-1.5 rounded-full bg-gray-700/70 overflow-hidden">
-            <div className="h-full bg-gray-500 rounded-full" style={{ width: `${pct}%` }} />
+            <div className="rf-bar h-full bg-gray-500 rounded-full" style={{ width: `${pct}%` }} />
           </div>
-          <p className="text-[9px] text-gray-500 mt-1 font-bold">{badge.progress.current} / {badge.progress.target}</p>
+          <p className="text-[9px] text-gray-500 mt-1 font-bold nums">{badge.progress.current} / {badge.progress.target}</p>
         </>
       )}
     </div>
@@ -567,7 +641,7 @@ function RankingTab() {
   );
   const { data, loadedOnce, error } = usePlayerResource(fetcher);
 
-  if (!loadedOnce) return error ? <Reconnecting /> : <Spinner />;
+  if (!loadedOnce) return error ? <Reconnecting /> : <ListSkeleton />;
   if (!data) return null;
 
   const now = new Date();
@@ -586,10 +660,10 @@ function RankingTab() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <button onClick={() => move(-1)} className="px-3 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 font-bold">‹</button>
-        <h2 className="text-sm font-black text-white uppercase tracking-widest">{mes} {data.period.year}</h2>
+        <button onClick={() => move(-1)} className="rf-tap px-3 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 font-bold">‹</button>
+        <h2 className="text-sm font-black text-white uppercase tracking-widest">{mes} <span className="nums">{data.period.year}</span></h2>
         <button onClick={() => move(1)} disabled={isCurrent}
-          className="px-3 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 font-bold disabled:opacity-30">›</button>
+          className="rf-tap px-3 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 font-bold disabled:opacity-30">›</button>
       </div>
 
       {data.winners?.rank === 1 && (
@@ -604,19 +678,20 @@ function RankingTab() {
           subtitle="Jugá una noche en el club y entrás a la tabla." />
       )}
 
-      {inAny && RANK_CARDS.map(({ key, emoji, label, fmt, empty }) => {
+      {inAny && RANK_CARDS.map(({ key, emoji, label, fmt, empty }, idx) => {
         const r = data[key];
         const rl = r ? rankLabel(r) : null;
         return (
-          <div key={key} className="bg-gray-800/50 border border-gray-700/60 rounded-2xl px-4 py-3 flex items-center gap-3">
+          <div key={key} className="rf-in bg-gray-800/50 border border-gray-700/60 rounded-2xl px-4 py-3 flex items-center gap-3"
+            style={{ animationDelay: `${idx * 70}ms` }}>
             <span className="text-2xl shrink-0">{emoji}</span>
             <div className="min-w-0 flex-1">
               <p className="text-white font-bold text-sm">{label}</p>
               <p className="text-xs text-gray-400">
-                {rl ? <b className={rl.good ? 'text-emerald-300' : 'text-gray-400 font-normal'}>{rl.text}</b> : empty(data)}
+                {rl ? <b className={rl.good ? 'text-emerald-300 nums' : 'text-gray-400 font-normal nums'}>{rl.text}</b> : empty(data)}
               </p>
             </div>
-            {r && <span className="shrink-0 font-black text-white">{fmt(r)}</span>}
+            {r && <span className="shrink-0 font-black text-white nums">{fmt(r)}</span>}
           </div>
         );
       })}
@@ -626,9 +701,9 @@ function RankingTab() {
   );
 }
 
-const Stat = ({ label, value, tone }) => (
+const Stat = ({ label, value, tone, big }) => (
   <div className={`rounded-2xl p-4 border ${tone === 'good' ? 'bg-emerald-900/20 border-emerald-600/40' : tone === 'bad' ? 'bg-red-900/15 border-red-700/40' : 'bg-gray-800/50 border-gray-700/60'}`}>
     <p className="text-[11px] text-gray-400 font-bold uppercase tracking-wide">{label}</p>
-    <p className={`mt-1 text-xl font-black ${tone === 'good' ? 'text-emerald-300' : tone === 'bad' ? 'text-red-300' : 'text-white'}`}>{value}</p>
+    <p className={`mt-1 font-black nums leading-tight ${big ? 'text-2xl' : 'text-xl'} ${tone === 'good' ? 'text-emerald-300' : tone === 'bad' ? 'text-red-300' : 'text-white'}`}>{value}</p>
   </div>
 );
