@@ -62,6 +62,15 @@ def _col_month_key(dt_utc_naive):
     return (col.year, col.month)
 
 
+def start_of_week_col_as_utc(today=None) -> datetime:
+    """Inicio (lunes 00:00 hora Colombia) de la semana ISO en curso, como UTC
+    naive. Mismo criterio de semana que visit_weeks / self_compare_stats."""
+    col_now = today or datetime.now(COL_TZ)
+    monday = (col_now - timedelta(days=col_now.weekday())).replace(
+        hour=0, minute=0, second=0, microsecond=0)
+    return monday.astimezone(UTC).replace(tzinfo=None)
+
+
 def col_date_of(dt_utc_naive):
     """Fecha calendario (date) en hora Colombia de un timestamp naive-UTC."""
     return dt_utc_naive.replace(tzinfo=UTC).astimezone(COL_TZ).date()
