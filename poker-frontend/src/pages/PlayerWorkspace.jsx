@@ -121,7 +121,7 @@ export default function PlayerWorkspace() {
               }`}
             >
               {tab === t.key && <span className="absolute top-0 h-[3px] w-8 rounded-full bg-emerald-400" />}
-              <span className={`text-lg transition-transform duration-200 ${tab === t.key ? 'scale-110' : ''}`}>{t.emoji}</span>
+              <span className={`text-lg transition-transform duration-200 motion-reduce:transition-none ${tab === t.key ? 'scale-110' : ''}`}>{t.emoji}</span>
               {t.label}
             </button>
           ))}
@@ -235,7 +235,7 @@ function HomeTab() {
             <span className="text-[10px] text-gray-500 font-black uppercase tracking-[0.2em]">Nivel</span>
           </div>
           <div className="mt-2.5 flex items-baseline gap-2">
-            <CountUp value={lvl.visits} className="text-[2.75rem] font-black text-white nums leading-none tracking-tight" />
+            <CountUp value={lvl.visits ?? 0} className="text-[2.75rem] font-black text-white nums leading-none tracking-tight" />
             <span className="text-sm text-gray-400 font-bold">visita{lvl.visits !== 1 ? 's' : ''}</span>
           </div>
           {lvl.next_tier && (

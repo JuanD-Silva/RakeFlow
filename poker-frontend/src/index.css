@@ -132,7 +132,10 @@ body {
 .rf-tap { transition: transform 0.12s ease, background-color 0.15s ease; }
 .rf-tap:active { transform: scale(0.97); }
 
-/* Glow atmosférico sutil detrás de la apertura (profundidad sin ruido) */
+/* Glow atmosférico sutil detrás de la apertura (profundidad sin ruido).
+   Queda detrás por orden de árbol (pseudo-::before pinta primero) — depende de
+   que TODOS los hijos de .rf-glow sean posicionados (relative). Si se agrega un
+   hijo sin posicionar, envolverlo en relative o quedará tapado por el glow. */
 .rf-glow::before {
   content: ''; position: absolute; left: 50%; top: -60px; width: 320px; height: 320px;
   transform: translateX(-50%); border-radius: 9999px; pointer-events: none; z-index: 0;
