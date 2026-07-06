@@ -506,33 +506,36 @@ function HistoryTab() {
     </div>
   );
 
+  // Reencuadre de la curva (adaptativo por resultado acumulado). `neg` solo si va
+  // en negativo Y ya llegó la curva de actividad — blindaje de orden de deploy: si
+  // el front nuevo sale antes que el backend, activityCurve viene vacío y mostramos
+  // la curva de profit vieja en vez de un bloque "Tu constancia" en blanco.
+  const neg = curve.length >= 2 && curve[curve.length - 1] < 0 && activityCurve.length >= 2;
+  const curveGreen = neg || (curve.length >= 2 && curve[curve.length - 1] >= 0);
+
   return (
     <div className="space-y-3">
       <h2 className="text-xl font-black text-white tracking-tight">Mis sesiones <span className="text-gray-500 text-sm font-bold nums">({total})</span></h2>
 
-      {/* Curva acumulada sobre TODO el histórico visible. Encuadre adaptativo: si
-          el resultado acumulado va en negativo, en vez de la curva de plata (roja,
-          cae = la pérdida acumulada, lo que más deprime) se muestra la de actividad
-          (horas/visitas, verde, sube = "tu presencia crece"). */}
-      {curve.length >= 2 && (() => {
-        const neg = curve[curve.length - 1] < 0;
-        return (
-          <div className="rf-in bg-gray-800/50 border border-gray-700/60 rounded-2xl p-4">
-            <div className="flex items-center justify-between mb-1.5">
-              <p className="text-[11px] text-gray-400 font-bold uppercase tracking-wide">{neg ? 'Tu constancia' : 'Tu curva'}</p>
-              {/* Siempre verde: si no va en negativo muestra profit ≥0; si va en
-                  negativo muestra la actividad (horas/visitas), nunca la pérdida. */}
-              <span className="text-sm font-black nums text-emerald-400">
-                {neg ? activityTotal : signCop(curve[curve.length - 1])}
-              </span>
-            </div>
-            <ProfitSparkline points={neg ? activityCurve : curve} />
-            <p className="text-[10px] text-gray-500 mt-1.5">
-              {neg ? 'Tu presencia en el club, de tu primera noche a la última' : 'Resultado acumulado, de tu primera noche a la última'}
-            </p>
+      {/* Curva acumulada sobre TODO el histórico visible. Si el resultado va en
+          negativo, en vez de la curva de plata (roja, cae = la pérdida acumulada,
+          lo que más deprime) se muestra la de actividad (horas/visitas, verde,
+          sube = "tu presencia crece"). */}
+      {curve.length >= 2 && (
+        <div className="rf-in bg-gray-800/50 border border-gray-700/60 rounded-2xl p-4">
+          <div className="flex items-center justify-between mb-1.5">
+            <p className="text-[11px] text-gray-400 font-bold uppercase tracking-wide">{neg ? 'Tu constancia' : 'Tu curva'}</p>
+            <span className={`text-sm font-black nums ${curveGreen ? 'text-emerald-400' : 'text-red-400'}`}>
+              {neg ? activityTotal : signCop(curve[curve.length - 1])}
+            </span>
           </div>
-        );
-      })()}
+          <ProfitSparkline points={neg ? activityCurve : curve}
+            label={neg ? 'Constancia acumulada' : 'Resultado acumulado'} />
+          <p className="text-[10px] text-gray-500 mt-1.5">
+            {neg ? 'Tu presencia en el club, de tu primera noche a la última' : 'Resultado acumulado, de tu primera noche a la última'}
+          </p>
+        </div>
+      )}
 
       {items.map((s, i) => (
         <div key={`${s.type}-${s.date}-${i}`} className="rf-in bg-gray-800/60 border border-gray-700/60 rounded-xl px-4 py-3 flex items-center justify-between gap-3" style={{ animationDelay: `${Math.min(i, 10) * 35}ms` }}>

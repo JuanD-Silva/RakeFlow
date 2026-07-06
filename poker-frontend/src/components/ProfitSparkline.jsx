@@ -3,7 +3,7 @@ import { useId } from 'react';
 // Sparkline SVG casero del profit acumulado del jugador. La curva llega lista
 // del backend (my-sessions.profit_curve, orden cronológico) — acá solo se
 // dibuja: nada de libs de charts para ~50 líneas de SVG.
-export default function ProfitSparkline({ points, height = 72 }) {
+export default function ProfitSparkline({ points, height = 72, label = 'Resultado acumulado' }) {
   const gradId = useId();
   if (!points || points.length < 2) return null;
 
@@ -32,7 +32,7 @@ export default function ProfitSparkline({ points, height = 72 }) {
   const color = last >= 0 ? '#34d399' : '#f87171';
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Curva de resultado acumulado">
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label={`Curva de ${label.toLowerCase()}`}>
       <defs>
         <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={color} stopOpacity="0.3" />
