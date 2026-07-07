@@ -278,11 +278,11 @@ function HomeTab({ club, data, loaded, error }) {
           Reconocimiento, no plata — jamás muestra el volumen (no premiamos el gasto
           a la vista). Solo aparece si el backend lo marca (top del club por volumen). */}
       {data.is_vip && (
-        <div className="rf-in relative overflow-hidden rounded-2xl border border-amber-400/50 bg-gradient-to-r from-amber-500/25 via-yellow-500/10 to-cyan-500/15 px-4 py-3 flex items-center gap-3 shadow-lg shadow-amber-900/20">
+        <div className="rf-in relative overflow-hidden rounded-2xl border border-cyan-400/50 bg-gradient-to-r from-cyan-500/25 via-sky-500/10 to-blue-500/15 px-4 py-3 flex items-center gap-3 shadow-lg shadow-cyan-900/20">
           <span className="text-2xl shrink-0">💎</span>
           <div className="min-w-0">
-            <p className="text-amber-200 font-black tracking-wide text-sm leading-tight">Miembro distinguido</p>
-            <p className="text-[11px] text-amber-100/70 font-bold leading-tight">Uno de los pilares {club?.club_name ? `de ${club.club_name}` : 'del club'}</p>
+            <p className="text-cyan-200 font-black tracking-wide text-sm leading-tight">Miembro distinguido</p>
+            <p className="text-[11px] text-cyan-100/70 font-bold leading-tight">Uno de los pilares {club?.club_name ? `de ${club.club_name}` : 'del club'}</p>
           </div>
         </div>
       )}

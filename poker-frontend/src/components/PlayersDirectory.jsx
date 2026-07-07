@@ -97,7 +97,7 @@ export default function PlayersDirectory() {
           <p className="text-xs text-gray-400 mt-0.5">
             {stats.total} fichas · <span className="text-emerald-400 font-bold">{stats.active} con app</span>
             {stats.pending > 0 && <> · <span className="text-amber-400 font-bold">{stats.pending} pendiente{stats.pending !== 1 ? 's' : ''}</span></>}
-            {stats.vip > 0 && <> · <span className="text-amber-300 font-bold">💎 {stats.vip} VIP</span></>}
+            {stats.vip > 0 && <> · <span className="text-cyan-300 font-bold">💎 {stats.vip} VIP</span></>}
           </p>
         </div>
       </div>
@@ -142,7 +142,7 @@ export default function PlayersDirectory() {
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
                 {p.is_vip && (
-                  <span className="text-[9px] font-bold uppercase px-2 py-1 rounded bg-amber-500/10 text-amber-300 border border-amber-500/25" title="Pilar del club — de los que más mueven (top por volumen). Atenderlo bien.">💎 VIP</span>
+                  <span className="text-[9px] font-bold uppercase px-2 py-1 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/25" title="Pilar del club — de los que más mueven (top por volumen). Atenderlo bien.">💎 VIP</span>
                 )}
                 {!p.history_unlocked && p.has_account && (
                   <span className="text-[9px] font-bold uppercase px-2 py-1 rounded bg-violet-500/10 text-violet-300" title="Histórico en el archivo — se desbloquea cobrando en caja">🗄️ Archivo</span>
