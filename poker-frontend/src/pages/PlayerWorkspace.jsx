@@ -274,7 +274,7 @@ function HomeTab({ club }) {
           <span className="text-2xl shrink-0">💎</span>
           <div className="min-w-0">
             <p className="text-amber-200 font-black tracking-wide text-sm leading-tight">Miembro distinguido</p>
-            <p className="text-[11px] text-amber-100/70 font-bold leading-tight">Uno de los pilares de {club?.club_name || 'el club'}</p>
+            <p className="text-[11px] text-amber-100/70 font-bold leading-tight">Uno de los pilares {club?.club_name ? `de ${club.club_name}` : 'del club'}</p>
           </div>
         </div>
       )}

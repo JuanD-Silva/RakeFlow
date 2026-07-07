@@ -126,7 +126,9 @@ def self_compare_stats(cash_rows: list[dict], tour_rows: list[dict], today=None)
 def tournament_investment(t: models.Tournament, p: models.TournamentPlayer) -> float:
     """Inversión total del jugador en un torneo. rebuys_count/addons_count son
     TOTALES (singles + dobles): singles = total − dobles, cada uno a su precio.
-    Incluye tips (misma definición que usan los rankings desde siempre)."""
+    Incluye tips (misma definición que usan los rankings desde siempre).
+    ESPEJO: hay una réplica en SQL de esta fórmula en compute_club_standings
+    (volumen de torneo para el estatus VIP) — si tocás una, tocá la otra."""
     single_rebuys = max(0, (p.rebuys_count or 0) - (p.double_rebuys_count or 0))
     single_addons = max(0, (p.addons_count or 0) - (p.double_addons_count or 0))
     return t.buyin_amount + \
@@ -352,14 +354,17 @@ async def compute_club_standings(db: AsyncSession, club_id: int) -> dict:
         constancy_map[r.pid] = int(r.weeks or 0)
 
     # Volumen histórico = cuánto MUEVE el jugador (base del estatus VIP). Cash:
-    # BUYIN+REBUY. Torneo: réplica exacta de tournament_investment (singles/dobles
-    # a su precio + tips). Es monetario y NUNCA se expone crudo al jugador ni al
-    # staff: solo decide el booleano is_vip (para no premiar el gasto a la vista).
+    # BUYIN+REBUY sobre sesiones CERRADAS (mismo criterio que horas/visitas arriba).
+    # Torneo: réplica exacta de tournament_investment() (ver su def ~L126) — ESPEJO:
+    # si se toca la fórmula singles/dobles en una, tocar la otra. Es monetario y
+    # NUNCA se expone crudo al jugador ni al staff: solo decide el booleano is_vip
+    # (para no premiar el gasto a la vista).
     volume_map: dict[int, float] = {}
     vcash = (await db.execute(text("""
         SELECT t.player_id AS pid, SUM(t.amount) AS vol
         FROM transactions t JOIN sessions s ON t.session_id = s.id
-        WHERE s.club_id = :cid AND CAST(t.type AS TEXT) IN ('BUYIN','REBUY')
+        WHERE s.club_id = :cid AND s.status = 'CLOSED'
+              AND CAST(t.type AS TEXT) IN ('BUYIN','REBUY')
               AND t.player_id IS NOT NULL
         GROUP BY t.player_id
     """), {"cid": club_id})).all()

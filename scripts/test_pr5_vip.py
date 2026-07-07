@@ -48,6 +48,14 @@ check("turista con visitas=5 justo SÍ (si es top %)", player_stats.is_vip(
 st_chico = _standings({1: 100, 2: 200, 3: 300})
 check("club chico (<10 jugadores) → nadie VIP", player_stats.is_vip(st_chico, 3) is False)
 
+# Borde exacto del gate min_players: 10 jugadores justo → sí aplica (solo el #1);
+# 9 jugadores → nadie (gate no alcanzado).
+st10 = _standings({i: i * 100 for i in range(1, 11)})
+check("club de exactamente 10: #1 es VIP", player_stats.is_vip(st10, 10) is True)
+check("club de exactamente 10: #2 NO es VIP (pct=20)", player_stats.is_vip(st10, 9) is False)
+st9 = _standings({i: i * 100 for i in range(1, 10)})
+check("club de 9 (< min_players) → nadie VIP", player_stats.is_vip(st9, 9) is False)
+
 # Bordes: sin volumen, jugador ausente, volumen 0.
 check("jugador sin volumen NO es VIP", player_stats.is_vip(st, 999) is False)
 check("volumen vacío NO rompe", player_stats.is_vip(_standings({}), 1) is False)
