@@ -23,6 +23,11 @@ const IconInicio = (p) => <NavIcon {...p}><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2
 const IconHistorial = (p) => <NavIcon {...p}><path d="M3 3v5h5" /><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" /><path d="M12 7v5l4 2" /></NavIcon>;
 const IconLogros = (p) => <NavIcon {...p}><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" /><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" /><path d="M4 22h16" /><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" /><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" /><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" /></NavIcon>;
 const IconRanking = (p) => <NavIcon {...p}><path d="m15.477 12.89 1.515 8.526a.5.5 0 0 1-.81.47l-3.58-2.687a1 1 0 0 0-1.197 0l-3.586 2.686a.5.5 0 0 1-.81-.469l1.514-8.526" /><circle cx="12" cy="8" r="6" /></NavIcon>;
+// Ícono de tipo de sesión en el Historial (reemplaza los emojis 🃏/🏆 de fila):
+// pica (cash) / trofeo (torneo).
+const TypeIcon = ({ type, className }) => type === 'tournament'
+  ? <NavIcon className={className}><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" /><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" /><path d="M4 22h16" /><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" /><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" /><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" /></NavIcon>
+  : <NavIcon className={className}><path d="M5 9c-1.5 1.5-3 3.2-3 5.5A5.5 5.5 0 0 0 7.5 20c1.8 0 3-.5 4.5-2 1.5 1.5 2.7 2 4.5 2a5.5 5.5 0 0 0 5.5-5.5c0-2.3-1.5-4-3-5.5l-7-7-7 7Z" /><path d="M12 18v4" /></NavIcon>;
 
 const TABS = [
   { key: 'inicio', label: 'Inicio', Icon: IconInicio },
@@ -521,6 +526,7 @@ function HistoryTab() {
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [showDetail, setShowDetail] = useState(false);
 
   const loadPage = useCallback(async (skip) => {
     try {
@@ -557,6 +563,9 @@ function HistoryTab() {
   // la curva de profit vieja en vez de un bloque "Tu constancia" en blanco.
   const neg = curve.length >= 2 && curve[curve.length - 1] < 0 && activityCurve.length >= 2;
   const curveGreen = neg || (curve.length >= 2 && curve[curve.length - 1] >= 0);
+  // El que va en negativo abre colapsado (resumen positivo); el detalle
+  // noche-por-noche —con montos reales— queda a un toque de distancia.
+  const collapsed = neg && !showDetail;
 
   return (
     <div className="space-y-3">
@@ -582,26 +591,56 @@ function HistoryTab() {
         </div>
       )}
 
-      {items.map((s, i) => (
-        <div key={`${s.type}-${s.date}-${i}`} className="rf-in bg-gray-800/60 border border-gray-700/60 rounded-xl px-4 py-3 flex items-center justify-between gap-3" style={{ animationDelay: `${Math.min(i, 10) * 35}ms` }}>
-          <div className="min-w-0">
-            <p className="text-white font-bold truncate flex items-center gap-1.5">
-              <span className="shrink-0">{s.type === 'tournament' ? '🏆' : '🃏'}</span>{s.name}
-              {s.rank === 1 && <span className="shrink-0 text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-yellow-500/15 text-yellow-300">Campeón</span>}
-              {s.rank > 1 && s.rank <= 3 && <span className="shrink-0 text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-gray-600/40 text-gray-300">#{s.rank}</span>}
-            </p>
-            <p className="text-xs text-gray-400 mt-0.5">
-              {fmtDate(s.date)}{s.type === 'cash' && s.hours > 0 ? ` · ${s.hours} h` : ''}{s.type === 'cash' && s.spend > 0 ? ` · consumo ${cop(s.spend)}` : ''}
-            </p>
+      {collapsed ? (
+        /* El que va en negativo abre con lo positivo (su constancia, arriba) + un
+           resumen no-monetario. El detalle noche-por-noche —con montos REALES— vive
+           detrás de "Ver detalle": no se esconde el dato (transparencia), pero no
+           golpea con un mar de rojo al abrir (Wohl 2017). */
+        <>
+          <div className="rf-in bg-gray-800/50 border border-gray-700/60 rounded-2xl p-5 text-center">
+            <p className="text-3xl font-black text-white nums leading-none">{total}</p>
+            <p className="text-sm text-gray-400 font-bold mt-1">noches en el club</p>
+            {/* Solo la segunda línea si son HORAS: para el jugador solo-torneo
+                activityTotal es "N visitas" (= total) y "N visitas en mesa" duplica
+                el número y se lee forzado. */}
+            {activityTotal.includes(' h') && <p className="text-sm text-emerald-300 font-black mt-2 nums">{activityTotal} en mesa</p>}
           </div>
-          <span className={`font-bold whitespace-nowrap nums ${s.profit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{signCop(s.profit)}</span>
-        </div>
-      ))}
-      {hasMore && (
-        <button onClick={() => loadPage(items.length)}
-          className="rf-tap w-full py-3 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-bold uppercase tracking-wide">
-          Cargar más
-        </button>
+          <button onClick={() => setShowDetail(true)}
+            className="rf-tap w-full py-3 rounded-xl bg-gray-800/70 hover:bg-gray-700 border border-gray-700/60 text-gray-300 text-sm font-bold uppercase tracking-wide">
+            Ver el detalle noche por noche
+          </button>
+        </>
+      ) : (
+        <>
+          {items.map((s, i) => (
+            <div key={`${s.type}-${s.date}-${i}`} className="rf-in bg-gray-800/60 border border-gray-700/60 rounded-xl px-4 py-3 flex items-center justify-between gap-3" style={{ animationDelay: `${Math.min(i, 10) * 35}ms` }}>
+              <div className="min-w-0">
+                <p className="text-white font-bold truncate flex items-center gap-1.5">
+                  <TypeIcon type={s.type} className="w-4 h-4 shrink-0 text-gray-400" />{s.name}
+                  {s.rank === 1 && <span className="shrink-0 text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-yellow-500/15 text-yellow-300">Campeón</span>}
+                  {s.rank > 1 && s.rank <= 3 && <span className="shrink-0 text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-gray-600/40 text-gray-300">#{s.rank}</span>}
+                </p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {fmtDate(s.date)}{s.type === 'cash' && s.hours > 0 ? ` · ${s.hours} h` : ''}{s.type === 'cash' && s.spend > 0 ? ` · consumo ${cop(s.spend)}` : ''}
+                </p>
+              </div>
+              {/* Monto real, pero el negativo en rojo SUAVIZADO (no alarmante). */}
+              <span className={`font-bold whitespace-nowrap nums ${s.profit >= 0 ? 'text-emerald-400' : 'text-red-400/70'}`}>{signCop(s.profit)}</span>
+            </div>
+          ))}
+          {hasMore && (
+            <button onClick={() => loadPage(items.length)}
+              className="rf-tap w-full py-3 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-bold uppercase tracking-wide">
+              Cargar más
+            </button>
+          )}
+          {neg && (
+            <button onClick={() => setShowDetail(false)}
+              className="rf-tap w-full py-2 text-xs text-gray-500 hover:text-gray-300 font-bold uppercase tracking-wide">
+              Ocultar detalle
+            </button>
+          )}
+        </>
       )}
     </div>
   );
