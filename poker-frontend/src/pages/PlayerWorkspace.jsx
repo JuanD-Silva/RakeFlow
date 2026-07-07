@@ -272,19 +272,33 @@ function HomeTab({ club, data, loaded, error }) {
   const challenge = challengeData?.challenge || null;
   const highlight = highlightData?.highlight || null;
 
+  // Compartir el estatus VIP por WhatsApp (presumir el "Miembro distinguido", sin
+  // monto — igual que el resto del panel). Web Share nativo con fallback a wa.me.
+  const shareVip = async () => {
+    const clubName = club?.club_name || 'mi club';
+    const text = `💎 Soy Miembro distinguido de ${clubName} — uno de los pilares del club 🃏`;
+    const url = 'https://rakeflow.site';
+    try {
+      if (navigator.share) await navigator.share({ text, url });
+      else window.open(`https://wa.me/?text=${encodeURIComponent(`${text} ${url}`)}`, '_blank', 'noopener');
+    } catch { /* cancelado por el usuario */ }
+  };
+
   return (
     <div className="space-y-4">
       {/* Distinción VIP (pilar del club). Es lo PRIMERO que ve: se siente importante.
           Reconocimiento, no plata — jamás muestra el volumen (no premiamos el gasto
           a la vista). Solo aparece si el backend lo marca (top del club por volumen). */}
       {data.is_vip && (
-        <div className="rf-in relative overflow-hidden rounded-2xl border border-cyan-400/50 bg-gradient-to-r from-cyan-500/25 via-sky-500/10 to-blue-500/15 px-4 py-3 flex items-center gap-3 shadow-lg shadow-cyan-900/20">
+        <button onClick={shareVip} aria-label="Compartir mi estatus de Miembro distinguido"
+          className="rf-tap rf-in relative overflow-hidden w-full text-left rounded-2xl border border-cyan-400/50 bg-gradient-to-r from-cyan-500/25 via-sky-500/10 to-blue-500/15 px-4 py-3 flex items-center gap-3 shadow-lg shadow-cyan-900/20">
           <span className="text-2xl shrink-0">💎</span>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="text-cyan-200 font-black tracking-wide text-sm leading-tight">Miembro distinguido</p>
             <p className="text-[11px] text-cyan-100/70 font-bold leading-tight">Uno de los pilares {club?.club_name ? `de ${club.club_name}` : 'del club'}</p>
           </div>
-        </div>
+          <span className="shrink-0 text-[10px] font-black uppercase tracking-wide text-cyan-300/90 whitespace-nowrap">📤 Compartir</span>
+        </button>
       )}
 
       {/* Apertura (peak-end): glow atmosférico + nivel como métrica-héroe grande.
