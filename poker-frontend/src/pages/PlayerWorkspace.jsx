@@ -126,8 +126,11 @@ export default function PlayerWorkspace() {
     <div className={`relative min-h-screen text-gray-100 font-sans ${isVip ? 'rf-aura' : 'bg-gradient-to-b from-[#0b1220] via-[#0a0f1a] to-black'}`}>
       {/* Aura VIP: halo dorado que respira en los bordes de toda la pantalla. */}
       {isVip && <div className="pointer-events-none fixed inset-0 z-0 rf-aura-ring" aria-hidden="true" />}
-      {/* pb reserva el alto de la nav + el home-indicator del iPhone (safe-area) */}
-      <div className="relative z-10 max-w-md mx-auto px-4 py-6 pb-[calc(6.5rem+env(safe-area-inset-bottom))] min-h-screen flex flex-col">
+      {/* pb reserva el alto de la nav + el home-indicator del iPhone (safe-area).
+          `relative` SIN z-index: mantiene el contenido sobre el aura-ring por orden
+          de árbol pero NO crea stacking context, así el modal de compartir (z-50)
+          escapa por encima de la bottom-nav (z-20) en vez de quedar atrapado. */}
+      <div className="relative max-w-md mx-auto px-4 py-6 pb-[calc(6.5rem+env(safe-area-inset-bottom))] min-h-screen flex flex-col">
         <header className="flex items-center justify-between gap-3 mb-5">
           {/* No es <h1>: el título de contenido de cada tab (ej. "Hola, …") es el
               h1. Acá el club es contexto/marca. En outage sostenido de club-info
