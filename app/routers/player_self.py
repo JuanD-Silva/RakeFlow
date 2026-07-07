@@ -123,6 +123,10 @@ async def my_profile(
     totals = _totals(cash_rows, tour_rows)
     streak = player_stats.compute_streak(weeks)
     level = player_stats.compute_level(totals["visits"])
+    # Estatus VIP (pilar del club por volumen). Se expone SOLO el booleano —nunca
+    # el volumen ni el ranking— para no premiar el gasto a la vista. Cacheado por club.
+    standings = await player_stats.compute_club_standings(db, user.club_id)
+    vip = player_stats.is_vip(standings, player.id)
 
     # Resumen del mes en curso (hora Colombia), sobre las filas ya cortadas
     month_start = player_stats.start_of_month_col_as_utc()
@@ -134,6 +138,7 @@ async def my_profile(
         "player_name": player.name,
         "totals": totals,
         "level": level,
+        "is_vip": vip,
         "streak": streak,
         "month": {"invested": m["invested"], "returned": m["returned"],
                   "profit": m["profit"], "visits": m["visits"], "hours": m["hours"]},

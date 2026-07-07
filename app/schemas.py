@@ -118,6 +118,7 @@ class PlayerResponse(PlayerBase):
     has_account: bool = False              # True si user_id != None
     invitation_pending: bool = False       # cuenta creada pero sin activar (sin password)
     history_unlocked: bool = True          # stats_since IS NULL = histórico completo
+    is_vip: bool = False                   # pilar del club por volumen (top %) — marca para el staff
 
 
 # --- DEALERS ---

@@ -75,6 +75,7 @@ export default function PlayersDirectory() {
       total: players.length,
       active: players.filter((p) => p.has_account && !p.invitation_pending).length,
       pending: players.filter((p) => p.has_account && p.invitation_pending).length,
+      vip: players.filter((p) => p.is_vip).length,
     };
   }, [players]);
 
@@ -96,6 +97,7 @@ export default function PlayersDirectory() {
           <p className="text-xs text-gray-400 mt-0.5">
             {stats.total} fichas · <span className="text-emerald-400 font-bold">{stats.active} con app</span>
             {stats.pending > 0 && <> · <span className="text-amber-400 font-bold">{stats.pending} pendiente{stats.pending !== 1 ? 's' : ''}</span></>}
+            {stats.vip > 0 && <> · <span className="text-amber-300 font-bold">💎 {stats.vip} VIP</span></>}
           </p>
         </div>
       </div>
@@ -138,9 +140,14 @@ export default function PlayersDirectory() {
                 <p className="text-white font-bold truncate">{p.name}</p>
                 <p className="text-xs text-gray-500 font-mono">{p.phone || 'sin teléfono'}</p>
               </div>
-              {!p.history_unlocked && p.has_account && (
-                <span className="shrink-0 text-[9px] font-bold uppercase px-2 py-1 rounded bg-violet-500/10 text-violet-300" title="Histórico en el archivo — se desbloquea cobrando en caja">🗄️ Archivo</span>
-              )}
+              <div className="flex items-center gap-1.5 shrink-0">
+                {p.is_vip && (
+                  <span className="text-[9px] font-bold uppercase px-2 py-1 rounded bg-amber-500/10 text-amber-300 border border-amber-500/25" title="Pilar del club — de los que más mueven (top por volumen). Atenderlo bien.">💎 VIP</span>
+                )}
+                {!p.history_unlocked && p.has_account && (
+                  <span className="text-[9px] font-bold uppercase px-2 py-1 rounded bg-violet-500/10 text-violet-300" title="Histórico en el archivo — se desbloquea cobrando en caja">🗄️ Archivo</span>
+                )}
+              </div>
             </div>
             <PlayerAppAccount playerId={p.id} account={p} canManage={canManageApp} onChanged={load} />
           </div>

@@ -266,6 +266,19 @@ function HomeTab({ club }) {
 
   return (
     <div className="space-y-4">
+      {/* Distinción VIP (pilar del club). Es lo PRIMERO que ve: se siente importante.
+          Reconocimiento, no plata — jamás muestra el volumen (no premiamos el gasto
+          a la vista). Solo aparece si el backend lo marca (top del club por volumen). */}
+      {data.is_vip && (
+        <div className="rf-in relative overflow-hidden rounded-2xl border border-amber-400/50 bg-gradient-to-r from-amber-500/25 via-yellow-500/10 to-cyan-500/15 px-4 py-3 flex items-center gap-3 shadow-lg shadow-amber-900/20">
+          <span className="text-2xl shrink-0">💎</span>
+          <div className="min-w-0">
+            <p className="text-amber-200 font-black tracking-wide text-sm leading-tight">Miembro distinguido</p>
+            <p className="text-[11px] text-amber-100/70 font-bold leading-tight">Uno de los pilares de {club?.club_name || 'el club'}</p>
+          </div>
+        </div>
+      )}
+
       {/* Apertura (peak-end): glow atmosférico + nivel como métrica-héroe grande.
           Los tiers son la palanca de retención del jugador recreativo → protagonista. */}
       <div className="relative rf-glow pt-1">
