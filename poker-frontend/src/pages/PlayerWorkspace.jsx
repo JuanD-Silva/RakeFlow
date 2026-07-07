@@ -526,6 +526,7 @@ function HistoryTab() {
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [showDetail, setShowDetail] = useState(false);
 
   const loadPage = useCallback(async (skip) => {
     try {
@@ -562,6 +563,9 @@ function HistoryTab() {
   // la curva de profit vieja en vez de un bloque "Tu constancia" en blanco.
   const neg = curve.length >= 2 && curve[curve.length - 1] < 0 && activityCurve.length >= 2;
   const curveGreen = neg || (curve.length >= 2 && curve[curve.length - 1] >= 0);
+  // El que va en negativo abre colapsado (resumen positivo); el detalle
+  // noche-por-noche —con montos reales— queda a un toque de distancia.
+  const collapsed = neg && !showDetail;
 
   return (
     <div className="space-y-3">
@@ -587,39 +591,53 @@ function HistoryTab() {
         </div>
       )}
 
-      {items.map((s, i) => {
-        // Reencuadre por noche (mismo criterio que la curva): al que va en negativo
-        // acumulado NO se le muestra la pérdida de cada noche —un historial en rojo
-        // deprime la visita (Wohl 2017)— sino su actividad (horas / "Jugado"). Sus
-        // noches ganadoras SÍ lucen el verde. El que va en positivo ve todo real.
-        const hideLoss = neg && s.profit < 0;
-        return (
-          <div key={`${s.type}-${s.date}-${i}`} className="rf-in bg-gray-800/60 border border-gray-700/60 rounded-xl px-4 py-3 flex items-center justify-between gap-3" style={{ animationDelay: `${Math.min(i, 10) * 35}ms` }}>
-            <div className="min-w-0">
-              <p className="text-white font-bold truncate flex items-center gap-1.5">
-                <TypeIcon type={s.type} className="w-4 h-4 shrink-0 text-gray-400" />{s.name}
-                {s.rank === 1 && <span className="shrink-0 text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-yellow-500/15 text-yellow-300">Campeón</span>}
-                {s.rank > 1 && s.rank <= 3 && <span className="shrink-0 text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-gray-600/40 text-gray-300">#{s.rank}</span>}
-              </p>
-              <p className="text-xs text-gray-400 mt-0.5">
-                {fmtDate(s.date)}{!hideLoss && s.type === 'cash' && s.hours > 0 ? ` · ${s.hours} h` : ''}{s.type === 'cash' && s.spend > 0 ? ` · consumo ${cop(s.spend)}` : ''}
-              </p>
-            </div>
-            {hideLoss ? (
-              s.hours > 0
-                ? <span className="shrink-0 font-black nums text-gray-200">{s.hours}<span className="text-xs text-gray-400 font-bold"> h</span></span>
-                : <span className="shrink-0 text-[11px] font-bold uppercase tracking-wide text-gray-500">Jugado</span>
-            ) : (
-              <span className={`font-bold whitespace-nowrap nums ${s.profit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{signCop(s.profit)}</span>
-            )}
+      {collapsed ? (
+        /* El que va en negativo abre con lo positivo (su constancia, arriba) + un
+           resumen no-monetario. El detalle noche-por-noche —con montos REALES— vive
+           detrás de "Ver detalle": no se esconde el dato (transparencia), pero no
+           golpea con un mar de rojo al abrir (Wohl 2017). */
+        <>
+          <div className="rf-in bg-gray-800/50 border border-gray-700/60 rounded-2xl p-5 text-center">
+            <p className="text-3xl font-black text-white nums leading-none">{total}</p>
+            <p className="text-sm text-gray-400 font-bold mt-1">noches en el club</p>
+            {activityTotal && <p className="text-sm text-emerald-300 font-black mt-2 nums">{activityTotal} en mesa</p>}
           </div>
-        );
-      })}
-      {hasMore && (
-        <button onClick={() => loadPage(items.length)}
-          className="rf-tap w-full py-3 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-bold uppercase tracking-wide">
-          Cargar más
-        </button>
+          <button onClick={() => setShowDetail(true)}
+            className="rf-tap w-full py-3 rounded-xl bg-gray-800/70 hover:bg-gray-700 border border-gray-700/60 text-gray-300 text-sm font-bold uppercase tracking-wide">
+            Ver el detalle noche por noche
+          </button>
+        </>
+      ) : (
+        <>
+          {items.map((s, i) => (
+            <div key={`${s.type}-${s.date}-${i}`} className="rf-in bg-gray-800/60 border border-gray-700/60 rounded-xl px-4 py-3 flex items-center justify-between gap-3" style={{ animationDelay: `${Math.min(i, 10) * 35}ms` }}>
+              <div className="min-w-0">
+                <p className="text-white font-bold truncate flex items-center gap-1.5">
+                  <TypeIcon type={s.type} className="w-4 h-4 shrink-0 text-gray-400" />{s.name}
+                  {s.rank === 1 && <span className="shrink-0 text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-yellow-500/15 text-yellow-300">Campeón</span>}
+                  {s.rank > 1 && s.rank <= 3 && <span className="shrink-0 text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-gray-600/40 text-gray-300">#{s.rank}</span>}
+                </p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {fmtDate(s.date)}{s.type === 'cash' && s.hours > 0 ? ` · ${s.hours} h` : ''}{s.type === 'cash' && s.spend > 0 ? ` · consumo ${cop(s.spend)}` : ''}
+                </p>
+              </div>
+              {/* Monto real, pero el negativo en rojo SUAVIZADO (no alarmante). */}
+              <span className={`font-bold whitespace-nowrap nums ${s.profit >= 0 ? 'text-emerald-400' : 'text-red-400/70'}`}>{signCop(s.profit)}</span>
+            </div>
+          ))}
+          {hasMore && (
+            <button onClick={() => loadPage(items.length)}
+              className="rf-tap w-full py-3 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-bold uppercase tracking-wide">
+              Cargar más
+            </button>
+          )}
+          {neg && (
+            <button onClick={() => setShowDetail(false)}
+              className="rf-tap w-full py-2 text-xs text-gray-500 hover:text-gray-300 font-bold uppercase tracking-wide">
+              Ocultar detalle
+            </button>
+          )}
+        </>
       )}
     </div>
   );
