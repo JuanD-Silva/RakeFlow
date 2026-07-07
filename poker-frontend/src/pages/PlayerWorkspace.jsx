@@ -798,19 +798,21 @@ function RankingTab() {
           className="rf-tap px-4 py-2 text-lg leading-none rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 font-bold disabled:opacity-30">›</button>
       </div>
 
-      {/* Celebración del #1. Prioriza HORAS (fidelidad) sobre ganancias: el que más
-          viene es el que sostiene el club, aunque no gane plata — coherente con toda
-          la línea de retención del panel. */}
-      {(data.active?.rank === 1 || data.winners?.rank === 1) && (
+      {/* Celebración del #1, con distintivo propio por tipo. Prioriza HORAS
+          (fidelidad): el que más viene sostiene el club aunque no gane plata.
+          Horas → ⏱️ sobre verde (el color de "Constancia" del panel); ganancias →
+          👑 sobre dorado. Así cada jugador tiene su propia distinción. */}
+      {data.active?.rank === 1 ? (
+        <div className="bg-gradient-to-br from-emerald-600/30 to-gray-900/40 border border-emerald-500/40 rounded-2xl p-4 text-center">
+          <p className="text-3xl">⏱️</p>
+          <p className="text-white font-black">¡Sos quien más horas juega en {mes}!</p>
+        </div>
+      ) : data.winners?.rank === 1 ? (
         <div className="bg-gradient-to-br from-yellow-600/30 to-gray-900/40 border border-yellow-500/40 rounded-2xl p-4 text-center">
           <p className="text-3xl">👑</p>
-          <p className="text-white font-black">
-            {data.active?.rank === 1
-              ? `¡Sos quien más horas juega en ${mes}!`
-              : `¡Sos el #1 ganador de ${mes}!`}
-          </p>
+          <p className="text-white font-black">¡Sos el #1 ganador de {mes}!</p>
         </div>
-      )}
+      ) : null}
 
       {!inAny && (
         <EmptyState emoji="🥇" title={`Todavía no rankeás en ${mes}`}
