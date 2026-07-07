@@ -117,11 +117,17 @@ export default function PlayerWorkspace() {
   // El club protagoniza el header: el jugador es cliente del CLUB, no del SaaS.
   // Se lo pasamos a HomeTab para no duplicar el GET /player/club-info.
   const { data: club, error: clubError } = usePlayerResource(playerSelfService.getClubInfo);
+  // El perfil se sube acá (un solo fetch, se pasa a HomeTab): además de alimentar
+  // el Inicio, decide el AURA VIP que envuelve TODA la pantalla del pilar del club.
+  const { data: profile, loadedOnce: profileLoaded, error: profileError } = usePlayerResource(playerSelfService.getProfile);
+  const isVip = !!profile?.is_vip;
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#0b1220] via-[#0a0f1a] to-black text-gray-100 font-sans">
+    <div className={`relative min-h-screen text-gray-100 font-sans ${isVip ? 'rf-aura' : 'bg-gradient-to-b from-[#0b1220] via-[#0a0f1a] to-black'}`}>
+      {/* Aura VIP: halo dorado que respira en los bordes de toda la pantalla. */}
+      {isVip && <div className="pointer-events-none fixed inset-0 z-0 rf-aura-ring" aria-hidden="true" />}
       {/* pb reserva el alto de la nav + el home-indicator del iPhone (safe-area) */}
-      <div className="max-w-md mx-auto px-4 py-6 pb-[calc(6.5rem+env(safe-area-inset-bottom))] min-h-screen flex flex-col">
+      <div className="relative z-10 max-w-md mx-auto px-4 py-6 pb-[calc(6.5rem+env(safe-area-inset-bottom))] min-h-screen flex flex-col">
         <header className="flex items-center justify-between gap-3 mb-5">
           {/* No es <h1>: el título de contenido de cada tab (ej. "Hola, …") es el
               h1. Acá el club es contexto/marca. En outage sostenido de club-info
@@ -140,7 +146,7 @@ export default function PlayerWorkspace() {
         {/* flex-1 empuja el footer al fondo cuando el contenido es corto (Ranking),
             sin afectar las vistas largas (Inicio). */}
         <div className="flex-1">
-          {tab === 'inicio' && <HomeTab club={club} />}
+          {tab === 'inicio' && <HomeTab club={club} data={profile} loaded={profileLoaded} error={profileError} />}
           {tab === 'historial' && <HistoryTab />}
           {tab === 'logros' && <AchievementsTab />}
           {tab === 'ranking' && <RankingTab />}
@@ -151,7 +157,7 @@ export default function PlayerWorkspace() {
         </footer>
       </div>
 
-      <nav className="fixed bottom-0 inset-x-0 bg-[#0a0f1a]/95 backdrop-blur border-t border-gray-800 pb-[env(safe-area-inset-bottom)]">
+      <nav className="fixed bottom-0 inset-x-0 z-20 bg-[#0a0f1a]/95 backdrop-blur border-t border-gray-800 pb-[env(safe-area-inset-bottom)]">
         <div className="max-w-md mx-auto grid grid-cols-4">
           {TABS.map((t) => {
             const active = tab === t.key;
@@ -249,12 +255,11 @@ const EmptyState = ({ emoji, title, subtitle }) => (
 // ---------------------------------------------------------
 // Inicio: nivel, racha, el mes, totales, archivo y club
 // ---------------------------------------------------------
-function HomeTab({ club }) {
-  const { data, loadedOnce, error } = usePlayerResource(playerSelfService.getProfile);
+function HomeTab({ club, data, loaded, error }) {
   const { data: challengeData } = usePlayerResource(playerSelfService.getChallenge);
   const { data: highlightData } = usePlayerResource(playerSelfService.getHighlight);
   const [showShare, setShowShare] = useState(false);
-  if (!loadedOnce) return error ? <Reconnecting /> : <HomeSkeleton />;
+  if (!loaded) return error ? <Reconnecting /> : <HomeSkeleton />;
   if (!data) return null;
 
   const t = data.totals;
