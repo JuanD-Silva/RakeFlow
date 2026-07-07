@@ -121,7 +121,7 @@ export default function PlayerWorkspace() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0b1220] via-[#0a0f1a] to-black text-gray-100 font-sans">
       {/* pb reserva el alto de la nav + el home-indicator del iPhone (safe-area) */}
-      <div className="max-w-md mx-auto px-4 py-6 pb-[calc(6.5rem+env(safe-area-inset-bottom))]">
+      <div className="max-w-md mx-auto px-4 py-6 pb-[calc(6.5rem+env(safe-area-inset-bottom))] min-h-screen flex flex-col">
         <header className="flex items-center justify-between gap-3 mb-5">
           {/* No es <h1>: el título de contenido de cada tab (ej. "Hola, …") es el
               h1. Acá el club es contexto/marca. En outage sostenido de club-info
@@ -137,10 +137,14 @@ export default function PlayerWorkspace() {
           <button onClick={logout} className="rf-tap shrink-0 text-xs text-gray-400 hover:text-white font-bold px-2 py-1">Salir</button>
         </header>
 
-        {tab === 'inicio' && <HomeTab club={club} />}
-        {tab === 'historial' && <HistoryTab />}
-        {tab === 'logros' && <AchievementsTab />}
-        {tab === 'ranking' && <RankingTab />}
+        {/* flex-1 empuja el footer al fondo cuando el contenido es corto (Ranking),
+            sin afectar las vistas largas (Inicio). */}
+        <div className="flex-1">
+          {tab === 'inicio' && <HomeTab club={club} />}
+          {tab === 'historial' && <HistoryTab />}
+          {tab === 'logros' && <AchievementsTab />}
+          {tab === 'ranking' && <RankingTab />}
+        </div>
 
         <footer className="mt-10 text-center">
           <p className="text-[10px] text-gray-600 font-black tracking-[0.25em] uppercase">RakeFlow</p>
@@ -714,7 +718,7 @@ const BadgeCard = ({ badge, isNew, i = 0 }) => {
     <div className={`rf-in relative rounded-2xl p-4 border ${badge.achieved ? 'bg-emerald-900/20 border-emerald-600/40' : 'bg-gray-800/40 border-gray-700/60'} ${isNew ? 'ring-2 ring-yellow-400' : ''}`}
       style={{ animationDelay: `${Math.min(i, 8) * 45}ms` }}>
       {isNew && <span className="absolute -top-2 right-2 text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-yellow-400 text-black">¡Nuevo!</span>}
-      <p className={`text-3xl ${badge.achieved ? '' : 'grayscale opacity-40'}`}>{badge.emoji}</p>
+      <p className={`text-3xl ${badge.achieved ? '' : 'grayscale opacity-60'}`}>{badge.emoji}</p>
       <p className={`mt-1 font-black text-sm ${badge.achieved ? 'text-white' : 'text-gray-400'}`}>{badge.name}</p>
       <p className="text-[10px] text-gray-400 leading-tight mt-0.5">{badge.description}</p>
       {!badge.achieved && badge.progress.target > 1 && (
@@ -794,12 +798,21 @@ function RankingTab() {
           className="rf-tap px-4 py-2 text-lg leading-none rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 font-bold disabled:opacity-30">›</button>
       </div>
 
-      {data.winners?.rank === 1 && (
+      {/* Celebración del #1, con distintivo propio por tipo. Prioriza HORAS
+          (fidelidad): el que más viene sostiene el club aunque no gane plata.
+          Horas → ⏱️ sobre verde (el color de "Constancia" del panel); ganancias →
+          👑 sobre dorado. Así cada jugador tiene su propia distinción. */}
+      {data.active?.rank === 1 ? (
+        <div className="bg-gradient-to-br from-emerald-600/30 to-gray-900/40 border border-emerald-500/40 rounded-2xl p-4 text-center">
+          <p className="text-3xl">⏱️</p>
+          <p className="text-white font-black">¡Sos quien más horas juega en {mes}!</p>
+        </div>
+      ) : data.winners?.rank === 1 ? (
         <div className="bg-gradient-to-br from-yellow-600/30 to-gray-900/40 border border-yellow-500/40 rounded-2xl p-4 text-center">
           <p className="text-3xl">👑</p>
           <p className="text-white font-black">¡Sos el #1 ganador de {mes}!</p>
         </div>
-      )}
+      ) : null}
 
       {!inAny && (
         <EmptyState emoji="🥇" title={`Todavía no rankeás en ${mes}`}
