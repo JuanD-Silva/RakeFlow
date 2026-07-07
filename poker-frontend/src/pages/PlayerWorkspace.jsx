@@ -10,11 +10,25 @@ import { cop, signCop, fmtDate, monthName } from '../utils/formatters';
 // bottom-nav). PR3: Inicio + Historial. PR4: Logros (badges + confetti),
 // Ranking (posición propia) y card mensual compartible.
 
+// Íconos de la bottom-nav: set SVG line consistente (Lucide) en vez de emojis
+// —que se renderizan distinto por SO y dan aire casero—. Los emojis expresivos
+// de las cards (🔥 racha, 🏅 destaque, 🎯 reto…) SÍ se conservan: ahí comunican.
+const NavIcon = ({ className, children }) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+    strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+    {children}
+  </svg>
+);
+const IconInicio = (p) => <NavIcon {...p}><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><path d="M9 22V12h6v10" /></NavIcon>;
+const IconHistorial = (p) => <NavIcon {...p}><path d="M3 3v5h5" /><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" /><path d="M12 7v5l4 2" /></NavIcon>;
+const IconLogros = (p) => <NavIcon {...p}><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" /><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" /><path d="M4 22h16" /><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" /><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" /><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" /></NavIcon>;
+const IconRanking = (p) => <NavIcon {...p}><path d="m15.477 12.89 1.515 8.526a.5.5 0 0 1-.81.47l-3.58-2.687a1 1 0 0 0-1.197 0l-3.586 2.686a.5.5 0 0 1-.81-.469l1.514-8.526" /><circle cx="12" cy="8" r="6" /></NavIcon>;
+
 const TABS = [
-  { key: 'inicio', label: 'Inicio', emoji: '🏠' },
-  { key: 'historial', label: 'Historial', emoji: '📜' },
-  { key: 'logros', label: 'Logros', emoji: '🏆' },
-  { key: 'ranking', label: 'Ranking', emoji: '🥇' },
+  { key: 'inicio', label: 'Inicio', Icon: IconInicio },
+  { key: 'historial', label: 'Historial', Icon: IconHistorial },
+  { key: 'logros', label: 'Logros', Icon: IconLogros },
+  { key: 'ranking', label: 'Ranking', Icon: IconRanking },
 ];
 
 const TIER_STYLE = {
@@ -95,36 +109,58 @@ const GridSkeleton = () => (
 export default function PlayerWorkspace() {
   const { logout } = useAuth();
   const [tab, setTab] = useState('inicio');
+  // El club protagoniza el header: el jugador es cliente del CLUB, no del SaaS.
+  // Se lo pasamos a HomeTab para no duplicar el GET /player/club-info.
+  const { data: club, error: clubError } = usePlayerResource(playerSelfService.getClubInfo);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0b1220] via-[#0a0f1a] to-black text-gray-100 font-sans">
-      <div className="max-w-md mx-auto px-4 py-6 pb-28">
-        <div className="flex items-center justify-between mb-5">
-          <p className="text-emerald-500 text-[11px] font-black tracking-[0.3em] uppercase">RakeFlow · Jugador</p>
-          <button onClick={logout} className="text-xs text-gray-400 hover:text-white font-bold">Salir</button>
-        </div>
+      {/* pb reserva el alto de la nav + el home-indicator del iPhone (safe-area) */}
+      <div className="max-w-md mx-auto px-4 py-6 pb-[calc(6.5rem+env(safe-area-inset-bottom))]">
+        <header className="flex items-center justify-between gap-3 mb-5">
+          {/* No es <h1>: el título de contenido de cada tab (ej. "Hola, …") es el
+              h1. Acá el club es contexto/marca. En outage sostenido de club-info
+              cae a un texto neutro en vez de un skeleton eterno. */}
+          <div className="min-w-0">
+            {club?.club_name
+              ? <p className="text-white text-lg font-black tracking-tight leading-none truncate">{club.club_name}</p>
+              : clubError
+                ? <p className="text-white text-lg font-black tracking-tight leading-none">Tu panel</p>
+                : <div className="rf-skel h-5 w-28" />}
+            <p className="text-emerald-500/80 text-[9px] font-black tracking-[0.28em] uppercase mt-1">Panel del jugador</p>
+          </div>
+          <button onClick={logout} className="rf-tap shrink-0 text-xs text-gray-400 hover:text-white font-bold px-2 py-1">Salir</button>
+        </header>
 
-        {tab === 'inicio' && <HomeTab />}
+        {tab === 'inicio' && <HomeTab club={club} />}
         {tab === 'historial' && <HistoryTab />}
         {tab === 'logros' && <AchievementsTab />}
         {tab === 'ranking' && <RankingTab />}
+
+        <footer className="mt-10 text-center">
+          <p className="text-[10px] text-gray-600 font-black tracking-[0.25em] uppercase">RakeFlow</p>
+        </footer>
       </div>
 
-      <nav className="fixed bottom-0 inset-x-0 bg-[#0a0f1a]/95 backdrop-blur border-t border-gray-800">
+      <nav className="fixed bottom-0 inset-x-0 bg-[#0a0f1a]/95 backdrop-blur border-t border-gray-800 pb-[env(safe-area-inset-bottom)]">
         <div className="max-w-md mx-auto grid grid-cols-4">
-          {TABS.map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={`relative rf-tap py-3 flex flex-col items-center gap-0.5 text-[10px] font-bold ${
-                tab === t.key ? 'text-emerald-400' : 'text-gray-500'
-              }`}
-            >
-              {tab === t.key && <span className="absolute top-0 h-[3px] w-8 rounded-full bg-emerald-400" />}
-              <span className={`text-lg transition-transform duration-200 motion-reduce:transition-none ${tab === t.key ? 'scale-110' : ''}`}>{t.emoji}</span>
-              {t.label}
-            </button>
-          ))}
+          {TABS.map((t) => {
+            const active = tab === t.key;
+            return (
+              <button
+                key={t.key}
+                onClick={() => setTab(t.key)}
+                aria-current={active ? 'page' : undefined}
+                className={`relative rf-tap py-2.5 flex flex-col items-center gap-1 text-[10px] font-bold ${
+                  active ? 'text-emerald-400' : 'text-gray-500'
+                }`}
+              >
+                {active && <span className="absolute top-0 h-[3px] w-8 rounded-full bg-emerald-400" />}
+                <t.Icon className={`w-[22px] h-[22px] transition-transform duration-200 motion-reduce:transition-none ${active ? 'scale-110' : ''}`} />
+                {t.label}
+              </button>
+            );
+          })}
         </div>
       </nav>
     </div>
@@ -204,9 +240,8 @@ const EmptyState = ({ emoji, title, subtitle }) => (
 // ---------------------------------------------------------
 // Inicio: nivel, racha, el mes, totales, archivo y club
 // ---------------------------------------------------------
-function HomeTab() {
+function HomeTab({ club }) {
   const { data, loadedOnce, error } = usePlayerResource(playerSelfService.getProfile);
-  const { data: club } = usePlayerResource(playerSelfService.getClubInfo);
   const { data: challengeData } = usePlayerResource(playerSelfService.getChallenge);
   const { data: highlightData } = usePlayerResource(playerSelfService.getHighlight);
   const [showShare, setShowShare] = useState(false);
