@@ -600,7 +600,10 @@ function HistoryTab() {
           <div className="rf-in bg-gray-800/50 border border-gray-700/60 rounded-2xl p-5 text-center">
             <p className="text-3xl font-black text-white nums leading-none">{total}</p>
             <p className="text-sm text-gray-400 font-bold mt-1">noches en el club</p>
-            {activityTotal && <p className="text-sm text-emerald-300 font-black mt-2 nums">{activityTotal} en mesa</p>}
+            {/* Solo la segunda línea si son HORAS: para el jugador solo-torneo
+                activityTotal es "N visitas" (= total) y "N visitas en mesa" duplica
+                el número y se lee forzado. */}
+            {activityTotal.includes(' h') && <p className="text-sm text-emerald-300 font-black mt-2 nums">{activityTotal} en mesa</p>}
           </div>
           <button onClick={() => setShowDetail(true)}
             className="rf-tap w-full py-3 rounded-xl bg-gray-800/70 hover:bg-gray-700 border border-gray-700/60 text-gray-300 text-sm font-bold uppercase tracking-wide">
