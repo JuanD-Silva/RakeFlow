@@ -86,7 +86,9 @@ export default function PlayerShareCard({ onClose }) {
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm overflow-y-auto" onClick={onClose}>
       <button onClick={onClose} aria-label="Cerrar"
         className="rf-tap fixed top-3 right-3 z-10 w-9 h-9 flex items-center justify-center rounded-full bg-gray-800/80 text-gray-300 hover:text-white text-lg leading-none">✕</button>
-      <div className="min-h-full flex flex-col items-center justify-center px-4 py-8" onClick={(e) => e.stopPropagation()}>
+      {/* pt mayor que el ✕ (top-3): al scrollear un modal alto, la nav de meses no
+          queda debajo del botón de cerrar. */}
+      <div className="min-h-full flex flex-col items-center justify-center px-4 pt-16 pb-8" onClick={(e) => e.stopPropagation()}>
 
         {/* Navegación de mes */}
         <div className="w-[320px] flex items-center justify-between mb-3 text-gray-300">
