@@ -110,23 +110,29 @@ export default function PlayerWorkspace() {
   const { logout } = useAuth();
   const [tab, setTab] = useState('inicio');
   // El club protagoniza el header: el jugador es cliente del CLUB, no del SaaS.
-  const { data: club } = usePlayerResource(playerSelfService.getClubInfo);
+  // Se lo pasamos a HomeTab para no duplicar el GET /player/club-info.
+  const { data: club, error: clubError } = usePlayerResource(playerSelfService.getClubInfo);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0b1220] via-[#0a0f1a] to-black text-gray-100 font-sans">
       {/* pb reserva el alto de la nav + el home-indicator del iPhone (safe-area) */}
       <div className="max-w-md mx-auto px-4 py-6 pb-[calc(6.5rem+env(safe-area-inset-bottom))]">
         <header className="flex items-center justify-between gap-3 mb-5">
+          {/* No es <h1>: el título de contenido de cada tab (ej. "Hola, …") es el
+              h1. Acá el club es contexto/marca. En outage sostenido de club-info
+              cae a un texto neutro en vez de un skeleton eterno. */}
           <div className="min-w-0">
             {club?.club_name
-              ? <h2 className="text-white text-lg font-black tracking-tight leading-none truncate">{club.club_name}</h2>
-              : <div className="rf-skel h-5 w-28" />}
+              ? <p className="text-white text-lg font-black tracking-tight leading-none truncate">{club.club_name}</p>
+              : clubError
+                ? <p className="text-white text-lg font-black tracking-tight leading-none">Tu panel</p>
+                : <div className="rf-skel h-5 w-28" />}
             <p className="text-emerald-500/80 text-[9px] font-black tracking-[0.28em] uppercase mt-1">Panel del jugador</p>
           </div>
           <button onClick={logout} className="rf-tap shrink-0 text-xs text-gray-400 hover:text-white font-bold px-2 py-1">Salir</button>
         </header>
 
-        {tab === 'inicio' && <HomeTab />}
+        {tab === 'inicio' && <HomeTab club={club} />}
         {tab === 'historial' && <HistoryTab />}
         {tab === 'logros' && <AchievementsTab />}
         {tab === 'ranking' && <RankingTab />}
@@ -144,7 +150,6 @@ export default function PlayerWorkspace() {
               <button
                 key={t.key}
                 onClick={() => setTab(t.key)}
-                aria-label={t.label}
                 aria-current={active ? 'page' : undefined}
                 className={`relative rf-tap py-2.5 flex flex-col items-center gap-1 text-[10px] font-bold ${
                   active ? 'text-emerald-400' : 'text-gray-500'
@@ -235,9 +240,8 @@ const EmptyState = ({ emoji, title, subtitle }) => (
 // ---------------------------------------------------------
 // Inicio: nivel, racha, el mes, totales, archivo y club
 // ---------------------------------------------------------
-function HomeTab() {
+function HomeTab({ club }) {
   const { data, loadedOnce, error } = usePlayerResource(playerSelfService.getProfile);
-  const { data: club } = usePlayerResource(playerSelfService.getClubInfo);
   const { data: challengeData } = usePlayerResource(playerSelfService.getChallenge);
   const { data: highlightData } = usePlayerResource(playerSelfService.getHighlight);
   const [showShare, setShowShare] = useState(false);
