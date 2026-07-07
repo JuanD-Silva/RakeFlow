@@ -84,22 +84,30 @@ export default function PlayerShareCard({ onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm overflow-y-auto" onClick={onClose}>
+      <button onClick={onClose} aria-label="Cerrar"
+        className="rf-tap fixed top-3 right-3 z-10 w-9 h-9 flex items-center justify-center rounded-full bg-gray-800/80 text-gray-300 hover:text-white text-lg leading-none">✕</button>
       <div className="min-h-full flex flex-col items-center justify-center px-4 py-8" onClick={(e) => e.stopPropagation()}>
 
         {/* Navegación de mes */}
         <div className="w-[320px] flex items-center justify-between mb-3 text-gray-300">
-          <button onClick={() => move(-1)} className="px-3 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 font-bold">‹</button>
+          <button onClick={() => move(-1)} aria-label="Mes anterior"
+            className="rf-tap px-4 py-2 text-lg leading-none rounded-lg bg-gray-800 hover:bg-gray-700 font-bold">‹</button>
           <p className="text-sm font-black uppercase tracking-widest">
             {data ? `${monthName(data.period.year, data.period.month)} ${data.period.year}` : '…'}
           </p>
-          <button onClick={() => move(1)} disabled={isCurrent}
-            className="px-3 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 font-bold disabled:opacity-30">›</button>
+          <button onClick={() => move(1)} disabled={isCurrent} aria-label="Mes siguiente"
+            className="rf-tap px-4 py-2 text-lg leading-none rounded-lg bg-gray-800 hover:bg-gray-700 font-bold disabled:opacity-30">›</button>
         </div>
 
         {error && <p className="text-sm text-red-300 py-10">No se pudo cargar el resumen. Probá de nuevo.</p>}
         {!data && !error && (
-          <div className="w-[320px] h-[380px] flex items-center justify-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-500" />
+          <div className="w-[320px] rounded-2xl p-5 border border-gray-700/60 space-y-3">
+            <div className="rf-skel h-4 w-1/2" />
+            <div className="rf-skel h-10 w-2/3" />
+            <div className="grid grid-cols-3 gap-2">
+              <div className="rf-skel h-14" /><div className="rf-skel h-14" /><div className="rf-skel h-14" />
+            </div>
+            <div className="rf-skel h-12 w-full" />
           </div>
         )}
 

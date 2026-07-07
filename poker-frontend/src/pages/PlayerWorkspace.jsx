@@ -269,7 +269,7 @@ function HomeTab({ club }) {
             <span className={`text-xs font-black uppercase tracking-wider px-3 py-1.5 rounded-full bg-gradient-to-r ${TIER_STYLE[lvl.tier] || TIER_STYLE.Bronce}`}>
               {lvl.tier === 'Diamante' ? '💎' : lvl.tier === 'Oro' ? '🥇' : lvl.tier === 'Plata' ? '🥈' : '🥉'} {lvl.tier}
             </span>
-            <span className="text-[10px] text-gray-500 font-black uppercase tracking-[0.2em]">Nivel</span>
+            <span className="text-[10px] text-gray-400 font-black uppercase tracking-[0.2em]">Nivel</span>
           </div>
           <div className="mt-2.5 flex items-baseline gap-2">
             <CountUp value={lvl.visits ?? 0} className="text-[2.75rem] font-black text-white nums leading-none tracking-tight" />
@@ -280,7 +280,7 @@ function HomeTab({ club }) {
               <div className="mt-3 h-2.5 rounded-full bg-gray-700/60 overflow-hidden">
                 <div className="rf-bar h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full" style={{ width: `${lvl.progress_pct}%` }} />
               </div>
-              <p className="text-[11px] text-gray-500 mt-1.5">
+              <p className="text-[11px] text-gray-400 mt-1.5">
                 A <b className="text-gray-300 nums">{lvl.next_tier_at - lvl.visits}</b> visita{lvl.next_tier_at - lvl.visits !== 1 ? 's' : ''} de <b className="text-gray-300">{lvl.next_tier}</b>
               </p>
             </>
@@ -329,7 +329,7 @@ function HomeTab({ club }) {
               style={{ width: `${Math.min(100, Math.round((100 * challenge.progress.current) / challenge.progress.target))}%` }} />
           </div>
           <div className="flex items-center justify-between mt-1.5">
-            <p className="text-[11px] text-gray-500 nums">
+            <p className="text-[11px] text-gray-400 nums">
               {challenge.progress.current} / {challenge.progress.target} {challenge.metric}
             </p>
             {challenge.reward_text && (
@@ -354,7 +354,7 @@ function HomeTab({ club }) {
                 <div className="rf-bar h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full"
                   style={{ width: `${Math.min(100, Math.round((100 * sc.week_hours) / sc.best_week_hours))}%` }} />
               </div>
-              <p className="text-[11px] text-gray-500 mt-1.5">
+              <p className="text-[11px] text-gray-400 mt-1.5">
                 {sc.week_hours >= sc.best_week_hours
                   ? '🔥 ¡Récord de horas en una semana!'
                   : <>Tu récord: <b className="text-gray-300 nums">{sc.best_week_hours} h</b> · promedio <span className="nums">{sc.avg_week_hours} h</span></>}
@@ -408,7 +408,7 @@ function HomeTab({ club }) {
         {/* Comparación contra uno mismo (no social): nudge positivo si va por
             encima de su promedio histórico de visitas/mes. */}
         {sc.avg_month_visits > 0 && (
-          <p className="text-[11px] text-gray-500 mt-2">
+          <p className="text-[11px] text-gray-400 mt-2">
             {data.month.visits >= sc.avg_month_visits
               ? <>👏 Vas por encima de tu promedio (<b className="text-gray-400">{sc.avg_month_visits}/mes</b>)</>
               : <>Tu promedio son <b className="text-gray-400">{sc.avg_month_visits} visitas</b> al mes.</>}
@@ -436,8 +436,10 @@ function HomeTab({ club }) {
           </div>
         )}
 
+        {/* Acción de marketing boca-a-boca: se muestra como acción (acento
+            emerald), no como botón secundario apagado. */}
         <button onClick={() => setShowShare(true)}
-          className="rf-tap w-full mt-3 py-3 rounded-xl bg-gray-800/70 hover:bg-gray-700 border border-gray-700/60 text-emerald-300 text-sm font-black uppercase tracking-wide">
+          className="rf-tap w-full mt-4 py-3 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-sm font-black uppercase tracking-wide">
           📤 Compartir mi mes
         </button>
       </section>
@@ -449,27 +451,35 @@ function HomeTab({ club }) {
           visitas, sesiones. El detalle noche-por-noche sigue en el Historial. */}
       <section className="rf-in" style={{ animationDelay: '300ms' }}>
         <p className="text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-2">Tu juego</p>
+        {/* Jerarquía: 2 métricas-héroe grandes + el detalle agrupado en UNA card
+            compacta (antes eran 6 cajas del mismo peso compitiendo). */}
         {t.profit >= 0 ? (
           <>
             <div className="grid grid-cols-2 gap-3">
               <Stat label="Resultado total" value={signCop(t.profit)} tone="good" big />
               <Stat label="ROI" value={t.roi != null ? `${(t.roi * 100).toFixed(1)}%` : '—'} tone={t.roi > 0 ? 'good' : undefined} big />
-              <Stat label="Metiste" value={cop(t.invested)} />
-              <Stat label="Sacaste" value={cop(t.returned)} />
-              <Stat label="$ por hora" value={t.profit_per_hour != null ? signCop(t.profit_per_hour) : '—'} />
-              <Stat label="Horas en mesa" value={`${t.hours} h`} />
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 bg-gray-800/40 border border-gray-700/50 rounded-2xl p-4">
+              <Detail label="Metiste" value={cop(t.invested)} />
+              <Detail label="Sacaste" value={cop(t.returned)} />
+              <Detail label="$ por hora" value={t.profit_per_hour != null ? signCop(t.profit_per_hour) : '—'} />
+              <Detail label="Horas en mesa" value={`${t.hours} h`} />
             </div>
             {t.expenses > 0 && (
-              <p className="text-[11px] text-gray-500 mt-2">Además gastaste {cop(t.expenses)} en consumo y propinas (no cuenta en tu ROI).</p>
+              <p className="text-[11px] text-gray-400 mt-2">Además gastaste {cop(t.expenses)} en consumo y propinas (no cuenta en tu ROI).</p>
             )}
           </>
         ) : (
-          <div className="grid grid-cols-2 gap-3">
-            <Stat label="Horas en mesa" value={`${t.hours} h`} big />
-            <Stat label="Visitas" value={`${t.visits}`} big />
-            <Stat label="Sesiones cash" value={`${t.cash_sessions}`} />
-            <Stat label="Torneos" value={`${t.tournaments}`} />
-          </div>
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              <Stat label="Horas en mesa" value={`${t.hours} h`} big />
+              <Stat label="Visitas" value={`${t.visits}`} big />
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 bg-gray-800/40 border border-gray-700/50 rounded-2xl p-4">
+              <Detail label="Sesiones cash" value={`${t.cash_sessions}`} />
+              <Detail label="Torneos" value={`${t.tournaments}`} />
+            </div>
+          </>
         )}
       </section>
 
@@ -566,7 +576,7 @@ function HistoryTab() {
           </div>
           <ProfitSparkline points={neg ? activityCurve : curve}
             label={neg ? 'Constancia acumulada' : 'Resultado acumulado'} />
-          <p className="text-[10px] text-gray-500 mt-1.5">
+          <p className="text-[10px] text-gray-400 mt-1.5">
             {neg ? 'Tu presencia en el club, de tu primera noche a la última' : 'Resultado acumulado, de tu primera noche a la última'}
           </p>
         </div>
@@ -654,7 +664,7 @@ function AchievementsTab() {
       <div className="grid grid-cols-2 gap-3">
         {data.badges.map((b, i) => <BadgeCard key={b.key} badge={b} isNew={fresh.includes(b.key)} i={i} />)}
       </div>
-      <p className="text-[11px] text-gray-500 text-center">Los logros se ganan jugando: cada visita cuenta.</p>
+      <p className="text-[11px] text-gray-400 text-center">Los logros se ganan jugando: cada visita cuenta.</p>
     </div>
   );
 }
@@ -667,13 +677,13 @@ const BadgeCard = ({ badge, isNew, i = 0 }) => {
       {isNew && <span className="absolute -top-2 right-2 text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-yellow-400 text-black">¡Nuevo!</span>}
       <p className={`text-3xl ${badge.achieved ? '' : 'grayscale opacity-40'}`}>{badge.emoji}</p>
       <p className={`mt-1 font-black text-sm ${badge.achieved ? 'text-white' : 'text-gray-400'}`}>{badge.name}</p>
-      <p className="text-[10px] text-gray-500 leading-tight mt-0.5">{badge.description}</p>
+      <p className="text-[10px] text-gray-400 leading-tight mt-0.5">{badge.description}</p>
       {!badge.achieved && badge.progress.target > 1 && (
         <>
           <div className="mt-2 h-1.5 rounded-full bg-gray-700/70 overflow-hidden">
             <div className="rf-bar h-full bg-gray-500 rounded-full" style={{ width: `${pct}%` }} />
           </div>
-          <p className="text-[9px] text-gray-500 mt-1 font-bold nums">{badge.progress.current} / {badge.progress.target}</p>
+          <p className="text-[9px] text-gray-400 mt-1 font-bold nums">{badge.progress.current} / {badge.progress.target}</p>
         </>
       )}
     </div>
@@ -738,10 +748,11 @@ function RankingTab() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <button onClick={() => move(-1)} className="rf-tap px-3 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 font-bold">‹</button>
+        <button onClick={() => move(-1)} aria-label="Mes anterior"
+          className="rf-tap px-4 py-2 text-lg leading-none rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 font-bold">‹</button>
         <h2 className="text-sm font-black text-white uppercase tracking-widest">{mes} <span className="nums">{data.period.year}</span></h2>
-        <button onClick={() => move(1)} disabled={isCurrent}
-          className="rf-tap px-3 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 font-bold disabled:opacity-30">›</button>
+        <button onClick={() => move(1)} disabled={isCurrent} aria-label="Mes siguiente"
+          className="rf-tap px-4 py-2 text-lg leading-none rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 font-bold disabled:opacity-30">›</button>
       </div>
 
       {data.winners?.rank === 1 && (
@@ -774,7 +785,7 @@ function RankingTab() {
         );
       })}
 
-      <p className="text-[11px] text-gray-500 text-center">Ves solo tu posición — los números de los demás son privados, como los tuyos.</p>
+      <p className="text-[11px] text-gray-400 text-center">Ves solo tu posición — los números de los demás son privados, como los tuyos.</p>
     </div>
   );
 }
@@ -783,5 +794,14 @@ const Stat = ({ label, value, tone, big }) => (
   <div className={`rounded-2xl p-4 border ${tone === 'good' ? 'bg-emerald-900/20 border-emerald-600/40' : tone === 'bad' ? 'bg-red-900/15 border-red-700/40' : 'bg-gray-800/50 border-gray-700/60'}`}>
     <p className="text-[11px] text-gray-400 font-bold uppercase tracking-wide">{label}</p>
     <p className={`mt-1 font-black nums leading-tight ${big ? 'text-2xl' : 'text-xl'} ${tone === 'good' ? 'text-emerald-300' : tone === 'bad' ? 'text-red-300' : 'text-white'}`}>{value}</p>
+  </div>
+);
+
+// Métrica secundaria: vive agrupada dentro de una card (sin caja propia), para
+// no competir con las métricas-héroe. Glanceable, cifras con tabular-nums.
+const Detail = ({ label, value }) => (
+  <div className="min-w-0">
+    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wide truncate">{label}</p>
+    <p className="mt-0.5 text-base font-black text-white nums truncate">{value}</p>
   </div>
 );
