@@ -406,7 +406,7 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
   </div>
   {/* 👆👆 FIN DEL CAMBIO 👆👆 */}
 
-  <div className="flex gap-2 text-[10px] mt-0.5 items-center">
+  <div className="flex flex-wrap gap-2 text-[10px] mt-0.5 items-center">
       {p.is_vip && <span className="shrink-0 whitespace-nowrap bg-cyan-500/15 border border-cyan-500/40 text-cyan-300 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider" title="Pilar del club — jugador VIP. Atenderlo bien.">💎 VIP</span>}
       {buyins.length > 1 && <span className="text-emerald-400 font-mono">{buyins.length} entradas</span>}
       {p.total_jackpot > 0 && <span className="text-purple-400 font-bold">🎁 Jackpot</span>}
