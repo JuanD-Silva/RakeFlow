@@ -11,7 +11,7 @@ from sqlalchemy.future import select
 from typing import List, Optional
 from datetime import datetime, timedelta
 
-from .. import models, schemas, auth_utils
+from .. import models, schemas, auth_utils, player_stats
 from ..dependencies import get_db, get_current_club, require_role
 from ..audit import log_action, AuditAction
 from ..phone_utils import normalize_phone
@@ -77,12 +77,16 @@ async def read_players(skip: int = 0, limit: int = 10000, db: AsyncSession = Dep
     )
 
     rows = (await db.execute(query)).all()
+    # Estatus VIP (pilar por volumen) para que el staff sepa a quién atender: se
+    # computa UNA vez por club (cacheado) y se marca por jugador. Solo el booleano.
+    standings = await player_stats.compute_club_standings(db, current_club.id)
     out = []
     for player, hashed_password in rows:
         resp = schemas.PlayerResponse.model_validate(player)
         resp.has_account = player.user_id is not None
         resp.invitation_pending = player.user_id is not None and hashed_password is None
         resp.history_unlocked = player.stats_since is None
+        resp.is_vip = player_stats.is_vip(standings, player.id)
         out.append(resp)
     return out
 

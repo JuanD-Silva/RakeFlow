@@ -117,11 +117,20 @@ export default function PlayerWorkspace() {
   // El club protagoniza el header: el jugador es cliente del CLUB, no del SaaS.
   // Se lo pasamos a HomeTab para no duplicar el GET /player/club-info.
   const { data: club, error: clubError } = usePlayerResource(playerSelfService.getClubInfo);
+  // El perfil se sube acá (un solo fetch, se pasa a HomeTab): además de alimentar
+  // el Inicio, decide el AURA VIP que envuelve TODA la pantalla del pilar del club.
+  const { data: profile, loadedOnce: profileLoaded, error: profileError } = usePlayerResource(playerSelfService.getProfile);
+  const isVip = !!profile?.is_vip;
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#0b1220] via-[#0a0f1a] to-black text-gray-100 font-sans">
-      {/* pb reserva el alto de la nav + el home-indicator del iPhone (safe-area) */}
-      <div className="max-w-md mx-auto px-4 py-6 pb-[calc(6.5rem+env(safe-area-inset-bottom))] min-h-screen flex flex-col">
+    <div className={`relative min-h-screen text-gray-100 font-sans ${isVip ? 'rf-aura' : 'bg-gradient-to-b from-[#0b1220] via-[#0a0f1a] to-black'}`}>
+      {/* Aura VIP: halo dorado que respira en los bordes de toda la pantalla. */}
+      {isVip && <div className="pointer-events-none fixed inset-0 z-0 rf-aura-ring" aria-hidden="true" />}
+      {/* pb reserva el alto de la nav + el home-indicator del iPhone (safe-area).
+          `relative` SIN z-index: mantiene el contenido sobre el aura-ring por orden
+          de árbol pero NO crea stacking context, así el modal de compartir (z-50)
+          escapa por encima de la bottom-nav (z-20) en vez de quedar atrapado. */}
+      <div className="relative max-w-md mx-auto px-4 py-6 pb-[calc(6.5rem+env(safe-area-inset-bottom))] min-h-screen flex flex-col">
         <header className="flex items-center justify-between gap-3 mb-5">
           {/* No es <h1>: el título de contenido de cada tab (ej. "Hola, …") es el
               h1. Acá el club es contexto/marca. En outage sostenido de club-info
@@ -140,7 +149,7 @@ export default function PlayerWorkspace() {
         {/* flex-1 empuja el footer al fondo cuando el contenido es corto (Ranking),
             sin afectar las vistas largas (Inicio). */}
         <div className="flex-1">
-          {tab === 'inicio' && <HomeTab club={club} />}
+          {tab === 'inicio' && <HomeTab club={club} data={profile} loaded={profileLoaded} error={profileError} />}
           {tab === 'historial' && <HistoryTab />}
           {tab === 'logros' && <AchievementsTab />}
           {tab === 'ranking' && <RankingTab />}
@@ -151,7 +160,7 @@ export default function PlayerWorkspace() {
         </footer>
       </div>
 
-      <nav className="fixed bottom-0 inset-x-0 bg-[#0a0f1a]/95 backdrop-blur border-t border-gray-800 pb-[env(safe-area-inset-bottom)]">
+      <nav className="fixed bottom-0 inset-x-0 z-20 bg-[#0a0f1a]/95 backdrop-blur border-t border-gray-800 pb-[env(safe-area-inset-bottom)]">
         <div className="max-w-md mx-auto grid grid-cols-4">
           {TABS.map((t) => {
             const active = tab === t.key;
@@ -249,12 +258,11 @@ const EmptyState = ({ emoji, title, subtitle }) => (
 // ---------------------------------------------------------
 // Inicio: nivel, racha, el mes, totales, archivo y club
 // ---------------------------------------------------------
-function HomeTab({ club }) {
-  const { data, loadedOnce, error } = usePlayerResource(playerSelfService.getProfile);
+function HomeTab({ club, data, loaded, error }) {
   const { data: challengeData } = usePlayerResource(playerSelfService.getChallenge);
   const { data: highlightData } = usePlayerResource(playerSelfService.getHighlight);
   const [showShare, setShowShare] = useState(false);
-  if (!loadedOnce) return error ? <Reconnecting /> : <HomeSkeleton />;
+  if (!loaded) return error ? <Reconnecting /> : <HomeSkeleton />;
   if (!data) return null;
 
   const t = data.totals;
@@ -264,8 +272,38 @@ function HomeTab({ club }) {
   const challenge = challengeData?.challenge || null;
   const highlight = highlightData?.highlight || null;
 
+  // Compartir el estatus VIP por WhatsApp (presumir el "Miembro distinguido", sin
+  // monto — igual que el resto del panel). Web Share nativo con fallback a wa.me.
+  const shareVip = async () => {
+    const clubName = club?.club_name || 'mi club';
+    const text = `💎 Soy Miembro distinguido de ${clubName} — uno de los pilares del club 🃏`;
+    const url = 'https://rakeflow.site';
+    const wa = () => window.open(`https://wa.me/?text=${encodeURIComponent(`${text} ${url}`)}`, '_blank', 'noopener');
+    if (navigator.share) {
+      // cancel del usuario (AbortError) → nada; cualquier otro fallo → fallback wa.me
+      try { await navigator.share({ text, url }); } catch (e) { if (e?.name !== 'AbortError') wa(); }
+    } else {
+      wa();
+    }
+  };
+
   return (
     <div className="space-y-4">
+      {/* Distinción VIP (pilar del club). Es lo PRIMERO que ve: se siente importante.
+          Reconocimiento, no plata — jamás muestra el volumen (no premiamos el gasto
+          a la vista). Solo aparece si el backend lo marca (top del club por volumen). */}
+      {data.is_vip && (
+        <button onClick={shareVip} aria-label="Compartir mi estatus de Miembro distinguido"
+          className="rf-tap rf-in relative overflow-hidden w-full text-left rounded-2xl border border-cyan-400/50 bg-gradient-to-r from-cyan-500/25 via-sky-500/10 to-blue-500/15 px-4 py-3 flex items-center gap-3 shadow-lg shadow-cyan-900/20">
+          <span className="text-2xl shrink-0">💎</span>
+          <span className="min-w-0 flex-1 block">
+            <span className="block text-cyan-200 font-black tracking-wide text-sm leading-tight">Miembro distinguido</span>
+            <span className="block text-[11px] text-cyan-100/70 font-bold leading-tight">Uno de los pilares {club?.club_name ? `de ${club.club_name}` : 'del club'}</span>
+          </span>
+          <span className="shrink-0 text-[10px] font-black uppercase tracking-wide text-cyan-300/90 whitespace-nowrap">📤 Compartir</span>
+        </button>
+      )}
+
       {/* Apertura (peak-end): glow atmosférico + nivel como métrica-héroe grande.
           Los tiers son la palanca de retención del jugador recreativo → protagonista. */}
       <div className="relative rf-glow pt-1">

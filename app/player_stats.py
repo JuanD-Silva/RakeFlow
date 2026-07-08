@@ -126,7 +126,9 @@ def self_compare_stats(cash_rows: list[dict], tour_rows: list[dict], today=None)
 def tournament_investment(t: models.Tournament, p: models.TournamentPlayer) -> float:
     """Inversión total del jugador en un torneo. rebuys_count/addons_count son
     TOTALES (singles + dobles): singles = total − dobles, cada uno a su precio.
-    Incluye tips (misma definición que usan los rankings desde siempre)."""
+    Incluye tips (misma definición que usan los rankings desde siempre).
+    ESPEJO: hay una réplica en SQL de esta fórmula en compute_club_standings
+    (volumen de torneo para el estatus VIP) — si tocás una, tocá la otra."""
     single_rebuys = max(0, (p.rebuys_count or 0) - (p.double_rebuys_count or 0))
     single_addons = max(0, (p.addons_count or 0) - (p.double_addons_count or 0))
     return t.buyin_amount + \
@@ -351,9 +353,65 @@ async def compute_club_standings(db: AsyncSession, club_id: int) -> dict:
     for r in weeks:
         constancy_map[r.pid] = int(r.weeks or 0)
 
-    result = {"hours": hours_map, "visits": visits_map, "constancy": constancy_map}
+    # Volumen histórico = cuánto MUEVE el jugador (base del estatus VIP). Cash:
+    # BUYIN+REBUY sobre sesiones CERRADAS (mismo criterio que horas/visitas arriba).
+    # Torneo: réplica exacta de tournament_investment() (ver su def ~L126) — ESPEJO:
+    # si se toca la fórmula singles/dobles en una, tocar la otra. Es monetario y
+    # NUNCA se expone crudo al jugador ni al staff: solo decide el booleano is_vip
+    # (para no premiar el gasto a la vista).
+    volume_map: dict[int, float] = {}
+    vcash = (await db.execute(text("""
+        SELECT t.player_id AS pid, SUM(t.amount) AS vol
+        FROM transactions t JOIN sessions s ON t.session_id = s.id
+        WHERE s.club_id = :cid AND s.status = 'CLOSED'
+              AND CAST(t.type AS TEXT) IN ('BUYIN','REBUY')
+              AND t.player_id IS NOT NULL
+        GROUP BY t.player_id
+    """), {"cid": club_id})).all()
+    for r in vcash:
+        volume_map[r.pid] = float(r.vol or 0)
+    vtour = (await db.execute(text("""
+        SELECT tp.player_id AS pid, SUM(
+            t.buyin_amount
+            + COALESCE(tp.tips_count, 0) * COALESCE(t.dealer_tip_amount, 0)
+            + GREATEST(0, COALESCE(tp.rebuys_count, 0) - COALESCE(tp.double_rebuys_count, 0)) * COALESCE(t.rebuy_price, 0)
+            + COALESCE(tp.double_rebuys_count, 0) * COALESCE(t.double_rebuy_price, 0)
+            + GREATEST(0, COALESCE(tp.addons_count, 0) - COALESCE(tp.double_addons_count, 0)) * COALESCE(t.addon_price, 0)
+            + COALESCE(tp.double_addons_count, 0) * COALESCE(t.double_addon_price, 0)
+        ) AS vol
+        FROM tournament_players tp JOIN tournaments t ON t.id = tp.tournament_id
+        WHERE t.club_id = :cid AND tp.player_id IS NOT NULL
+        GROUP BY tp.player_id
+    """), {"cid": club_id})).all()
+    for r in vtour:
+        volume_map[r.pid] = volume_map.get(r.pid, 0.0) + float(r.vol or 0)
+
+    result = {"hours": hours_map, "visits": visits_map,
+              "constancy": constancy_map, "volume": volume_map}
     _STANDINGS_CACHE[club_id] = (time.monotonic(), result)
     return result
+
+
+def is_vip(standings: dict, player_id: int, top_pct: int = 10,
+           min_visits: int = 5, min_players: int = 10) -> bool:
+    """VIP = 'pilar' del club: entre el top `top_pct`% por VOLUMEN histórico (cuánto
+    mueve), con un piso de fidelidad (`min_visits`) para no coronar a un turista de
+    un solo buy-in grande. Requiere un club con suficientes jugadores (`min_players`)
+    para que un percentil tenga sentido. Relativo al club (multi-tenant). El valor
+    del volumen jamás sale de acá: solo el booleano (no se premia el gasto a la vista)."""
+    vol_map = standings.get("volume", {})
+    vol = vol_map.get(player_id, 0)
+    if not vol or vol <= 0:
+        return False
+    if standings.get("visits", {}).get(player_id, 0) < min_visits:
+        return False
+    values = [v for v in vol_map.values() if v and v > 0]
+    total = len(values)
+    if total < min_players:
+        return False
+    rank = 1 + sum(1 for v in values if v > vol)   # competition ranking
+    pct = max(1, -(-rank * 100 // total))          # ceil(rank/total*100)
+    return pct <= top_pct
 
 
 def best_highlight(standings: dict, player_id: int, threshold_pct: int = 33,
