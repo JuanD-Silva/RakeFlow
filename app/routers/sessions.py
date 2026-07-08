@@ -14,7 +14,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Importamos modelos y esquemas
-from .. import models, schemas, services
+from .. import models, schemas, services, player_stats
 # Importamos las dependencias SaaS
 from ..dependencies import get_db, get_current_club, require_role
 from ..audit import log_action, AuditAction
@@ -169,16 +169,22 @@ async def _build_players_stats(db: AsyncSession, session: models.Session) -> dic
     result = await db.execute(sql, {"sid": session.id})
     rows = result.fetchall()
 
+    # Estatus VIP (pilar del club por volumen) para distinguir a los jugadores clave
+    # EN LA MESA mientras juegan. Solo el booleano; standings cacheado por club. Sin
+    # gate de pago: el staff ve a todos los pilares (igual que el directorio).
+    standings = await player_stats.compute_club_standings(db, session.club_id)
+
     # 3. INICIALIZAR EL DICCIONARIO
     players_map = {}
-    
+
     for r in rows:
         # 👇 Fórmula Contable Actualizada: El bono suma al balance del jugador
         balance = (r.total_cashout + r.total_jackpot + r.total_bonus) - r.total_buyin - r.total_spend
-        
+
         players_map[r.player_id] = {
             "player_id": r.player_id,
             "name": r.name,
+            "is_vip": player_stats.is_vip(standings, r.player_id),
             "phone": r.phone,
             "total_buyin": r.total_buyin,
             "total_cashout": r.total_cashout,
