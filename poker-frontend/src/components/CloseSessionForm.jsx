@@ -126,7 +126,7 @@ export default function CloseSessionForm({ sessionId, onSuccess }) {
           {/* RAKE NETO (monitoreo: bruto - gastos) */}
           {(closureReport.dealer_cost > 0 || closureReport.courtesy_cost > 0) && (
             <div className="flex justify-between items-center text-gray-300 border-t border-gray-700 pt-2">
-              <span className="text-xs uppercase tracking-wider">Rake neto (− gastos):</span>
+              <span className="text-xs uppercase tracking-wider">Rake neto (− egresos):</span>
               <span className="font-mono font-bold">{formatMoney(closureReport.net_rake)}</span>
             </div>
           )}
