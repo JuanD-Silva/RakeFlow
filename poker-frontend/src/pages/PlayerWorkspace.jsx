@@ -4,6 +4,7 @@ import { playerSelfService } from '../api/services';
 import { useAuth } from '../context/AuthContext';
 import ProfitSparkline from '../components/ProfitSparkline';
 import PlayerShareCard from '../components/PlayerShareCard';
+import AchievementShareCard from '../components/AchievementShareCard';
 import { cop, signCop, fmtDate, monthName } from '../utils/formatters';
 
 // Panel del Jugador (clon estructural de DealerWorkspace: móvil-first, max-w-md,
@@ -151,7 +152,7 @@ export default function PlayerWorkspace() {
         <div className="flex-1">
           {tab === 'inicio' && <HomeTab club={club} data={profile} loaded={profileLoaded} error={profileError} />}
           {tab === 'historial' && <HistoryTab />}
-          {tab === 'logros' && <AchievementsTab />}
+          {tab === 'logros' && <AchievementsTab club={club} profile={profile} />}
           {tab === 'ranking' && <RankingTab />}
         </div>
 
@@ -262,6 +263,8 @@ function HomeTab({ club, data, loaded, error }) {
   const { data: challengeData } = usePlayerResource(playerSelfService.getChallenge);
   const { data: highlightData } = usePlayerResource(playerSelfService.getHighlight);
   const [showShare, setShowShare] = useState(false);
+  const [showVipShare, setShowVipShare] = useState(false);
+  const [showChallengeShare, setShowChallengeShare] = useState(false);
   if (!loaded) return error ? <Reconnecting /> : <HomeSkeleton />;
   if (!data) return null;
 
@@ -271,21 +274,7 @@ function HomeTab({ club, data, loaded, error }) {
   const sc = data.self_compare || {};
   const challenge = challengeData?.challenge || null;
   const highlight = highlightData?.highlight || null;
-
-  // Compartir el estatus VIP por WhatsApp (presumir el "Miembro distinguido", sin
-  // monto — igual que el resto del panel). Web Share nativo con fallback a wa.me.
-  const shareVip = async () => {
-    const clubName = club?.club_name || 'mi club';
-    const text = `💎 Soy Miembro distinguido de ${clubName} — uno de los pilares del club 🃏`;
-    const url = 'https://rakeflow.site';
-    const wa = () => window.open(`https://wa.me/?text=${encodeURIComponent(`${text} ${url}`)}`, '_blank', 'noopener');
-    if (navigator.share) {
-      // cancel del usuario (AbortError) → nada; cualquier otro fallo → fallback wa.me
-      try { await navigator.share({ text, url }); } catch (e) { if (e?.name !== 'AbortError') wa(); }
-    } else {
-      wa();
-    }
-  };
+  const clubName = club?.club_name;
 
   return (
     <div className="space-y-4">
@@ -293,7 +282,7 @@ function HomeTab({ club, data, loaded, error }) {
           Reconocimiento, no plata — jamás muestra el volumen (no premiamos el gasto
           a la vista). Solo aparece si el backend lo marca (top del club por volumen). */}
       {data.is_vip && (
-        <button onClick={shareVip} aria-label="Compartir mi estatus de Miembro distinguido"
+        <button onClick={() => setShowVipShare(true)} aria-label="Compartir mi estatus de Miembro distinguido"
           className="rf-tap rf-in relative overflow-hidden w-full text-left rounded-2xl border border-cyan-400/50 bg-gradient-to-r from-cyan-500/25 via-sky-500/10 to-blue-500/15 px-4 py-3 flex items-center gap-3 shadow-lg shadow-cyan-900/20">
           <span className="text-2xl shrink-0">💎</span>
           <span className="min-w-0 flex-1 block">
@@ -383,6 +372,13 @@ function HomeTab({ club, data, loaded, error }) {
               <p className="text-[11px] text-violet-300/90 font-bold">🎁 {challenge.reward_text}</p>
             )}
           </div>
+          {/* Logrado → presumirlo: card-imagen del reto (no un link). */}
+          {challenge.progress.done && (
+            <button onClick={() => setShowChallengeShare(true)}
+              className="rf-tap w-full mt-3 py-2.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 text-xs font-black uppercase tracking-wide">
+              📤 Compartir mi logro
+            </button>
+          )}
         </Section>
       )}
 
@@ -552,6 +548,30 @@ function HomeTab({ club, data, loaded, error }) {
       )}
 
       {showShare && <PlayerShareCard onClose={() => setShowShare(false)} />}
+      {showVipShare && (
+        <AchievementShareCard
+          accent="vip" tag="Distinción" emoji="💎"
+          kicker="Miembro distinguido"
+          title={data.player_name}
+          subtitle={`Uno de los pilares ${clubName ? `de ${clubName}` : 'del club'}`}
+          clubName={clubName} playerName={data.player_name}
+          shareText={`💎 Miembro distinguido de ${clubName || 'mi club'} — uno de los pilares del club 🃏`}
+          fileSlug="miembro-distinguido"
+          onClose={() => setShowVipShare(false)}
+        />
+      )}
+      {showChallengeShare && challenge && (
+        <AchievementShareCard
+          accent="challenge" tag="Reto" emoji="🎯"
+          kicker="Reto del mes logrado"
+          title={challenge.title}
+          subtitle={challenge.reward_text ? `🎁 ${challenge.reward_text}` : challenge.description}
+          clubName={clubName} playerName={data.player_name}
+          shareText={`🎯 Completé el reto del mes en ${clubName || 'mi club'}: ${challenge.title} 🃏`}
+          fileSlug="reto-del-mes"
+          onClose={() => setShowChallengeShare(false)}
+        />
+      )}
     </div>
   );
 }
@@ -691,10 +711,11 @@ function HistoryTab() {
 // ---------------------------------------------------------
 // Logros: grid de 12 badges + confetti al desbloquear uno nuevo
 // ---------------------------------------------------------
-function AchievementsTab() {
+function AchievementsTab({ club, profile }) {
   const { clubId, userId } = useAuth();
   const { data, loadedOnce, error } = usePlayerResource(playerSelfService.getAchievements);
   const [fresh, setFresh] = useState([]);
+  const [shareBadge, setShareBadge] = useState(null); // badge desbloqueado a presumir
   // Línea base leída UNA vez por montaje: el effect escribe localStorage, y si
   // releyera en cada corrida (StrictMode lo corre doble) se pisaría a sí mismo
   // y el festejo no saldría nunca. null = primera visita en este dispositivo.
@@ -743,14 +764,28 @@ function AchievementsTab() {
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        {data.badges.map((b, i) => <BadgeCard key={b.key} badge={b} isNew={fresh.includes(b.key)} i={i} />)}
+        {/* onShare solo cuando el perfil cargó: la card lleva el nombre del jugador
+            (a diferencia del VIP/reto, acá el nombre viene de profile, no de data). */}
+        {data.badges.map((b, i) => <BadgeCard key={b.key} badge={b} isNew={fresh.includes(b.key)} i={i} onShare={profile?.player_name ? setShareBadge : undefined} />)}
       </div>
       <p className="text-[11px] text-gray-400 text-center">Los logros se ganan jugando: cada visita cuenta.</p>
+      {shareBadge && (
+        <AchievementShareCard
+          accent="badge" tag="Logro" emoji={shareBadge.emoji}
+          kicker="Logro desbloqueado"
+          title={shareBadge.name}
+          subtitle={shareBadge.description}
+          clubName={club?.club_name} playerName={profile?.player_name}
+          shareText={`🏆 Desbloqueé "${shareBadge.name}" en ${club?.club_name || 'mi club'} 🃏`}
+          fileSlug={`logro-${shareBadge.key}`}
+          onClose={() => setShareBadge(null)}
+        />
+      )}
     </div>
   );
 }
 
-const BadgeCard = ({ badge, isNew, i = 0 }) => {
+const BadgeCard = ({ badge, isNew, i = 0, onShare }) => {
   const pct = Math.min(100, Math.round((100 * badge.progress.current) / badge.progress.target));
   return (
     <div className={`rf-in relative rounded-2xl p-4 border ${badge.achieved ? 'bg-emerald-900/20 border-emerald-600/40' : 'bg-gray-800/40 border-gray-700/60'} ${isNew ? 'ring-2 ring-yellow-400' : ''}`}
@@ -766,6 +801,13 @@ const BadgeCard = ({ badge, isNew, i = 0 }) => {
           </div>
           <p className="text-[9px] text-gray-400 mt-1 font-bold nums">{badge.progress.current} / {badge.progress.target}</p>
         </>
+      )}
+      {/* Desbloqueado → se puede presumir como card-imagen. */}
+      {badge.achieved && onShare && (
+        <button onClick={() => onShare(badge)} aria-label={`Compartir logro ${badge.name}`}
+          className="rf-tap mt-2 inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wide text-emerald-300/90 hover:text-emerald-200">
+          📤 Compartir
+        </button>
       )}
     </div>
   );
