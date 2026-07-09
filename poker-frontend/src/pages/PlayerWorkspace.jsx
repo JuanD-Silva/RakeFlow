@@ -265,6 +265,9 @@ function HomeTab({ club, data, loaded, error }) {
   const [showShare, setShowShare] = useState(false);
   const [showVipShare, setShowVipShare] = useState(false);
   const [showChallengeShare, setShowChallengeShare] = useState(false);
+  // Escalonado: tramo cumplido que se está compartiendo (o null). Deja presumir
+  // cada meta apenas se logra, no solo al terminar todo el reto.
+  const [shareTier, setShareTier] = useState(null);
   if (!loaded) return error ? <Reconnecting /> : <HomeSkeleton />;
   if (!data) return null;
 
@@ -389,15 +392,24 @@ function HomeTab({ club, data, loaded, error }) {
                   </span>
                   <span className="nums font-bold shrink-0">{t.target} {challenge.metric}</span>
                   {t.reward && <span className="text-gray-500 truncate">· 🎁 {t.reward}</span>}
+                  {t.done && (
+                    <button onClick={() => setShareTier(t)}
+                      aria-label={`Compartir mi logro de ${t.target} ${challenge.metric}`}
+                      className="rf-tap ml-auto shrink-0 text-emerald-300/90 hover:text-emerald-200 px-1.5 -my-1">📤</button>
+                  )}
                 </li>
               ))}
             </ul>
           )}
-          {/* Logrado → presumirlo: card-imagen del reto (no un link). */}
+          {/* Logrado → presumirlo: card-imagen del reto (no un link). En escalonado
+              comparte el reto completo (tramo tope); cada tramo suelto se comparte
+              desde su fila del checklist. */}
           {challenge.progress.done && (
-            <button onClick={() => setShowChallengeShare(true)}
+            <button onClick={() => (challenge.tiers
+              ? setShareTier(challenge.tiers[challenge.tiers.length - 1])
+              : setShowChallengeShare(true))}
               className="rf-tap w-full mt-3 py-2.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 text-xs font-black uppercase tracking-wide">
-              📤 Compartir mi logro
+              📤 {challenge.tiers ? 'Compartir el reto completo' : 'Compartir mi logro'}
             </button>
           )}
         </Section>
@@ -597,6 +609,20 @@ function HomeTab({ club, data, loaded, error }) {
           shareText={`🎯 Completé el reto del mes en ${clubName || 'mi club'}: ${challenge.title} 🃏`}
           fileSlug="reto-del-mes"
           onClose={() => setShowChallengeShare(false)}
+        />
+      )}
+      {shareTier && challenge && (
+        <AchievementShareCard
+          accent="challenge" tag="Reto" emoji="🎯"
+          kicker={challenge.tiers && challenge.progress.done
+            && shareTier.target === challenge.tiers[challenge.tiers.length - 1].target
+            ? 'Reto del mes completado' : 'Meta del reto lograda'}
+          title={challenge.title}
+          subtitle={`${shareTier.target} ${challenge.metric}${shareTier.reward ? ` · 🎁 ${shareTier.reward}` : ''}`}
+          clubName={clubName} playerName={data.player_name}
+          shareText={`🎯 Logré ${shareTier.target} ${challenge.metric} en el reto de ${clubName || 'mi club'}: ${challenge.title} 🃏`}
+          fileSlug="reto-del-mes"
+          onClose={() => setShareTier(null)}
         />
       )}
     </div>
