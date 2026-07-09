@@ -764,7 +764,9 @@ function AchievementsTab({ club, profile }) {
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        {data.badges.map((b, i) => <BadgeCard key={b.key} badge={b} isNew={fresh.includes(b.key)} i={i} onShare={setShareBadge} />)}
+        {/* onShare solo cuando el perfil cargó: la card lleva el nombre del jugador
+            (a diferencia del VIP/reto, acá el nombre viene de profile, no de data). */}
+        {data.badges.map((b, i) => <BadgeCard key={b.key} badge={b} isNew={fresh.includes(b.key)} i={i} onShare={profile?.player_name ? setShareBadge : undefined} />)}
       </div>
       <p className="text-[11px] text-gray-400 text-center">Los logros se ganan jugando: cada visita cuenta.</p>
       {shareBadge && (
