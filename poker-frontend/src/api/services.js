@@ -127,6 +127,8 @@ export const playerService = {
         (await api.post(`/players/${playerId}/unlock-history`)).data,
     // CRM del directorio (OWNER/MANAGER): recencia + valor por jugador
     insights: async () => (await api.get('/players/insights')).data,
+    // Ficha 360 de un jugador (OWNER/MANAGER): totales + 6 meses + últimas jugadas
+    insightsDetail: async (playerId) => (await api.get(`/players/${playerId}/insights`)).data,
 
    create: async (data, phone = null) => {
         // Lógica inteligente:

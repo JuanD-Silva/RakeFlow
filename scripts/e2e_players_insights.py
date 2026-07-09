@@ -78,6 +78,26 @@ with httpx.Client(base_url=BASE, timeout=20) as c:
         check("p1 vino hoy (days_inactive 0)", i1["days_inactive"] == 0)
         check("p1 last_visit presente", bool(i1["last_visit"]))
 
+    # --- FICHA 360: GET /players/{id}/insights ---
+    r = c.get(f"/players/{p1['id']}/insights", headers=h)
+    check("ficha p1 200", r.status_code == 200)
+    f1 = r.json()
+    ft = f1["totals"]
+    check("ficha visitas 1", ft["visits"] == 1)
+    check("ficha invested 100k", ft["invested"] == 100000)
+    check("ficha returned 250k", ft["returned"] == 250000)
+    check("ficha net +150k", ft["net"] == 150000)
+    check("ficha rake_est 10k", abs(ft["rake_est"] - 10000) <= 100)
+    check("ficha cliente desde hoy", ft["first_visit"] == ft["last_visit"] and ft["days_inactive"] == 0)
+    check("ficha monthly 6 meses", len(f1["monthly"]) == 6)
+    check("ficha mes actual 1 visita", f1["monthly"][-1]["visits"] == 1)
+    check("ficha recent 1 jugada", len(f1["recent"]) == 1 and f1["recent"][0]["kind"] == "cash")
+    check("ficha recent net +150k", f1["recent"][0]["net"] == 150000)
+    r = c.get(f"/players/{p3['id']}/insights", headers=h)
+    check("ficha sin actividad 200 + ceros", r.status_code == 200 and r.json()["totals"]["visits"] == 0)
+    r = c.get(f"/players/{p1['id']}/insights")
+    check("ficha sin token => 401", r.status_code == 401)
+
     # Tenant: otro club NO ve nada de este.
     h2 = register_login(c, "Club Ajeno", f"ajeno_{suffix}@test.local")
     r = c.get("/players/insights", headers=h2)
@@ -85,6 +105,8 @@ with httpx.Client(base_url=BASE, timeout=20) as c:
     d2 = r.json()
     check("tenant: sin jugadores del otro club", d2["players"] == {})
     check("tenant: yield 0 sin volumen", d2["yield_pct"] == 0)
+    r = c.get(f"/players/{p1['id']}/insights", headers=h2)
+    check("tenant: ficha de jugador ajeno => 404", r.status_code == 404)
 
 print(f"\ne2e players insights: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
