@@ -144,7 +144,7 @@ export default function CloseSessionForm({ sessionId, onSuccess }) {
           </div>
           {closureReport.partner_profit < 0 && (
             <p className="text-[9px] text-red-400/80 text-left italic">
-              ⚠️ Los gastos (dealers + cortesías) superaron el rake disponible para socios esta sesión.
+              ⚠️ Los egresos (dealers + cortesías) superaron el rake disponible para socios esta sesión.
             </p>
           )}
 
