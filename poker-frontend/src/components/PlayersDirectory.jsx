@@ -3,6 +3,8 @@ import { MagnifyingGlassIcon } from '@heroicons/react/24/solid';
 import { playerService } from '../api/services';
 import { useAuth } from '../context/AuthContext';
 import PlayerAppAccount from './PlayerAppAccount';
+import PlayerProfileModal from './PlayerProfileModal';
+import { mcop, segmentOf, waPhone } from '../utils/crm';
 
 // ---------------------------------------------------------
 // Directorio de jugadores = CRM del club. Además de invitar a la app (sin
@@ -18,34 +20,6 @@ const PAGE = 40;
 
 // Búsqueda insensible a tildes: "sebastian" encuentra "Sebastián"
 const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-
-// Espejo de app/phone_utils.normalize_phone: dígitos + indicativo CO si faltara
-// (los teléfonos creados en mesa suelen venir sin el 57 → wa.me roto si va crudo).
-const waPhone = (raw) => {
-  let d = (raw || '').replace(/\D/g, '');
-  if (!d) return null;
-  if (d.length === 10) d = '57' + d;
-  else if (d.startsWith('0057')) d = d.slice(2);
-  return d;
-};
-
-// Dinero compacto para la línea de stats ($2,3M / $850k / $900)
-const mcop = (n) => {
-  const v = Math.abs(Math.round(n || 0));
-  if (v >= 1e6) return '$' + (v / 1e6).toLocaleString('es-CO', { maximumFractionDigits: 1 }) + 'M';
-  if (v >= 1e3) return '$' + Math.round(v / 1e3).toLocaleString('es-CO') + 'k';
-  return '$' + v.toLocaleString('es-CO');
-};
-
-// Semáforo de recencia (mismos cortes que el análisis de negocio):
-// ≤14 activo · 15–30 tibio · 31–60 enfriándose · >60 dormido.
-const segmentOf = (days) => {
-  if (days == null) return null;
-  if (days <= 14) return { emoji: '🔥', cls: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30' };
-  if (days <= 30) return { emoji: '🌗', cls: 'bg-yellow-500/10 text-yellow-300 border-yellow-500/30' };
-  if (days <= 60) return { emoji: '🧊', cls: 'bg-sky-500/10 text-sky-300 border-sky-500/30' };
-  return { emoji: '😴', cls: 'bg-red-500/10 text-red-300/90 border-red-500/25' };
-};
 
 const ACCOUNT_FILTERS = [
   { key: 'all', label: 'Todos' },
@@ -94,6 +68,7 @@ export default function PlayersDirectory() {
   const [filter, setFilter] = useState('all');
   const [sort, setSort] = useState('name');
   const [shown, setShown] = useState(PAGE);
+  const [profileOf, setProfileOf] = useState(null); // jugador con la ficha 360 abierta
 
   const [reloadKey, setReloadKey] = useState(0);
   const load = () => setReloadKey((k) => k + 1); // para onChanged/reintentar
@@ -227,8 +202,15 @@ export default function PlayersDirectory() {
           return (
             <div key={p.id} className="bg-gray-800/60 border border-gray-700/60 rounded-xl px-4 py-3">
               <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-white font-bold truncate">{p.name}</p>
+                <div className="min-w-0 flex-1">
+                  {canManageApp ? (
+                    <button onClick={() => setProfileOf(p)} className="block w-full text-left group"
+                      aria-label={`Ver ficha de ${p.name}`}>
+                      <p className="text-white font-bold truncate group-hover:text-emerald-300 transition-colors">{p.name} <span className="text-gray-600 text-xs font-normal">›</span></p>
+                    </button>
+                  ) : (
+                    <p className="text-white font-bold truncate">{p.name}</p>
+                  )}
                   <p className="text-xs text-gray-500 font-mono">
                     {p.phone || 'sin teléfono'}
                     {wa && (
@@ -283,6 +265,8 @@ export default function PlayersDirectory() {
           );
         })}
       </div>
+
+      {profileOf && <PlayerProfileModal key={profileOf.id} player={profileOf} onClose={() => setProfileOf(null)} />}
 
       {filtered.length > shown && (
         <button onClick={() => setShown((n) => n + PAGE)}

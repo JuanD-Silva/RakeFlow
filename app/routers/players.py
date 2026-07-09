@@ -91,6 +91,23 @@ async def read_players(skip: int = 0, limit: int = 10000, db: AsyncSession = Dep
     return out
 
 
+async def _club_rake_yield(db: AsyncSession, club_id: int, volume_map: dict) -> float:
+    """Yield de rake del club = rake total (cash declarado + torneo estimado) /
+    volumen total movido. Base del 'rake aportado (est.)' por jugador — estimado
+    porque el rake real se declara por sesión, no por jugador."""
+    cash_rake = (await db.execute(text(
+        "SELECT COALESCE(SUM(declared_rake_cash), 0) FROM sessions WHERE club_id = :cid"
+    ), {"cid": club_id})).scalar() or 0
+    tour_rake = (await db.execute(text("""
+        SELECT COALESCE(SUM(t.amount * tr.rake_percentage / 100.0), 0)
+        FROM transactions t JOIN tournaments tr ON tr.id = t.tournament_id
+        WHERE tr.club_id = :cid
+          AND CAST(t.type AS TEXT) IN ('TOURNAMENT_ENTRY','TOURNAMENT_REBUY','TOURNAMENT_ADDON')
+    """), {"cid": club_id})).scalar() or 0
+    total_volume = sum(v for v in volume_map.values() if v and v > 0)
+    return (float(cash_rake) + float(tour_rake)) / total_volume if total_volume > 0 else 0.0
+
+
 @router.get("/insights")
 async def players_insights(
     db: AsyncSession = Depends(get_db),
@@ -138,19 +155,8 @@ async def players_insights(
     """), {"cid": current_club.id})).all()
     net_map = {r.pid: float(r.net or 0) for r in net_rows}
 
-    # Yield de rake del club = rake total (cash declarado + torneo) / volumen total.
-    cash_rake = (await db.execute(text(
-        "SELECT COALESCE(SUM(declared_rake_cash), 0) FROM sessions WHERE club_id = :cid"
-    ), {"cid": current_club.id})).scalar() or 0
-    tour_rake = (await db.execute(text("""
-        SELECT COALESCE(SUM(t.amount * tr.rake_percentage / 100.0), 0)
-        FROM transactions t JOIN tournaments tr ON tr.id = t.tournament_id
-        WHERE tr.club_id = :cid
-          AND CAST(t.type AS TEXT) IN ('TOURNAMENT_ENTRY','TOURNAMENT_REBUY','TOURNAMENT_ADDON')
-    """), {"cid": current_club.id})).scalar() or 0
     volume_map = standings.get("volume", {})
-    total_volume = sum(v for v in volume_map.values() if v and v > 0)
-    rake_yield = (float(cash_rake) + float(tour_rake)) / total_volume if total_volume > 0 else 0.0
+    rake_yield = await _club_rake_yield(db, current_club.id, volume_map)
 
     today = datetime.now(player_stats.COL_TZ).date()
     ids = set(volume_map) | set(last_map) | set(net_map) | set(standings.get("visits", {}))
@@ -168,6 +174,125 @@ async def players_insights(
             "net": round(net_map.get(pid, 0)),
         }
     return {"yield_pct": round(rake_yield * 100, 1), "players": players_out}
+
+
+@router.get("/{player_id}/insights")
+async def player_insights_detail(
+    player_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+    _: models.User = Depends(require_role([models.UserRole.OWNER, models.UserRole.MANAGER])),
+):
+    """Ficha 360 del jugador para el club (OWNER/MANAGER): totales de su
+    historia, actividad por mes (últimos 6) y sus últimas jugadas. Reusa los
+    mismos row-helpers del panel del jugador pero SIN el corte stats_since:
+    el club ve la historia completa (y el neto acá incluye jackpot/bonus, la
+    misma semántica que ve el propio jugador en su app — el 'deja/retira' de
+    la lista es una aproximación de solo cash)."""
+    player = (await db.execute(
+        select(models.Player).where(
+            models.Player.id == player_id,
+            models.Player.club_id == current_club.id,
+        )
+    )).scalars().first()
+    if not player:
+        raise HTTPException(status_code=404, detail="Jugador no encontrado")
+
+    cash_rows = await player_stats.cash_rows_for_player(db, current_club.id, player.id, None)
+    tour_rows = await player_stats.tournament_rows_for_player(db, current_club.id, player.id, None)
+
+    standings = await player_stats.compute_club_standings(db, current_club.id)
+    volume = float(standings.get("volume", {}).get(player.id, 0) or 0)
+    rake_yield = await _club_rake_yield(db, current_club.id, standings.get("volume", {}))
+
+    # Primera/última visita (incluye mesas ABIERTAS y torneos; fecha Colombia) —
+    # mismo criterio que la lista, para que la ficha y la card digan lo mismo.
+    fr = (await db.execute(text("""
+        SELECT MIN(d) AS first_d, MAX(d) AS last_d FROM (
+          SELECT ((s.start_time AT TIME ZONE 'UTC') AT TIME ZONE 'America/Bogota')::date AS d
+          FROM transactions t JOIN sessions s ON s.id = t.session_id
+          WHERE s.club_id = :cid AND t.player_id = :pid
+          UNION ALL
+          SELECT ((tr.start_time AT TIME ZONE 'UTC') AT TIME ZONE 'America/Bogota')::date
+          FROM tournament_players tp JOIN tournaments tr ON tr.id = tp.tournament_id
+          WHERE tr.club_id = :cid AND tp.player_id = :pid
+        ) x
+    """), {"cid": current_club.id, "pid": player.id})).first()
+    today = datetime.now(player_stats.COL_TZ).date()
+
+    # played=False = fila solo-corrección (cuenta la plata, no como visita).
+    cash_played = [r for r in cash_rows if r["played"]]
+    invested = sum(r["invested"] for r in cash_rows) + sum(r["invested"] for r in tour_rows)
+    returned = sum(r["returned"] for r in cash_rows) + sum(r["returned"] for r in tour_rows)
+    spend = sum(r["spend"] for r in cash_rows)
+    hours = sum(r["hours"] for r in cash_rows)
+    visits = len(cash_played) + len(tour_rows)
+
+    # Actividad por mes (hora Colombia): últimos 6 meses incluyendo el actual,
+    # con ceros para los meses sin juego (el gráfico necesita la serie completa).
+    monthly: dict[str, dict] = {}
+    for r in cash_played + tour_rows:
+        if not r["date"]:
+            continue
+        y, m = player_stats._col_month_key(r["date"])
+        k = f"{y:04d}-{m:02d}"
+        mm = monthly.setdefault(k, {"month": k, "visits": 0, "net": 0.0, "volume": 0.0})
+        mm["visits"] += 1
+        mm["net"] += r["returned"] - r["invested"]
+        mm["volume"] += r["invested"]
+    keys = []
+    y, m = today.year, today.month
+    for _i in range(6):
+        keys.append(f"{y:04d}-{m:02d}")
+        m -= 1
+        if m == 0:
+            y, m = y - 1, 12
+    keys.reverse()
+    monthly_out = []
+    for k in keys:
+        mm = monthly.get(k, {"month": k, "visits": 0, "net": 0, "volume": 0})
+        monthly_out.append({"month": k, "visits": mm["visits"],
+                            "net": round(mm["net"]), "volume": round(mm["volume"])})
+
+    # Últimas jugadas (cash + torneo, 10 más recientes).
+    recent = []
+    for r in cash_rows:
+        recent.append({"kind": "cash", "name": r["name"], "date": r["date"],
+                       "net": round(r["returned"] - r["invested"]),
+                       "invested": round(r["invested"]), "rank": None})
+    for r in tour_rows:
+        recent.append({"kind": "torneo", "name": r["name"], "date": r["date"],
+                       "net": round(r["returned"] - r["invested"]),
+                       "invested": round(r["invested"]), "rank": r["rank"]})
+    recent.sort(key=lambda r: r["date"] or datetime.min, reverse=True)
+    # OJO timezone (hallazgo del review): end_time es naive-UTC; serializarlo
+    # crudo corre el día para el juego nocturno (20:00 COL = 01:00 UTC del día
+    # siguiente). Fecha calendario Colombia, consistente con first/last/monthly.
+    recent = [{**r, "date": player_stats.col_date_of(r["date"]).isoformat() if r["date"] else None}
+              for r in recent[:10]]
+
+    return {
+        "player": {"id": player.id, "name": player.name, "phone": player.phone},
+        "yield_pct": round(rake_yield * 100, 1),
+        "totals": {
+            "visits": visits,
+            "cash_sessions": len(cash_played),
+            "tournaments": len(tour_rows),
+            "hours": round(hours, 1),
+            "invested": round(invested),
+            "returned": round(returned),
+            "net": round(returned - invested),
+            "spend": round(spend),
+            "volume": round(volume),
+            "rake_est": round(volume * rake_yield),
+            "avg_per_visit": round(invested / visits) if visits else 0,
+            "first_visit": fr.first_d.isoformat() if fr and fr.first_d else None,
+            "last_visit": fr.last_d.isoformat() if fr and fr.last_d else None,
+            "days_inactive": (today - fr.last_d).days if fr and fr.last_d else None,
+        },
+        "monthly": monthly_out,
+        "recent": recent,
+    }
 
 
 # ---------------------------------------------------------
