@@ -127,6 +127,12 @@ export default function WeeklyReport() {
   const totalMeta = data.distribution.filter(isMetaItem).reduce((acc, curr) => acc + curr.total, 0);
   const totalFondos = data.distribution.filter(isFondoItem).reduce((acc, curr) => acc + curr.total, 0);
 
+  // La cuenta del periodo (mismo vocabulario en pantalla y export):
+  // ingresos (rake bruto) − egresos (dealers + cortesías) = neto a repartir.
+  const cajaIngresos = data.gross_week ?? data.total_week ?? 0;
+  const cajaEgresos = data.expenses_week || 0;
+  const cajaNeto = data.net_week ?? (cajaIngresos - cajaEgresos);
+
   // Arma el modelo de exportación según la pestaña activa. Dealers se trae al
   // momento (su data vive en el componente hijo); distribución ya está en `data`.
   const buildExportModel = async () => {
@@ -215,41 +221,55 @@ export default function WeeklyReport() {
       {/* ===== TAB DISTRIBUCIÓN ===== */}
       {reportTab === 'distribution' && <>
 
-      {/* KPI CARDS (RESUMEN RÁPIDO) */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {/* Rake bruto + neto (después de gastos: dealers + cortesías) */}
-        <div className="bg-gradient-to-br from-green-900/20 to-transparent border border-green-500/20 p-5 rounded-2xl">
-          <p className="text-[10px] font-bold text-green-500 uppercase tracking-widest mb-1">Rake Bruto</p>
-          <p className="text-3xl font-black text-white font-mono">
-            {formatMoney(data.gross_week ?? data.total_week ?? 0)}
-          </p>
-          {data.expenses_week > 0 && (
-            <p className="text-[11px] text-gray-400 font-mono mt-1">
-              Neto: <span className="text-emerald-400 font-bold">{formatMoney(data.net_week || 0)}</span>
-              <span className="text-gray-600"> (− {formatMoney(data.expenses_week)} gastos)</span>
-            </p>
-          )}
-        </div>
-        
-        {/* Meta / Fondos */}
-        {totalMeta > 0 ? (
-             <div className="bg-gradient-to-br from-emerald-900/20 to-transparent border border-emerald-500/20 p-5 rounded-2xl">
-                <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mb-1">Abono a Meta</p>
-                <p className="text-3xl font-black text-white font-mono">{formatMoney(totalMeta)}</p>
-             </div>
-        ) : (
-            <div className="bg-gradient-to-br from-purple-900/20 to-transparent border border-purple-500/20 p-5 rounded-2xl">
-                <p className="text-[10px] font-bold text-purple-500 uppercase tracking-widest mb-1">Fondos Operativos</p>
-                <p className="text-3xl font-black text-white font-mono">{formatMoney(totalFondos)}</p>
-            </div>
-        )}
-        
-        {/* Socios */}
-        <div className="bg-gradient-to-br from-blue-900/20 to-transparent border border-blue-500/20 p-5 rounded-2xl">
-          <p className="text-[10px] font-bold text-blue-500 uppercase tracking-widest mb-1">Participación Socios</p>
-          <p className="text-3xl font-black text-white font-mono">{formatMoney(totalSocios)}</p>
+      {/* ===== LA CUENTA DEL PERIODO: ingresos − egresos = neto a repartir.
+             Un solo vocabulario en toda la caja (pantalla y export): INGRESOS
+             (rake bruto), EGRESOS (dealers + cortesías) y NETO A REPARTIR. ===== */}
+      <div className="space-y-3">
+        <p className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em]">Caja del periodo</p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="bg-gradient-to-br from-green-900/20 to-transparent border border-green-500/20 p-5 rounded-2xl">
+            <p className="text-[10px] font-bold text-green-500 uppercase tracking-widest mb-1">💵 Ingresos · Rake bruto</p>
+            <p className="text-3xl font-black text-white font-mono">{formatMoney(cajaIngresos)}</p>
+          </div>
+          <div className="bg-gradient-to-br from-red-900/15 to-transparent border border-red-500/20 p-5 rounded-2xl">
+            <p className="text-[10px] font-bold text-red-400 uppercase tracking-widest mb-1">📤 Egresos · Dealers y cortesías</p>
+            <p className="text-3xl font-black text-white font-mono">{cajaEgresos > 0 ? `− ${formatMoney(cajaEgresos)}` : formatMoney(0)}</p>
+          </div>
+          <div className="bg-gradient-to-br from-emerald-900/20 to-transparent border border-emerald-500/20 p-5 rounded-2xl">
+            <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest mb-1">✅ Neto a repartir</p>
+            <p className="text-3xl font-black text-white font-mono">{formatMoney(cajaNeto)}</p>
+          </div>
         </div>
       </div>
+
+      {/* ===== REPARTO DEL NETO: a dónde va la plata (ni ingreso ni egreso:
+             asignación del neto según las reglas del club). Solo aparece si el
+             reparto tiene MÁS de un concepto: cuando el 100% va a socios (ej.
+             Mambo), esta fila repetiría el "Neto a repartir" — el detalle por
+             socio ya está en las cards de abajo. Grilla adaptativa (2 o 3). ===== */}
+      {(totalMeta > 0 || totalFondos > 0) && (
+      <div className="space-y-3">
+        <p className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em]">Reparto del neto</p>
+        <div className={`grid grid-cols-1 gap-4 ${totalMeta > 0 && totalFondos > 0 ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
+          {totalMeta > 0 && (
+             <div className="bg-gradient-to-br from-emerald-900/20 to-transparent border border-emerald-500/20 p-5 rounded-2xl">
+                <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mb-1">🎯 Abono a meta</p>
+                <p className="text-3xl font-black text-white font-mono">{formatMoney(totalMeta)}</p>
+             </div>
+          )}
+          {totalFondos > 0 && (
+            <div className="bg-gradient-to-br from-purple-900/20 to-transparent border border-purple-500/20 p-5 rounded-2xl">
+                <p className="text-[10px] font-bold text-purple-500 uppercase tracking-widest mb-1">🏦 Fondos operativos</p>
+                <p className="text-3xl font-black text-white font-mono">{formatMoney(totalFondos)}</p>
+            </div>
+          )}
+          <div className="bg-gradient-to-br from-blue-900/20 to-transparent border border-blue-500/20 p-5 rounded-2xl">
+            <p className="text-[10px] font-bold text-blue-500 uppercase tracking-widest mb-1">👥 Utilidad socios</p>
+            <p className="text-3xl font-black text-white font-mono">{formatMoney(totalSocios)}</p>
+          </div>
+        </div>
+      </div>
+      )}
 
       {/* LISTADO DETALLADO DE DISTRIBUCIÓN */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -263,7 +283,9 @@ export default function WeeklyReport() {
             if (isMeta || (isGasto(item) && !isFondo)) {
                 theme = {
                     icon: ScaleIcon,
-                    label: "Pago Prioritario (Meta)",
+                    label: "Reparto · Abono a meta (prioridad 1)",
+                    chipText: "→ META",
+                    chipCls: "text-emerald-400 bg-emerald-500/10",
                     mainColor: "text-emerald-400",
                     bgColor: "bg-emerald-600/20",
                     borderColor: "border-emerald-500/30",
@@ -273,7 +295,9 @@ export default function WeeklyReport() {
             } else if (isFondo) {
                 theme = {
                     icon: WalletIcon,
-                    label: "Gasto Operativo / Fondo",
+                    label: "Reparto · Fondo operativo",
+                    chipText: "→ FONDO",
+                    chipCls: "text-purple-400 bg-purple-500/10",
                     mainColor: "text-purple-400",
                     bgColor: "bg-purple-600/20",
                     borderColor: "border-purple-500/30",
@@ -283,7 +307,9 @@ export default function WeeklyReport() {
             } else {
                 theme = {
                     icon: UserGroupIcon,
-                    label: `Utilidad de Socio (${item.percent}%)`,
+                    label: `Reparto · Utilidad socio (${item.percent}%)`,
+                    chipText: "+ UTILIDAD",
+                    chipCls: "text-blue-400 bg-blue-500/10",
                     mainColor: "text-blue-400",
                     bgColor: "bg-blue-600/20",
                     borderColor: "border-blue-500/30",
@@ -315,8 +341,8 @@ export default function WeeklyReport() {
                     </div>
                   </div>
                   <div className="border-t border-gray-700/50 pt-3 flex items-end justify-between gap-3">
-                    <div className="text-[10px] font-black text-green-500 bg-green-500/10 px-2 py-0.5 rounded-md inline-block self-center">
-                      + GANANCIA
+                    <div className={`text-[10px] font-black px-2 py-0.5 rounded-md inline-block self-center ${theme.chipCls}`}>
+                      {theme.chipText}
                     </div>
                     <p className="text-2xl sm:text-3xl font-black font-mono text-white leading-none tabular-nums whitespace-nowrap text-right">
                       {formatMoney(item.total)}

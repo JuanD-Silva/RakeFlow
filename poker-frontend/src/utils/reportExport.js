@@ -88,22 +88,24 @@ function nowLabel() {
 // Builders de modelo
 // ---------------------------------------------------------------------------
 export function buildDistributionModel({ data, totalSocios, totalMeta, totalFondos, viewMode, start, end, user, sessions }) {
+  // Mismo vocabulario que la pantalla de Caja: ingresos − egresos = neto a
+  // repartir, y luego el reparto del neto (meta / fondos / socios).
   const rows = (data.distribution || []).map((item) => ({
     concepto: item.name,
-    tipo: item.percent > 0 ? `Utilidad socio (${item.percent}%)` : 'Gasto / Fondo / Meta',
+    tipo: item.percent > 0 ? `Reparto · Utilidad socio (${item.percent}%)` : 'Reparto · Meta / Fondo',
     monto: item.total || 0,
   }));
 
+  const ingresos = data.gross_week ?? data.total_week ?? 0;
+  const egresos = data.expenses_week || 0;
   const kpis = [
-    { label: 'Rake bruto', value: data.gross_week ?? data.total_week ?? 0, money: true },
+    { label: 'Ingresos (rake bruto)', value: ingresos, money: true },
+    { label: 'Egresos (dealers + cortesías)', value: egresos, money: true },
+    { label: 'Neto a repartir', value: data.net_week ?? (ingresos - egresos), money: true },
   ];
-  if ((data.expenses_week || 0) > 0) {
-    kpis.push({ label: 'Gastos (dealers + cortesías)', value: data.expenses_week, money: true });
-    kpis.push({ label: 'Rake neto', value: data.net_week || 0, money: true });
-  }
-  kpis.push({ label: 'Participación socios', value: totalSocios || 0, money: true });
-  if (totalMeta > 0) kpis.push({ label: 'Abono a meta', value: totalMeta, money: true });
-  if (totalFondos > 0) kpis.push({ label: 'Fondos operativos', value: totalFondos, money: true });
+  if (totalMeta > 0) kpis.push({ label: 'Reparto · Abono a meta', value: totalMeta, money: true });
+  if (totalFondos > 0) kpis.push({ label: 'Reparto · Fondos operativos', value: totalFondos, money: true });
+  kpis.push({ label: 'Reparto · Utilidad socios', value: totalSocios || 0, money: true });
 
   return {
     title: 'Caja Semanal — Distribución',
@@ -117,7 +119,7 @@ export function buildDistributionModel({ data, totalSocios, totalMeta, totalFond
       { key: 'monto', label: 'Monto', type: 'money', align: 'right' },
     ],
     rows,
-    totals: { concepto: 'Total generado', monto: data.total_week || 0 },
+    totals: { concepto: 'Rake bruto del periodo', monto: data.total_week || 0 },
     detail: sessions ? buildSessionsDetail(sessions, start, end) : null,
     filenameBase: `rakeflow-distribucion-${isoDay(start)}`,
   };
