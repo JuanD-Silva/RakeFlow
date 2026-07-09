@@ -260,14 +260,10 @@ const EmptyState = ({ emoji, title, subtitle }) => (
 // Inicio: nivel, racha, el mes, totales, archivo y club
 // ---------------------------------------------------------
 function HomeTab({ club, data, loaded, error }) {
-  const { data: challengeData } = usePlayerResource(playerSelfService.getChallenge);
+  const { data: challengeData } = usePlayerResource(playerSelfService.getChallenges);
   const { data: highlightData } = usePlayerResource(playerSelfService.getHighlight);
   const [showShare, setShowShare] = useState(false);
   const [showVipShare, setShowVipShare] = useState(false);
-  const [showChallengeShare, setShowChallengeShare] = useState(false);
-  // Escalonado: tramo cumplido que se está compartiendo (o null). Deja presumir
-  // cada meta apenas se logra, no solo al terminar todo el reto.
-  const [shareTier, setShareTier] = useState(null);
   if (!loaded) return error ? <Reconnecting /> : <HomeSkeleton />;
   if (!data) return null;
 
@@ -275,7 +271,7 @@ function HomeTab({ club, data, loaded, error }) {
   const lvl = data.level;
   const st = data.streak;
   const sc = data.self_compare || {};
-  const challenge = challengeData?.challenge || null;
+  const challenges = challengeData?.challenges || [];
   const highlight = highlightData?.highlight || null;
   const clubName = club?.club_name;
 
@@ -352,68 +348,12 @@ function HomeTab({ club, data, loaded, error }) {
         </Section>
       )}
 
-      {/* Reto del mes — contenido que ROTA (combate el novelty effect de los
-          badges fijos). Progreso atado a competencia sentida (barra hacia meta),
-          no a un sticker. La recompensa la entrega el staff en caja. */}
-      {challenge && (
-        <Section i={3} className={`rounded-2xl p-4 border ${challenge.progress.done ? 'bg-emerald-900/25 border-emerald-500/50' : 'bg-gradient-to-br from-violet-900/30 to-gray-900/40 border-violet-500/40'}`}>
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-[11px] font-black text-violet-300 uppercase tracking-widest">🎯 Reto del mes</p>
-            {challenge.progress.done
-              ? <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-500 text-black">¡Logrado!</span>
-              : challenge.tiers && (
-                  <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-200 nums">
-                    {challenge.progress.completed}/{challenge.tiers.length}
-                  </span>
-                )}
-          </div>
-          <p className="mt-1.5 text-white font-black">{challenge.title}</p>
-          {challenge.description && <p className="text-xs text-gray-400 mt-0.5">{challenge.description}</p>}
-          <div className="mt-3 h-2.5 rounded-full bg-gray-700/60 overflow-hidden">
-            <div className={`rf-bar h-full rounded-full ${challenge.progress.done ? 'bg-gradient-to-r from-emerald-500 to-emerald-400' : 'bg-gradient-to-r from-violet-500 to-violet-400'}`}
-              style={{ width: `${Math.min(100, Math.round((100 * challenge.progress.current) / challenge.progress.target))}%` }} />
-          </div>
-          <div className="flex items-center justify-between mt-1.5">
-            <p className="text-[11px] text-gray-400 nums">
-              {challenge.progress.current} / {challenge.progress.target} {challenge.metric}
-            </p>
-            {!challenge.tiers && challenge.reward_text && (
-              <p className="text-[11px] text-violet-300/90 font-bold">🎁 {challenge.reward_text}</p>
-            )}
-          </div>
-          {/* Escalonado: la escalera de tramos con su estado y la recompensa que
-              le toca a ESTE jugador (el backend ya eligió VIP vs base). */}
-          {challenge.tiers && (
-            <ul className="mt-3 space-y-1.5">
-              {challenge.tiers.map((t, i) => (
-                <li key={i} className={`flex items-center gap-2 text-[11px] ${t.done ? 'text-emerald-300' : 'text-gray-400'}`}>
-                  <span className={`shrink-0 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-black ${t.done ? 'bg-emerald-500 text-black' : 'bg-gray-700 text-gray-500'}`}>
-                    {t.done ? '✓' : i + 1}
-                  </span>
-                  <span className="nums font-bold shrink-0">{t.target} {challenge.metric}</span>
-                  {t.reward && <span className="text-gray-500 truncate">· 🎁 {t.reward}</span>}
-                  {t.done && (
-                    <button onClick={() => setShareTier(t)}
-                      aria-label={`Compartir mi logro de ${t.target} ${challenge.metric}`}
-                      className="rf-tap ml-auto shrink-0 text-emerald-300/90 hover:text-emerald-200 px-1.5 -my-1">📤</button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-          {/* Logrado → presumirlo: card-imagen del reto (no un link). En escalonado
-              comparte el reto completo (tramo tope); cada tramo suelto se comparte
-              desde su fila del checklist. */}
-          {challenge.progress.done && (
-            <button onClick={() => (challenge.tiers
-              ? setShareTier(challenge.tiers[challenge.tiers.length - 1])
-              : setShowChallengeShare(true))}
-              className="rf-tap w-full mt-3 py-2.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 text-xs font-black uppercase tracking-wide">
-              📤 {challenge.tiers ? 'Compartir el reto completo' : 'Compartir mi logro'}
-            </button>
-          )}
-        </Section>
-      )}
+      {/* Retos del mes — contenido que ROTA (combate el novelty effect de los
+          badges fijos). Hasta 3 por club; cada card es autocontenida (incluye su
+          propio compartir por tramo y por reto completo). */}
+      {challenges.map((c, ci) => (
+        <ChallengeCard key={c.id ?? ci} challenge={c} clubName={clubName} playerName={data.player_name} i={3 + ci} />
+      ))}
 
       {/* Horas esta semana — métrica-héroe donde el que pierde también progresa,
           con barra hacia el récord (goal-gradient). Solo si hay historia de horas
@@ -593,39 +533,109 @@ function HomeTab({ club, data, loaded, error }) {
           onClose={() => setShowVipShare(false)}
         />
       )}
-      {showChallengeShare && challenge && (
+    </div>
+  );
+}
+
+// Una card de Reto del mes (hasta 3 por club). Autocontenida: maneja su propio
+// compartir — el reto completo y cada tramo logrado — con AchievementShareCard,
+// para que renderizar varias no necesite estado en HomeTab.
+function ChallengeCard({ challenge: c, clubName, playerName, i = 3 }) {
+  const [showShare, setShowShare] = useState(false);
+  const [shareTier, setShareTier] = useState(null);
+  return (
+    <>
+      <Section i={i} className={`rounded-2xl p-4 border ${c.progress.done ? 'bg-emerald-900/25 border-emerald-500/50' : 'bg-gradient-to-br from-violet-900/30 to-gray-900/40 border-violet-500/40'}`}>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[11px] font-black text-violet-300 uppercase tracking-widest">🎯 Reto del mes</p>
+          {c.progress.done
+            ? <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-500 text-black">¡Logrado!</span>
+            : c.tiers && (
+                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-200 nums">
+                  {c.progress.completed}/{c.tiers.length}
+                </span>
+              )}
+        </div>
+        <p className="mt-1.5 text-white font-black">{c.title}</p>
+        {c.description && <p className="text-xs text-gray-400 mt-0.5">{c.description}</p>}
+        <div className="mt-3 h-2.5 rounded-full bg-gray-700/60 overflow-hidden">
+          <div className={`rf-bar h-full rounded-full ${c.progress.done ? 'bg-gradient-to-r from-emerald-500 to-emerald-400' : 'bg-gradient-to-r from-violet-500 to-violet-400'}`}
+            style={{ width: `${Math.min(100, Math.round((100 * c.progress.current) / c.progress.target))}%` }} />
+        </div>
+        <div className="flex items-center justify-between mt-1.5">
+          <p className="text-[11px] text-gray-400 nums">
+            {c.progress.current} / {c.progress.target} {c.metric}
+          </p>
+          {!c.tiers && c.reward_text && (
+            <p className="text-[11px] text-violet-300/90 font-bold">🎁 {c.reward_text}</p>
+          )}
+        </div>
+        {/* Escalonado: la escalera de tramos con su estado y la recompensa que le
+            toca a ESTE jugador (el backend ya eligió VIP vs base). */}
+        {c.tiers && (
+          <ul className="mt-3 space-y-1.5">
+            {c.tiers.map((t, ti) => (
+              <li key={ti} className={`flex items-center gap-2 text-[11px] ${t.done ? 'text-emerald-300' : 'text-gray-400'}`}>
+                <span className={`shrink-0 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-black ${t.done ? 'bg-emerald-500 text-black' : 'bg-gray-700 text-gray-500'}`}>
+                  {t.done ? '✓' : ti + 1}
+                </span>
+                <span className="nums font-bold shrink-0">{t.target} {c.metric}</span>
+                {t.reward && <span className="text-gray-500 truncate">· 🎁 {t.reward}</span>}
+                {t.done && (
+                  <button onClick={() => setShareTier(t)}
+                    aria-label={`Compartir mi logro de ${t.target} ${c.metric}`}
+                    className="rf-tap ml-auto shrink-0 text-emerald-300/90 hover:text-emerald-200 px-1.5 -my-1">📤</button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        {/* Logrado → presumirlo: card-imagen del reto (no un link). En escalonado
+            comparte el reto completo (tramo tope); cada tramo suelto se comparte
+            desde su fila del checklist. */}
+        {c.progress.done && (
+          <button onClick={() => (c.tiers
+            ? setShareTier(c.tiers[c.tiers.length - 1])
+            : setShowShare(true))}
+            className="rf-tap w-full mt-3 py-2.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 text-xs font-black uppercase tracking-wide">
+            📤 {c.tiers ? 'Compartir el reto completo' : 'Compartir mi logro'}
+          </button>
+        )}
+      </Section>
+
+      {showShare && (
         <AchievementShareCard
           accent="challenge" tag="Reto" emoji="🎯"
           kicker="Reto del mes logrado"
-          title={challenge.title}
-          subtitle={challenge.reward_text ? `🎁 ${challenge.reward_text}` : challenge.description}
-          clubName={clubName} playerName={data.player_name}
-          shareText={`🎯 Completé el reto del mes en ${clubName || 'mi club'}: ${challenge.title} 🃏`}
+          title={c.title}
+          subtitle={c.reward_text ? `🎁 ${c.reward_text}` : c.description}
+          clubName={clubName} playerName={playerName}
+          shareText={`🎯 Completé el reto del mes en ${clubName || 'mi club'}: ${c.title} 🃏`}
           fileSlug="reto-del-mes"
-          onClose={() => setShowChallengeShare(false)}
+          onClose={() => setShowShare(false)}
         />
       )}
-      {shareTier && challenge && (() => {
+      {shareTier && (() => {
         // ¿Es el tramo tope con el reto ya completo? Entonces se presume como
         // "reto completado" (copy más fuerte); si no, como una meta lograda.
-        const fullDone = challenge.tiers && challenge.progress.done
-          && shareTier.target === challenge.tiers[challenge.tiers.length - 1].target;
+        const fullDone = c.tiers && c.progress.done
+          && shareTier.target === c.tiers[c.tiers.length - 1].target;
         return (
           <AchievementShareCard
             accent="challenge" tag="Reto" emoji="🎯"
             kicker={fullDone ? 'Reto del mes completado' : 'Meta del reto lograda'}
-            title={challenge.title}
-            subtitle={`${shareTier.target} ${challenge.metric}${shareTier.reward ? ` · 🎁 ${shareTier.reward}` : ''}`}
-            clubName={clubName} playerName={data.player_name}
+            title={c.title}
+            subtitle={`${shareTier.target} ${c.metric}${shareTier.reward ? ` · 🎁 ${shareTier.reward}` : ''}`}
+            clubName={clubName} playerName={playerName}
             shareText={fullDone
-              ? `🎯 Completé el reto del mes en ${clubName || 'mi club'}: ${challenge.title} 🃏`
-              : `🎯 Logré ${shareTier.target} ${challenge.metric} en el reto de ${clubName || 'mi club'}: ${challenge.title} 🃏`}
+              ? `🎯 Completé el reto del mes en ${clubName || 'mi club'}: ${c.title} 🃏`
+              : `🎯 Logré ${shareTier.target} ${c.metric} en el reto de ${clubName || 'mi club'}: ${c.title} 🃏`}
             fileSlug="reto-del-mes"
             onClose={() => setShareTier(null)}
           />
         );
       })()}
-    </div>
+    </>
   );
 }
 

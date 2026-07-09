@@ -583,13 +583,14 @@ export const playerSelfService = {
     getClubInfo: async () => (await api.get('/player/club-info')).data,
     getMonthlySummary: async (year = null, month = null) =>
         (await api.get('/player/monthly-summary', { params: year && month ? { year, month } : {} })).data,
-    getChallenge: async () => (await api.get('/player/my-challenge')).data,
+    getChallenges: async () => (await api.get('/player/my-challenges')).data,
     getHighlight: async () => (await api.get('/player/my-highlight')).data,
 };
 
-// Reto rotativo mensual — lado staff (OWNER/MANAGER)
+// Retos rotativos mensuales (hasta 3) — lado staff (OWNER/MANAGER)
 export const challengeService = {
-    get: async () => (await api.get('/config/monthly-challenge')).data,
-    upsert: async (payload) => (await api.put('/config/monthly-challenge', payload)).data,
-    clear: async () => { await api.delete('/config/monthly-challenge'); },
+    get: async () => (await api.get('/config/monthly-challenges')).data,
+    // Reemplazo en bloque del set (hasta 3): { challenges: [...] }
+    save: async (challenges) => (await api.put('/config/monthly-challenges', { challenges })).data,
+    clear: async () => { await api.delete('/config/monthly-challenges'); },
 };
