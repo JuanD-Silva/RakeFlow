@@ -356,7 +356,13 @@ function HomeTab({ club, data, loaded, error }) {
         <Section i={3} className={`rounded-2xl p-4 border ${challenge.progress.done ? 'bg-emerald-900/25 border-emerald-500/50' : 'bg-gradient-to-br from-violet-900/30 to-gray-900/40 border-violet-500/40'}`}>
           <div className="flex items-center justify-between gap-2">
             <p className="text-[11px] font-black text-violet-300 uppercase tracking-widest">🎯 Reto del mes</p>
-            {challenge.progress.done && <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-500 text-black">¡Logrado!</span>}
+            {challenge.progress.done
+              ? <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-500 text-black">¡Logrado!</span>
+              : challenge.tiers && (
+                  <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-200 nums">
+                    {challenge.progress.completed}/{challenge.tiers.length}
+                  </span>
+                )}
           </div>
           <p className="mt-1.5 text-white font-black">{challenge.title}</p>
           {challenge.description && <p className="text-xs text-gray-400 mt-0.5">{challenge.description}</p>}
@@ -368,10 +374,25 @@ function HomeTab({ club, data, loaded, error }) {
             <p className="text-[11px] text-gray-400 nums">
               {challenge.progress.current} / {challenge.progress.target} {challenge.metric}
             </p>
-            {challenge.reward_text && (
+            {!challenge.tiers && challenge.reward_text && (
               <p className="text-[11px] text-violet-300/90 font-bold">🎁 {challenge.reward_text}</p>
             )}
           </div>
+          {/* Escalonado: la escalera de tramos con su estado y la recompensa que
+              le toca a ESTE jugador (el backend ya eligió VIP vs base). */}
+          {challenge.tiers && (
+            <ul className="mt-3 space-y-1.5">
+              {challenge.tiers.map((t, i) => (
+                <li key={i} className={`flex items-center gap-2 text-[11px] ${t.done ? 'text-emerald-300' : 'text-gray-400'}`}>
+                  <span className={`shrink-0 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-black ${t.done ? 'bg-emerald-500 text-black' : 'bg-gray-700 text-gray-500'}`}>
+                    {t.done ? '✓' : i + 1}
+                  </span>
+                  <span className="nums font-bold shrink-0">{t.target} {challenge.metric}</span>
+                  {t.reward && <span className="text-gray-500 truncate">· 🎁 {t.reward}</span>}
+                </li>
+              ))}
+            </ul>
+          )}
           {/* Logrado → presumirlo: card-imagen del reto (no un link). */}
           {challenge.progress.done && (
             <button onClick={() => setShowChallengeShare(true)}
