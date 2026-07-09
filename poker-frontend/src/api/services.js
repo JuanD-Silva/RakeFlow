@@ -125,6 +125,8 @@ export const playerService = {
     // Venta del histórico: se cobra EN CAJA, esto solo destraba (toggle reversible)
     unlockHistory: async (playerId) =>
         (await api.post(`/players/${playerId}/unlock-history`)).data,
+    // CRM del directorio (OWNER/MANAGER): recencia + valor por jugador
+    insights: async () => (await api.get('/players/insights')).data,
 
    create: async (data, phone = null) => {
         // Lógica inteligente:

@@ -5,11 +5,13 @@ import { useAuth } from '../context/AuthContext';
 import PlayerAppAccount from './PlayerAppAccount';
 
 // ---------------------------------------------------------
-// Directorio de jugadores: TODAS las fichas del club, con buscador y las
-// acciones de la app (invitar / re-invitar / resetear / desbloquear) SIN
-// depender de una mesa abierta. La mesa activa sigue teniendo el mismo
-// bloque para el jugador sentado; esto sirve para invitar en frío
-// (campañas, el jugador que pregunta por WhatsApp, etc.).
+// Directorio de jugadores = CRM del club. Además de invitar a la app (sin
+// depender de una mesa abierta), el staff OWNER/MANAGER ve POR JUGADOR:
+// hace cuánto no viene (recencia con semáforo), visitas, rake estimado que
+// aporta y si deja o retira plata — con filtros y orden para detectar a
+// quién reactivar (el que se enfría) y a quién cuidar (el que sostiene).
+// El cajero ve el directorio simple (el backend gatea /players/insights
+// a OWNER/MANAGER: es información financiera de clientes).
 // ---------------------------------------------------------
 
 const PAGE = 40;
@@ -17,17 +19,68 @@ const PAGE = 40;
 // Búsqueda insensible a tildes: "sebastian" encuentra "Sebastián"
 const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
-const FILTERS = [
+// Espejo de app/phone_utils.normalize_phone: dígitos + indicativo CO si faltara
+// (los teléfonos creados en mesa suelen venir sin el 57 → wa.me roto si va crudo).
+const waPhone = (raw) => {
+  let d = (raw || '').replace(/\D/g, '');
+  if (!d) return null;
+  if (d.length === 10) d = '57' + d;
+  else if (d.startsWith('0057')) d = d.slice(2);
+  return d;
+};
+
+// Dinero compacto para la línea de stats ($2,3M / $850k / $900)
+const mcop = (n) => {
+  const v = Math.abs(Math.round(n || 0));
+  if (v >= 1e6) return '$' + (v / 1e6).toLocaleString('es-CO', { maximumFractionDigits: 1 }) + 'M';
+  if (v >= 1e3) return '$' + Math.round(v / 1e3).toLocaleString('es-CO') + 'k';
+  return '$' + v.toLocaleString('es-CO');
+};
+
+// Semáforo de recencia (mismos cortes que el análisis de negocio):
+// ≤14 activo · 15–30 tibio · 31–60 enfriándose · >60 dormido.
+const segmentOf = (days) => {
+  if (days == null) return null;
+  if (days <= 14) return { emoji: '🔥', cls: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30' };
+  if (days <= 30) return { emoji: '🌗', cls: 'bg-yellow-500/10 text-yellow-300 border-yellow-500/30' };
+  if (days <= 60) return { emoji: '🧊', cls: 'bg-sky-500/10 text-sky-300 border-sky-500/30' };
+  return { emoji: '😴', cls: 'bg-red-500/10 text-red-300/90 border-red-500/25' };
+};
+
+const ACCOUNT_FILTERS = [
   { key: 'all', label: 'Todos' },
   { key: 'none', label: '📵 Sin cuenta' },
   { key: 'pending', label: '⏳ Pendiente' },
   { key: 'active', label: '✓ Con app' },
 ];
 
-const matchFilter = (p, f) => {
+// Filtros de recencia/contacto — solo aparecen cuando hay insights (OWNER/MANAGER)
+const CRM_FILTERS = [
+  { key: 'hot', label: '🔥 ≤14d' },
+  { key: 'warm', label: '🌗 15–30d' },
+  { key: 'asleep', label: '😴 +30d' },
+  { key: 'nophone', label: '📞 Sin teléfono' },
+];
+
+const SORTS = [
+  { key: 'name', label: 'Nombre' },
+  { key: 'recent', label: 'Última visita' },
+  { key: 'rake', label: 'Rake aportado' },
+  { key: 'visits', label: 'Visitas' },
+];
+
+const matchFilter = (p, f, ins) => {
   if (f === 'none') return !p.has_account;
   if (f === 'pending') return p.has_account && p.invitation_pending;
   if (f === 'active') return p.has_account && !p.invitation_pending;
+  if (f === 'nophone') return !p.phone;
+  if (f === 'hot' || f === 'warm' || f === 'asleep') {
+    const d = ins?.days_inactive;
+    if (d == null) return false;
+    if (f === 'hot') return d <= 14;
+    if (f === 'warm') return d >= 15 && d <= 30;
+    return d > 30;
+  }
   return true;
 };
 
@@ -35,9 +88,11 @@ export default function PlayersDirectory() {
   const { isOwner, isManager } = useAuth();
   const canManageApp = isOwner || isManager;
   const [players, setPlayers] = useState(null); // null = cargando
+  const [insights, setInsights] = useState(null); // null = sin capa CRM (cajero o cargando)
   const [error, setError] = useState(false);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState('all');
+  const [sort, setSort] = useState('name');
   const [shown, setShown] = useState(PAGE);
 
   const [reloadKey, setReloadKey] = useState(0);
@@ -48,13 +103,19 @@ export default function PlayersDirectory() {
     playerService.getAll()
       .then((all) => { if (!cancelled) { setPlayers(all); setError(false); } })
       .catch(() => { if (!cancelled) setError(true); });
+    // La capa CRM es best-effort: si falla, el directorio sigue funcionando.
+    if (canManageApp) {
+      playerService.insights()
+        .then((d) => { if (!cancelled) setInsights(d); })
+        .catch(() => {});
+    }
     return () => { cancelled = true; };
-  }, [reloadKey]);
+  }, [reloadKey, canManageApp]);
 
-  // Cambió la búsqueda o el filtro → la paginación vuelve al inicio
+  // Cambió la búsqueda, el filtro o el orden → la paginación vuelve al inicio
   // (ajuste de estado durante render, patrón de la doc de React)
   const [prevKey, setPrevKey] = useState('');
-  const listKey = `${filter}|${query}`;
+  const listKey = `${filter}|${query}|${sort}`;
   if (listKey !== prevKey) {
     setPrevKey(listKey);
     setShown(PAGE);
@@ -63,21 +124,36 @@ export default function PlayersDirectory() {
   const filtered = useMemo(() => {
     if (!players) return [];
     const q = norm(query.trim());
-    return players
-      .filter((p) => matchFilter(p, filter))
-      .filter((p) => !q || norm(p.name).includes(q) || (p.phone || '').includes(q))
-      .sort((a, b) => a.name.localeCompare(b.name, 'es'));
-  }, [players, query, filter]);
+    const ins = (p) => insights?.players?.[p.id];
+    const list = players
+      .filter((p) => matchFilter(p, filter, ins(p)))
+      .filter((p) => !q || norm(p.name).includes(q) || (p.phone || '').includes(q));
+    // Sin insights solo hay orden alfabético; con insights, los sin-datos van al final.
+    const by = {
+      name: (a, b) => a.name.localeCompare(b.name, 'es'),
+      recent: (a, b) => (ins(a)?.days_inactive ?? Infinity) - (ins(b)?.days_inactive ?? Infinity),
+      rake: (a, b) => (ins(b)?.rake_est ?? -1) - (ins(a)?.rake_est ?? -1),
+      visits: (a, b) => (ins(b)?.visits ?? -1) - (ins(a)?.visits ?? -1),
+    };
+    return list.sort(by[insights ? sort : 'name'] || by.name);
+  }, [players, insights, query, filter, sort]);
 
   const stats = useMemo(() => {
     if (!players) return null;
-    return {
+    const base = {
       total: players.length,
       active: players.filter((p) => p.has_account && !p.invitation_pending).length,
       pending: players.filter((p) => p.has_account && p.invitation_pending).length,
       vip: players.filter((p) => p.is_vip).length,
+      asleep: 0,
+      nophone: 0,
     };
-  }, [players]);
+    if (insights?.players) {
+      base.asleep = players.filter((p) => (insights.players[p.id]?.days_inactive ?? null) > 30).length;
+      base.nophone = players.filter((p) => !p.phone).length;
+    }
+    return base;
+  }, [players, insights]);
 
   if (error && !players) return (
     <div className="text-center py-16 text-gray-400">
@@ -98,8 +174,17 @@ export default function PlayersDirectory() {
             {stats.total} fichas · <span className="text-emerald-400 font-bold">{stats.active} con app</span>
             {stats.pending > 0 && <> · <span className="text-amber-400 font-bold">{stats.pending} pendiente{stats.pending !== 1 ? 's' : ''}</span></>}
             {stats.vip > 0 && <> · <span className="text-cyan-300 font-bold">💎 {stats.vip} VIP</span></>}
+            {stats.asleep > 0 && <> · <span className="text-red-300/90 font-bold">😴 {stats.asleep} dormidos +30d</span></>}
+            {stats.nophone > 0 && <> · <span className="text-gray-400 font-bold">📞 {stats.nophone} sin teléfono</span></>}
           </p>
         </div>
+        {insights && (
+          <select value={sort} onChange={(e) => setSort(e.target.value)}
+            aria-label="Ordenar jugadores"
+            className="bg-gray-800 text-gray-300 border border-gray-700 rounded-xl py-2 px-2.5 text-xs font-bold focus:border-emerald-500 outline-none">
+            {SORTS.map((s) => <option key={s.key} value={s.key}>↕ {s.label}</option>)}
+          </select>
+        )}
       </div>
 
       {/* Buscador + filtros */}
@@ -115,7 +200,7 @@ export default function PlayersDirectory() {
           />
         </div>
         <div className="flex gap-1.5 overflow-x-auto">
-          {FILTERS.map((f) => (
+          {[...ACCOUNT_FILTERS, ...(insights ? CRM_FILTERS : [])].map((f) => (
             <button key={f.key} onClick={() => setFilter(f.key)}
               className={`shrink-0 text-[11px] font-bold uppercase px-3 py-2 rounded-xl border transition-all ${
                 filter === f.key ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-300' : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700'
@@ -133,25 +218,70 @@ export default function PlayersDirectory() {
       )}
 
       <div className="space-y-2">
-        {filtered.slice(0, shown).map((p) => (
-          <div key={p.id} className="bg-gray-800/60 border border-gray-700/60 rounded-xl px-4 py-3">
-            <div className="flex items-center justify-between gap-3 mb-2">
-              <div className="min-w-0">
-                <p className="text-white font-bold truncate">{p.name}</p>
-                <p className="text-xs text-gray-500 font-mono">{p.phone || 'sin teléfono'}</p>
+        {filtered.slice(0, shown).map((p) => {
+          // Con insights cargados, el jugador sin actividad también muestra su
+          // chip ("sin visitas") — {} truthy dispara la línea CRM con solo el chip.
+          const ins = insights ? (insights.players?.[p.id] || {}) : null;
+          const seg = ins ? segmentOf(ins.days_inactive) : null;
+          const wa = waPhone(p.phone);
+          return (
+            <div key={p.id} className="bg-gray-800/60 border border-gray-700/60 rounded-xl px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-white font-bold truncate">{p.name}</p>
+                  <p className="text-xs text-gray-500 font-mono">
+                    {p.phone || 'sin teléfono'}
+                    {wa && (
+                      <a href={`https://wa.me/${wa}`} target="_blank" rel="noreferrer"
+                        aria-label={`Escribirle a ${p.name} por WhatsApp`}
+                        className="ml-2 text-emerald-400/90 hover:text-emerald-300 font-sans font-bold no-underline">💬 WhatsApp</a>
+                    )}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {p.is_vip && (
+                    <span className="text-[9px] font-bold uppercase px-2 py-1 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/25" title="Pilar del club — de los que más mueven (top por volumen). Atenderlo bien.">💎 VIP</span>
+                  )}
+                  {!p.history_unlocked && p.has_account && (
+                    <span className="text-[9px] font-bold uppercase px-2 py-1 rounded bg-violet-500/10 text-violet-300" title="Histórico en el archivo — se desbloquea cobrando en caja">🗄️ Archivo</span>
+                  )}
+                </div>
               </div>
-              <div className="flex items-center gap-1.5 shrink-0">
-                {p.is_vip && (
-                  <span className="text-[9px] font-bold uppercase px-2 py-1 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/25" title="Pilar del club — de los que más mueven (top por volumen). Atenderlo bien.">💎 VIP</span>
-                )}
-                {!p.history_unlocked && p.has_account && (
-                  <span className="text-[9px] font-bold uppercase px-2 py-1 rounded bg-violet-500/10 text-violet-300" title="Histórico en el archivo — se desbloquea cobrando en caja">🗄️ Archivo</span>
-                )}
+
+              {/* Capa CRM (solo OWNER/MANAGER): recencia + valor del jugador */}
+              {ins && (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-2 text-[11px]">
+                  {seg ? (
+                    <span className={`font-bold px-2 py-0.5 rounded-full border ${seg.cls}`}>
+                      {seg.emoji} hace {ins.days_inactive}d
+                    </span>
+                  ) : (
+                    <span className="font-bold px-2 py-0.5 rounded-full border bg-gray-700/40 text-gray-500 border-gray-600/40">sin visitas</span>
+                  )}
+                  {ins.visits > 0 && (
+                    <span className="text-gray-400"><b className="text-gray-200">{ins.visits}</b> visita{ins.visits !== 1 ? 's' : ''}</span>
+                  )}
+                  {ins.rake_est > 0 && (
+                    <span className="text-gray-400" title={`Estimado: volumen movido × yield del club (${insights.yield_pct}%). El rake real se declara por mesa, no por jugador.`}>
+                      rake <b className="text-emerald-300">{mcop(ins.rake_est)}</b>
+                    </span>
+                  )}
+                  {ins.net != null && ins.net !== 0 && (
+                    <span className="text-gray-400" title="Resultado del jugador en cash (mesas cerradas): si deja, esa plata quedó en el club.">
+                      {ins.net < 0
+                        ? <>deja <b className="text-emerald-300">{mcop(ins.net)}</b></>
+                        : <>retira <b className="text-amber-300">{mcop(ins.net)}</b></>}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              <div className="mt-2">
+                <PlayerAppAccount playerId={p.id} account={p} canManage={canManageApp} onChanged={load} />
               </div>
             </div>
-            <PlayerAppAccount playerId={p.id} account={p} canManage={canManageApp} onChanged={load} />
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {filtered.length > shown && (
