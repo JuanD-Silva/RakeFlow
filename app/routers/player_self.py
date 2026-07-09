@@ -342,53 +342,62 @@ def _tiers_view(tiers: list, current: float, vip: bool) -> dict:
     }
 
 
-@router.get("/my-challenge")
-async def my_challenge(
+@router.get("/my-challenges")
+async def my_challenges(
     db: AsyncSession = Depends(get_db),
     user: models.User = Depends(_require_player),
 ):
-    """Reto rotativo del mes del club + progreso propio. None si el club no
-    definió reto este mes. Combate el desgaste de los badges fijos (novelty effect)."""
+    """Retos rotativos del mes del club (hasta 3) + progreso propio de cada uno.
+    Lista vacía si el club no definió retos este mes. Combate el desgaste de los
+    badges fijos (novelty effect)."""
     player = await _my_player(db, user)
     now_col = datetime.now(player_stats.COL_TZ)
-    ch = (await db.execute(
+    rows = (await db.execute(
         select(models.MonthlyChallenge).where(
             models.MonthlyChallenge.club_id == user.club_id,
             models.MonthlyChallenge.year == now_col.year,
             models.MonthlyChallenge.month == now_col.month,
             models.MonthlyChallenge.active == True,  # noqa: E712
-        )
-    )).scalars().first()
-    if not ch:
-        return {"challenge": None}
+        ).order_by(models.MonthlyChallenge.id)
+    )).scalars().all()
+    if not rows:
+        return {"challenges": []}
 
+    # Las filas del jugador NO dependen del reto → se traen UNA sola vez y se
+    # reusan para el progreso de cada uno.
     since = player.stats_since
     cash_rows = await player_stats.cash_rows_for_player(db, user.club_id, player.id, since)
     tour_rows = await player_stats.tournament_rows_for_player(db, user.club_id, player.id, since)
     month_start = player_stats.start_of_month_col_as_utc()
     m_cash = [r for r in cash_rows if r["date"] and r["date"] >= month_start]
     m_tour = [r for r in tour_rows if r["date"] and r["date"] >= month_start]
-    current = _challenge_progress(ch.metric, m_cash, m_tour)
-    out = {
-        "title": ch.title,
-        "description": ch.description,
-        "metric": ch.metric,
-        "reward_text": ch.reward_text,
-    }
-    if ch.tiers:
-        # Reto ESCALONADO. El VIP ve reward_vip — mismo gate que el panel: solo
-        # si pagó el histórico (stats_since NULL); si no, ve la recompensa base.
-        vip = False
-        if since is None:
-            standings = await player_stats.compute_club_standings(db, user.club_id)
-            vip = player_stats.is_vip(standings, player.id)
-        view = _tiers_view(ch.tiers, current, vip)
-        out["tiers"] = view["tiers"]
-        out["is_vip"] = vip
-        out["progress"] = view["progress"]
-    else:
-        out["progress"] = {"current": current, "target": ch.target, "done": current >= ch.target}
-    return {"challenge": out}
+
+    # VIP (mismo gate que el panel: solo si pagó el histórico → stats_since NULL)
+    # se computa UNA vez y solo si algún reto escalonado lo necesita (es caro).
+    vip = False
+    if since is None and any(ch.tiers for ch in rows):
+        standings = await player_stats.compute_club_standings(db, user.club_id)
+        vip = player_stats.is_vip(standings, player.id)
+
+    out_list = []
+    for ch in rows:
+        current = _challenge_progress(ch.metric, m_cash, m_tour)
+        item = {
+            "id": ch.id,
+            "title": ch.title,
+            "description": ch.description,
+            "metric": ch.metric,
+            "reward_text": ch.reward_text,
+        }
+        if ch.tiers:
+            view = _tiers_view(ch.tiers, current, vip)
+            item["tiers"] = view["tiers"]
+            item["is_vip"] = vip
+            item["progress"] = view["progress"]
+        else:
+            item["progress"] = {"current": current, "target": ch.target, "done": current >= ch.target}
+        out_list.append(item)
+    return {"challenges": out_list}
 
 
 @router.get("/monthly-summary")

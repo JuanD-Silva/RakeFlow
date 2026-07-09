@@ -215,6 +215,13 @@ class MonthlyChallengeUpsert(BaseModel):
         return v
 
 
+class MonthlyChallengesUpsert(BaseModel):
+    """Reemplazo en bloque del set de retos del mes: hasta 3 retos activos por
+    club. Lista vacía => quita todos (equivale al DELETE). Cada reto es un
+    MonthlyChallengeUpsert (con o sin tramos)."""
+    challenges: list[MonthlyChallengeUpsert] = Field(default_factory=list, max_length=3)
+
+
 class DealerPayoutCreate(BaseModel):
     amount: float = Field(..., gt=0)
     method: Optional[str] = Field(None, max_length=30)

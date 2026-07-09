@@ -592,17 +592,13 @@ class TournamentDealerShift(Base):
 
 class MonthlyChallenge(Base):
     """Reto rotativo del mes por club (combate el novelty effect de los badges
-    fijos). El staff define un objetivo mensual (métrica + meta + recompensa que
-    entrega en caja) y el panel del jugador muestra su progreso. Un reto activo
-    por (club, año, mes) — índice único parcial (en el modelo Y en la migración,
-    para que create_all y alembic queden idénticos)."""
+    fijos). El staff define objetivos mensuales (métrica + meta + recompensa que
+    entrega en caja) y el panel del jugador muestra su progreso. Hasta 3 retos
+    activos por (club, año, mes): el tope lo aplica la capa de aplicación (schema
+    + reemplazo en bloque con advisory lock), no un índice único. Antes había un
+    índice parcial de 1-activo (uq_monthly_challenge_active) que la migración
+    ff2a3b4c5d6e quita."""
     __tablename__ = "monthly_challenges"
-    __table_args__ = (
-        Index(
-            "uq_monthly_challenge_active", "club_id", "year", "month",
-            unique=True, postgresql_where=text("active = TRUE"),
-        ),
-    )
 
     id = Column(Integer, primary_key=True, index=True)
     club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False, index=True)

@@ -179,51 +179,10 @@ def _challenge_out(ch):
     }
 
 
-@router.get("/monthly-challenge")
-async def get_monthly_challenge(
-    db: AsyncSession = Depends(get_db),
-    current_club: models.Club = Depends(get_current_club),
-    _: models.User = Depends(require_role([models.UserRole.OWNER, models.UserRole.MANAGER])),
-):
-    """Reto activo del mes en curso (hora Colombia). None si no hay."""
-    now_col = datetime.now(player_stats.COL_TZ)
-    ch = (await db.execute(
-        select(models.MonthlyChallenge).where(
-            models.MonthlyChallenge.club_id == current_club.id,
-            models.MonthlyChallenge.year == now_col.year,
-            models.MonthlyChallenge.month == now_col.month,
-            models.MonthlyChallenge.active == True,  # noqa: E712
-        )
-    )).scalars().first()
-    return {"challenge": _challenge_out(ch) if ch else None,
-            "period": {"year": now_col.year, "month": now_col.month}}
-
-
-@router.put("/monthly-challenge")
-async def upsert_monthly_challenge(
-    data: schemas.MonthlyChallengeUpsert,
-    db: AsyncSession = Depends(get_db),
-    current_club: models.Club = Depends(get_current_club),
-    _: models.User = Depends(require_role([models.UserRole.OWNER, models.UserRole.MANAGER])),
-):
-    """Crea o reemplaza el reto del mes en curso. Un reto activo por (club, mes):
-    se desactiva el anterior y se inserta el nuevo. Un advisory lock por club
-    serializa PUTs concurrentes del MISMO club (raro: acción de admin), así el
-    'desactivar-luego-insertar' es atómico y no choca contra el índice único."""
-    now_col = datetime.now(player_stats.COL_TZ)
-    await db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": current_club.id})
-    await db.execute(
-        models.MonthlyChallenge.__table__.update()
-        .where(
-            models.MonthlyChallenge.club_id == current_club.id,
-            models.MonthlyChallenge.year == now_col.year,
-            models.MonthlyChallenge.month == now_col.month,
-            models.MonthlyChallenge.active == True,  # noqa: E712
-        )
-        .values(active=False)
-    )
-    # Escalonado: guardamos los tramos y dejamos target = tramo mayor (para que
-    # cualquier lector legacy que mire 'target' vea la meta tope del reto).
+def _build_challenge(club_id, year, month, data):
+    """Construye una fila MonthlyChallenge activa desde un MonthlyChallengeUpsert.
+    Escalonado: guarda los tramos y deja target = tramo mayor (para que cualquier
+    lector que mire 'target' vea la meta tope del reto)."""
     tiers = None
     if data.tiers:
         tiers = [
@@ -233,35 +192,82 @@ async def upsert_monthly_challenge(
             for t in data.tiers
         ]
     target = max(t["target"] for t in tiers) if tiers else data.target
-    ch = models.MonthlyChallenge(
-        club_id=current_club.id, year=now_col.year, month=now_col.month,
+    return models.MonthlyChallenge(
+        club_id=club_id, year=year, month=month,
         title=data.title.strip(), description=(data.description or "").strip() or None,
         metric=data.metric, target=target,
         reward_text=(data.reward_text or "").strip() or None,
         tiers=tiers, active=True,
     )
-    db.add(ch)
-    await db.commit()
-    await db.refresh(ch)
-    return {"challenge": _challenge_out(ch)}
 
 
-@router.delete("/monthly-challenge", status_code=204)
-async def clear_monthly_challenge(
+def _active_month_stmt(club_id, now_col):
+    return (
+        models.MonthlyChallenge.club_id == club_id,
+        models.MonthlyChallenge.year == now_col.year,
+        models.MonthlyChallenge.month == now_col.month,
+        models.MonthlyChallenge.active == True,  # noqa: E712
+    )
+
+
+@router.get("/monthly-challenges")
+async def get_monthly_challenges(
     db: AsyncSession = Depends(get_db),
     current_club: models.Club = Depends(get_current_club),
     _: models.User = Depends(require_role([models.UserRole.OWNER, models.UserRole.MANAGER])),
 ):
-    """Quita el reto del mes en curso (lo desactiva; el historial se conserva)."""
+    """Retos activos del mes en curso (hora Colombia), hasta 3, en orden estable."""
+    now_col = datetime.now(player_stats.COL_TZ)
+    rows = (await db.execute(
+        select(models.MonthlyChallenge)
+        .where(*_active_month_stmt(current_club.id, now_col))
+        .order_by(models.MonthlyChallenge.id)
+    )).scalars().all()
+    return {"challenges": [_challenge_out(ch) for ch in rows],
+            "period": {"year": now_col.year, "month": now_col.month}}
+
+
+@router.put("/monthly-challenges")
+async def replace_monthly_challenges(
+    data: schemas.MonthlyChallengesUpsert,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+    _: models.User = Depends(require_role([models.UserRole.OWNER, models.UserRole.MANAGER])),
+):
+    """Reemplaza EN BLOQUE los retos del mes en curso (hasta 3): desactiva los
+    activos y reinserta el set nuevo. Lista vacía => quita todos. Un advisory lock
+    por club serializa PUTs concurrentes del MISMO club (raro: acción de admin),
+    así el 'desactivar-luego-insertar' es atómico."""
+    now_col = datetime.now(player_stats.COL_TZ)
+    await db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": current_club.id})
+    await db.execute(
+        models.MonthlyChallenge.__table__.update()
+        .where(*_active_month_stmt(current_club.id, now_col))
+        .values(active=False)
+    )
+    created = [
+        _build_challenge(current_club.id, now_col.year, now_col.month, item)
+        for item in data.challenges
+    ]
+    for ch in created:
+        db.add(ch)
+    await db.commit()
+    for ch in created:
+        await db.refresh(ch)
+    return {"challenges": [_challenge_out(ch) for ch in created]}
+
+
+@router.delete("/monthly-challenges", status_code=204)
+async def clear_monthly_challenges(
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+    _: models.User = Depends(require_role([models.UserRole.OWNER, models.UserRole.MANAGER])),
+):
+    """Quita todos los retos del mes en curso (los desactiva; historial se conserva)."""
     now_col = datetime.now(player_stats.COL_TZ)
     await db.execute(
         models.MonthlyChallenge.__table__.update()
-        .where(
-            models.MonthlyChallenge.club_id == current_club.id,
-            models.MonthlyChallenge.year == now_col.year,
-            models.MonthlyChallenge.month == now_col.month,
-            models.MonthlyChallenge.active == True,  # noqa: E712
-        )
+        .where(*_active_month_stmt(current_club.id, now_col))
         .values(active=False)
     )
     await db.commit()
