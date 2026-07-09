@@ -598,33 +598,33 @@ function HomeTab({ club, data, loaded, error }) {
           accent="challenge" tag="Reto" emoji="🎯"
           kicker="Reto del mes logrado"
           title={challenge.title}
-          subtitle={(() => {
-            // Escalonado: al completar todo, presumir la recompensa del tramo tope
-            // (ya viene elegida por VIP/base). Meta única: reward_text de siempre.
-            const topReward = challenge.tiers?.length ? challenge.tiers[challenge.tiers.length - 1].reward : null;
-            const reward = challenge.reward_text || topReward;
-            return reward ? `🎁 ${reward}` : challenge.description;
-          })()}
+          subtitle={challenge.reward_text ? `🎁 ${challenge.reward_text}` : challenge.description}
           clubName={clubName} playerName={data.player_name}
           shareText={`🎯 Completé el reto del mes en ${clubName || 'mi club'}: ${challenge.title} 🃏`}
           fileSlug="reto-del-mes"
           onClose={() => setShowChallengeShare(false)}
         />
       )}
-      {shareTier && challenge && (
-        <AchievementShareCard
-          accent="challenge" tag="Reto" emoji="🎯"
-          kicker={challenge.tiers && challenge.progress.done
-            && shareTier.target === challenge.tiers[challenge.tiers.length - 1].target
-            ? 'Reto del mes completado' : 'Meta del reto lograda'}
-          title={challenge.title}
-          subtitle={`${shareTier.target} ${challenge.metric}${shareTier.reward ? ` · 🎁 ${shareTier.reward}` : ''}`}
-          clubName={clubName} playerName={data.player_name}
-          shareText={`🎯 Logré ${shareTier.target} ${challenge.metric} en el reto de ${clubName || 'mi club'}: ${challenge.title} 🃏`}
-          fileSlug="reto-del-mes"
-          onClose={() => setShareTier(null)}
-        />
-      )}
+      {shareTier && challenge && (() => {
+        // ¿Es el tramo tope con el reto ya completo? Entonces se presume como
+        // "reto completado" (copy más fuerte); si no, como una meta lograda.
+        const fullDone = challenge.tiers && challenge.progress.done
+          && shareTier.target === challenge.tiers[challenge.tiers.length - 1].target;
+        return (
+          <AchievementShareCard
+            accent="challenge" tag="Reto" emoji="🎯"
+            kicker={fullDone ? 'Reto del mes completado' : 'Meta del reto lograda'}
+            title={challenge.title}
+            subtitle={`${shareTier.target} ${challenge.metric}${shareTier.reward ? ` · 🎁 ${shareTier.reward}` : ''}`}
+            clubName={clubName} playerName={data.player_name}
+            shareText={fullDone
+              ? `🎯 Completé el reto del mes en ${clubName || 'mi club'}: ${challenge.title} 🃏`
+              : `🎯 Logré ${shareTier.target} ${challenge.metric} en el reto de ${clubName || 'mi club'}: ${challenge.title} 🃏`}
+            fileSlug="reto-del-mes"
+            onClose={() => setShareTier(null)}
+          />
+        );
+      })()}
     </div>
   );
 }
