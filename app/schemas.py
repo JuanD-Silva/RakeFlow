@@ -186,12 +186,33 @@ class ClubPublicUpdate(BaseModel):
     public_announcement: Optional[str] = Field(None, max_length=120)
 
 
+class MonthlyChallengeTier(BaseModel):
+    """Un tramo del reto escalonado: meta + recompensa (y recompensa VIP opcional).
+    Los montos son texto libre — el staff los entrega en caja; la app no cobra."""
+    target: float = Field(..., gt=0, le=1000)
+    reward: Optional[str] = Field(None, max_length=120)
+    reward_vip: Optional[str] = Field(None, max_length=120)
+
+
 class MonthlyChallengeUpsert(BaseModel):
     title: str = Field(..., min_length=1, max_length=80)
     description: Optional[str] = Field(None, max_length=160)
     metric: str = Field(..., pattern="^(visitas|horas|torneos)$")
     target: float = Field(..., gt=0, le=1000)
     reward_text: Optional[str] = Field(None, max_length=120)
+    # Reto escalonado (opcional): 1-5 tramos de meta creciente. Vacío/None => reto
+    # de meta única (usa target/reward_text). El VIP ve reward_vip si el tramo lo trae.
+    tiers: Optional[list[MonthlyChallengeTier]] = Field(None, max_length=5)
+
+    @field_validator('tiers')
+    @classmethod
+    def _tiers_ascending(cls, v):
+        if not v:
+            return None  # None o lista vacía => sin escalones
+        targets = [t.target for t in v]
+        if any(b <= a for a, b in zip(targets, targets[1:])):
+            raise ValueError('Los tramos deben ir con metas ascendentes (ej. 35, 50, 70).')
+        return v
 
 
 class DealerPayoutCreate(BaseModel):

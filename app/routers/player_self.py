@@ -316,6 +316,32 @@ def _challenge_progress(metric: str, m_cash: list, m_tour: list) -> float:
     return 0
 
 
+def _tiers_view(tiers: list, current: float, vip: bool) -> dict:
+    """Vista escalonada PURA (testeable): estado de cada tramo + barra GLOBAL hacia
+    el tramo tope (monótona: nunca retrocede al cruzar un tramo) + la recompensa que
+    le toca a ESTE jugador (VIP ve reward_vip si el tramo la trae; si no, la base).
+    Los escalones intermedios los comunica el checklist de tramos (done por tramo);
+    la barra apunta siempre al tope. Los tramos llegan ordenados ascendente."""
+    tiers_out = []
+    for t in tiers:
+        tgt = t.get("target", 0)
+        rvip = t.get("reward_vip")
+        tiers_out.append({
+            "target": tgt,
+            "reward": rvip if (vip and rvip) else t.get("reward"),
+            "done": current >= tgt,
+        })
+    top_target = tiers_out[-1]["target"] if tiers_out else 0
+    return {
+        "tiers": tiers_out,
+        "progress": {
+            "current": current, "target": top_target,
+            "done": bool(tiers_out) and all(t["done"] for t in tiers_out),
+            "completed": sum(1 for t in tiers_out if t["done"]),
+        },
+    }
+
+
 @router.get("/my-challenge")
 async def my_challenge(
     db: AsyncSession = Depends(get_db),
@@ -343,13 +369,26 @@ async def my_challenge(
     m_cash = [r for r in cash_rows if r["date"] and r["date"] >= month_start]
     m_tour = [r for r in tour_rows if r["date"] and r["date"] >= month_start]
     current = _challenge_progress(ch.metric, m_cash, m_tour)
-    return {"challenge": {
+    out = {
         "title": ch.title,
         "description": ch.description,
         "metric": ch.metric,
         "reward_text": ch.reward_text,
-        "progress": {"current": current, "target": ch.target, "done": current >= ch.target},
-    }}
+    }
+    if ch.tiers:
+        # Reto ESCALONADO. El VIP ve reward_vip — mismo gate que el panel: solo
+        # si pagó el histórico (stats_since NULL); si no, ve la recompensa base.
+        vip = False
+        if since is None:
+            standings = await player_stats.compute_club_standings(db, user.club_id)
+            vip = player_stats.is_vip(standings, player.id)
+        view = _tiers_view(ch.tiers, current, vip)
+        out["tiers"] = view["tiers"]
+        out["is_vip"] = vip
+        out["progress"] = view["progress"]
+    else:
+        out["progress"] = {"current": current, "target": ch.target, "done": current >= ch.target}
+    return {"challenge": out}
 
 
 @router.get("/monthly-summary")

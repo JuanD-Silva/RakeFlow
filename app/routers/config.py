@@ -175,7 +175,7 @@ def _challenge_out(ch):
         "id": ch.id, "year": ch.year, "month": ch.month,
         "title": ch.title, "description": ch.description,
         "metric": ch.metric, "target": ch.target,
-        "reward_text": ch.reward_text, "active": ch.active,
+        "reward_text": ch.reward_text, "tiers": ch.tiers, "active": ch.active,
     }
 
 
@@ -222,11 +222,23 @@ async def upsert_monthly_challenge(
         )
         .values(active=False)
     )
+    # Escalonado: guardamos los tramos y dejamos target = tramo mayor (para que
+    # cualquier lector legacy que mire 'target' vea la meta tope del reto).
+    tiers = None
+    if data.tiers:
+        tiers = [
+            {"target": t.target,
+             "reward": (t.reward or "").strip() or None,
+             "reward_vip": (t.reward_vip or "").strip() or None}
+            for t in data.tiers
+        ]
+    target = max(t["target"] for t in tiers) if tiers else data.target
     ch = models.MonthlyChallenge(
         club_id=current_club.id, year=now_col.year, month=now_col.month,
         title=data.title.strip(), description=(data.description or "").strip() or None,
-        metric=data.metric, target=data.target,
-        reward_text=(data.reward_text or "").strip() or None, active=True,
+        metric=data.metric, target=target,
+        reward_text=(data.reward_text or "").strip() or None,
+        tiers=tiers, active=True,
     )
     db.add(ch)
     await db.commit()

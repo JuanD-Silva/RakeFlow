@@ -613,8 +613,12 @@ class MonthlyChallenge(Base):
     description = Column(String, nullable=True)
     # Métrica contable en el mes: 'visitas' | 'horas' | 'torneos'.
     metric = Column(String, nullable=False)
-    target = Column(Float, nullable=False)          # meta a alcanzar
+    target = Column(Float, nullable=False)          # meta a alcanzar (reto de meta única; = tramo mayor si es escalonado)
     reward_text = Column(String, nullable=True)      # qué gana (lo entrega el staff en caja)
+    # Reto ESCALONADO (opcional): lista de tramos ordenada ascendente por target
+    # [{"target": n, "reward": str|null, "reward_vip": str|null}]. NULL => meta
+    # única (usa target/reward_text de arriba). El VIP ve reward_vip si existe.
+    tiers = Column(JSON, nullable=True)
     active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
