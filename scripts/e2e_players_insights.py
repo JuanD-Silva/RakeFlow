@@ -93,6 +93,7 @@ with httpx.Client(base_url=BASE, timeout=20) as c:
     check("ficha mes actual 1 visita", f1["monthly"][-1]["visits"] == 1)
     check("ficha recent 1 jugada", len(f1["recent"]) == 1 and f1["recent"][0]["kind"] == "cash")
     check("ficha recent net +150k", f1["recent"][0]["net"] == 150000)
+    check("ficha recent fecha = última visita (Colombia)", f1["recent"][0]["date"] == ft["last_visit"])
     r = c.get(f"/players/{p3['id']}/insights", headers=h)
     check("ficha sin actividad 200 + ceros", r.status_code == 200 and r.json()["totals"]["visits"] == 0)
     r = c.get(f"/players/{p1['id']}/insights")

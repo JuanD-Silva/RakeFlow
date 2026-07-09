@@ -265,7 +265,11 @@ async def player_insights_detail(
                        "net": round(r["returned"] - r["invested"]),
                        "invested": round(r["invested"]), "rank": r["rank"]})
     recent.sort(key=lambda r: r["date"] or datetime.min, reverse=True)
-    recent = [{**r, "date": r["date"].isoformat() if r["date"] else None} for r in recent[:10]]
+    # OJO timezone (hallazgo del review): end_time es naive-UTC; serializarlo
+    # crudo corre el día para el juego nocturno (20:00 COL = 01:00 UTC del día
+    # siguiente). Fecha calendario Colombia, consistente con first/last/monthly.
+    recent = [{**r, "date": player_stats.col_date_of(r["date"]).isoformat() if r["date"] else None}
+              for r in recent[:10]]
 
     return {
         "player": {"id": player.id, "name": player.name, "phone": player.phone},
