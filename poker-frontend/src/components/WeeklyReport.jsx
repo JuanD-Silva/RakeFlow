@@ -243,10 +243,14 @@ export default function WeeklyReport() {
       </div>
 
       {/* ===== REPARTO DEL NETO: a dónde va la plata (ni ingreso ni egreso:
-             asignación del neto según las reglas del club). ===== */}
+             asignación del neto según las reglas del club). Solo aparece si el
+             reparto tiene MÁS de un concepto: cuando el 100% va a socios (ej.
+             Mambo), esta fila repetiría el "Neto a repartir" — el detalle por
+             socio ya está en las cards de abajo. Grilla adaptativa (2 o 3). ===== */}
+      {(totalMeta > 0 || totalFondos > 0) && (
       <div className="space-y-3">
         <p className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em]">Reparto del neto</p>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className={`grid grid-cols-1 gap-4 ${totalMeta > 0 && totalFondos > 0 ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
           {totalMeta > 0 && (
              <div className="bg-gradient-to-br from-emerald-900/20 to-transparent border border-emerald-500/20 p-5 rounded-2xl">
                 <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mb-1">🎯 Abono a meta</p>
@@ -265,6 +269,7 @@ export default function WeeklyReport() {
           </div>
         </div>
       </div>
+      )}
 
       {/* LISTADO DETALLADO DE DISTRIBUCIÓN */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
