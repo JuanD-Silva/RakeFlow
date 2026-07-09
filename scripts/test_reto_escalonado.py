@@ -61,9 +61,9 @@ TIERS = [
     {"target": 70, "reward": "b70", "reward_vip": "v70"},
 ]
 
-# Nadie cumplido: barra al primer tramo, 0 completados.
+# Nadie cumplido: barra global al tope, 0 completados.
 v = _tiers_view(TIERS, current=28, vip=False)
-check("28h: barra al tramo 1 (35)", v["progress"]["target"] == 35)
+check("28h: barra global al tope (70)", v["progress"]["target"] == 70)
 check("28h: 0 completados", v["progress"]["completed"] == 0)
 check("28h: reto no logrado", v["progress"]["done"] is False)
 check("28h: ningún tramo done", all(t["done"] is False for t in v["tiers"]))
@@ -75,10 +75,10 @@ check("28h VIP: tramo 1 => v35", vv["tiers"][0]["reward"] == "v35")
 check("28h VIP: tramo 2 sin VIP => base b50", vv["tiers"][1]["reward"] == "b50")
 check("28h VIP: tramo 3 => v70", vv["tiers"][2]["reward"] == "v70")
 
-# A mitad de camino: 2 tramos cumplidos, barra al tercero.
+# A mitad de camino: 2 tramos cumplidos, barra sigue al tope.
 v2 = _tiers_view(TIERS, current=52, vip=False)
 check("52h: 2 completados", v2["progress"]["completed"] == 2)
-check("52h: barra al tramo 3 (70)", v2["progress"]["target"] == 70)
+check("52h: barra al tope (70)", v2["progress"]["target"] == 70)
 check("52h: no logrado (falta el 3)", v2["progress"]["done"] is False)
 check("52h: tramo1 y 2 done, 3 no",
       v2["tiers"][0]["done"] and v2["tiers"][1]["done"] and not v2["tiers"][2]["done"])

@@ -586,7 +586,13 @@ function HomeTab({ club, data, loaded, error }) {
           accent="challenge" tag="Reto" emoji="🎯"
           kicker="Reto del mes logrado"
           title={challenge.title}
-          subtitle={challenge.reward_text ? `🎁 ${challenge.reward_text}` : challenge.description}
+          subtitle={(() => {
+            // Escalonado: al completar todo, presumir la recompensa del tramo tope
+            // (ya viene elegida por VIP/base). Meta única: reward_text de siempre.
+            const topReward = challenge.tiers?.length ? challenge.tiers[challenge.tiers.length - 1].reward : null;
+            const reward = challenge.reward_text || topReward;
+            return reward ? `🎁 ${reward}` : challenge.description;
+          })()}
           clubName={clubName} playerName={data.player_name}
           shareText={`🎯 Completé el reto del mes en ${clubName || 'mi club'}: ${challenge.title} 🃏`}
           fileSlug="reto-del-mes"

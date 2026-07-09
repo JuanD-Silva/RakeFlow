@@ -20,10 +20,13 @@ const METRICS = [
 const MONTHS = ['', 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
   'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 
-const EMPTY_TIER = { target: '', reward: '', reward_vip: '' };
+// _k = key estable por fila (React reconcilia por key, no por índice → sin salto
+// de foco al borrar un tramo del medio). Contador de módulo, solo para el render.
+let _tierSeq = 1;
+const newTier = () => ({ _k: _tierSeq++, target: '', reward: '', reward_vip: '' });
 const emptyForm = () => ({
   title: '', description: '', metric: 'visitas', target: '', reward_text: '',
-  escalonado: false, tiers: [{ ...EMPTY_TIER }],
+  escalonado: false, tiers: [newTier()],
 });
 
 export default function MonthlyChallengeManager() {
@@ -57,11 +60,12 @@ export default function MonthlyChallengeManager() {
     if (current) {
       const tiers = current.tiers?.length
         ? current.tiers.map((t) => ({
+            _k: _tierSeq++,
             target: String(t.target),
             reward: t.reward || '',
             reward_vip: t.reward_vip || '',
           }))
-        : [{ ...EMPTY_TIER }];
+        : [newTier()];
       setForm({
         title: current.title,
         description: current.description || '',
@@ -82,7 +86,7 @@ export default function MonthlyChallengeManager() {
   const setTier = (i, key, val) =>
     setForm((f) => ({ ...f, tiers: f.tiers.map((t, j) => (j === i ? { ...t, [key]: val } : t)) }));
   const addTier = () =>
-    setForm((f) => ({ ...f, tiers: [...f.tiers, { ...EMPTY_TIER }] }));
+    setForm((f) => ({ ...f, tiers: [...f.tiers, newTier()] }));
   const removeTier = (i) =>
     setForm((f) => ({ ...f, tiers: f.tiers.filter((_, j) => j !== i) }));
 
@@ -194,7 +198,7 @@ export default function MonthlyChallengeManager() {
           {form.escalonado ? (
             <div className="space-y-2">
               {form.tiers.map((t, i) => (
-                <div key={i} className="bg-gray-900/60 border border-gray-700/50 rounded-lg p-2 space-y-1.5">
+                <div key={t._k} className="bg-gray-900/60 border border-gray-700/50 rounded-lg p-2 space-y-1.5">
                   <div className="flex items-center gap-2">
                     <span className="text-[11px] font-bold text-violet-300 w-14 shrink-0">Tramo {i + 1}</span>
                     <input type="number" inputMode="numeric" min="1" max="1000" value={t.target}

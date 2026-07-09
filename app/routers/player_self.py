@@ -317,10 +317,11 @@ def _challenge_progress(metric: str, m_cash: list, m_tour: list) -> float:
 
 
 def _tiers_view(tiers: list, current: float, vip: bool) -> dict:
-    """Vista escalonada PURA (testeable): estado de cada tramo + barra hacia el
-    próximo tramo sin cumplir (goal-gradient) + la recompensa que le toca a ESTE
-    jugador (VIP ve reward_vip si el tramo la trae; si no, la base). Los tramos
-    llegan ordenados ascendente (validado al guardar)."""
+    """Vista escalonada PURA (testeable): estado de cada tramo + barra GLOBAL hacia
+    el tramo tope (monótona: nunca retrocede al cruzar un tramo) + la recompensa que
+    le toca a ESTE jugador (VIP ve reward_vip si el tramo la trae; si no, la base).
+    Los escalones intermedios los comunica el checklist de tramos (done por tramo);
+    la barra apunta siempre al tope. Los tramos llegan ordenados ascendente."""
     tiers_out = []
     for t in tiers:
         tgt = t.get("target", 0)
@@ -330,12 +331,11 @@ def _tiers_view(tiers: list, current: float, vip: bool) -> dict:
             "reward": rvip if (vip and rvip) else t.get("reward"),
             "done": current >= tgt,
         })
-    next_tier = next((t for t in tiers_out if not t["done"]), None)
-    bar_target = next_tier["target"] if next_tier else (tiers_out[-1]["target"] if tiers_out else 0)
+    top_target = tiers_out[-1]["target"] if tiers_out else 0
     return {
         "tiers": tiers_out,
         "progress": {
-            "current": current, "target": bar_target,
+            "current": current, "target": top_target,
             "done": bool(tiers_out) and all(t["done"] for t in tiers_out),
             "completed": sum(1 for t in tiers_out if t["done"]),
         },
