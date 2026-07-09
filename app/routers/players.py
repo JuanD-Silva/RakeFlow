@@ -6,7 +6,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import and_
+from sqlalchemy import and_, text
 from sqlalchemy.future import select
 from typing import List, Optional
 from datetime import datetime, timedelta
@@ -89,6 +89,85 @@ async def read_players(skip: int = 0, limit: int = 10000, db: AsyncSession = Dep
         resp.is_vip = player_stats.is_vip(standings, player.id)
         out.append(resp)
     return out
+
+
+@router.get("/insights")
+async def players_insights(
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+    _: models.User = Depends(require_role([models.UserRole.OWNER, models.UserRole.MANAGER])),
+):
+    """CRM del directorio de jugadores: recencia + valor por jugador, para que el
+    club vea de un vistazo hace cuánto no viene cada uno, cuánto mueve, cuánto
+    rake deja (estimado) y si gana o pierde. SOLO OWNER/MANAGER: es información
+    financiera de clientes; el cajero ve el directorio sin esta capa.
+
+    Reusa compute_club_standings (cacheado por club: volumen/visitas/horas) y
+    agrega 3 agregados baratos: última visita, neto cash y el yield de rake del
+    club (rake total declarado / volumen total) con el que se estima el aporte
+    por jugador — estimado porque el rake real se declara por sesión, no por
+    jugador."""
+    standings = await player_stats.compute_club_standings(db, current_club.id)
+
+    # Última visita (fecha local Colombia): cash por sesión (cualquier estado —
+    # estar sentado AHORA cuenta como visita de hoy) + torneos por start_time.
+    last_rows = (await db.execute(text("""
+        SELECT pid, MAX(d) AS last_d FROM (
+          SELECT t.player_id AS pid,
+                 ((s.start_time AT TIME ZONE 'UTC') AT TIME ZONE 'America/Bogota')::date AS d
+          FROM transactions t JOIN sessions s ON s.id = t.session_id
+          WHERE s.club_id = :cid AND t.player_id IS NOT NULL
+          UNION ALL
+          SELECT tp.player_id,
+                 ((tr.start_time AT TIME ZONE 'UTC') AT TIME ZONE 'America/Bogota')::date
+          FROM tournament_players tp JOIN tournaments tr ON tr.id = tp.tournament_id
+          WHERE tr.club_id = :cid AND tp.player_id IS NOT NULL
+        ) x GROUP BY pid
+    """), {"cid": current_club.id})).all()
+    last_map = {r.pid: r.last_d for r in last_rows}
+
+    # Neto cash del jugador (cashout − buyin/rebuy) sobre sesiones CERRADAS —
+    # mismo corte que el volumen de standings para que las cifras cuadren entre sí.
+    net_rows = (await db.execute(text("""
+        SELECT t.player_id AS pid,
+               COALESCE(SUM(CASE WHEN CAST(t.type AS TEXT) = 'CASHOUT' THEN t.amount END), 0)
+             - COALESCE(SUM(CASE WHEN CAST(t.type AS TEXT) IN ('BUYIN','REBUY') THEN t.amount END), 0) AS net
+        FROM transactions t JOIN sessions s ON s.id = t.session_id
+        WHERE s.club_id = :cid AND s.status = 'CLOSED' AND t.player_id IS NOT NULL
+        GROUP BY t.player_id
+    """), {"cid": current_club.id})).all()
+    net_map = {r.pid: float(r.net or 0) for r in net_rows}
+
+    # Yield de rake del club = rake total (cash declarado + torneo) / volumen total.
+    cash_rake = (await db.execute(text(
+        "SELECT COALESCE(SUM(declared_rake_cash), 0) FROM sessions WHERE club_id = :cid"
+    ), {"cid": current_club.id})).scalar() or 0
+    tour_rake = (await db.execute(text("""
+        SELECT COALESCE(SUM(t.amount * tr.rake_percentage / 100.0), 0)
+        FROM transactions t JOIN tournaments tr ON tr.id = t.tournament_id
+        WHERE tr.club_id = :cid
+          AND CAST(t.type AS TEXT) IN ('TOURNAMENT_ENTRY','TOURNAMENT_REBUY','TOURNAMENT_ADDON')
+    """), {"cid": current_club.id})).scalar() or 0
+    volume_map = standings.get("volume", {})
+    total_volume = sum(v for v in volume_map.values() if v and v > 0)
+    rake_yield = (float(cash_rake) + float(tour_rake)) / total_volume if total_volume > 0 else 0.0
+
+    today = datetime.now(player_stats.COL_TZ).date()
+    ids = set(volume_map) | set(last_map) | set(net_map) | set(standings.get("visits", {}))
+    players_out = {}
+    for pid in ids:
+        vol = float(volume_map.get(pid, 0) or 0)
+        last_d = last_map.get(pid)
+        players_out[str(pid)] = {
+            "last_visit": last_d.isoformat() if last_d else None,
+            "days_inactive": (today - last_d).days if last_d else None,
+            "visits": int(standings.get("visits", {}).get(pid, 0)),
+            "hours": round(float(standings.get("hours", {}).get(pid, 0)), 1),
+            "volume": round(vol),
+            "rake_est": round(vol * rake_yield),
+            "net": round(net_map.get(pid, 0)),
+        }
+    return {"yield_pct": round(rake_yield * 100, 1), "players": players_out}
 
 
 # ---------------------------------------------------------
