@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { toPng } from 'html-to-image';
 import { playerSelfService } from '../api/services';
 import { signCop, monthName } from '../utils/formatters';
+import { shareCardImage } from '../utils/shareImage';
 
 // Card mensual compartible del jugador: /player/monthly-summary → imagen PNG
 // (html-to-image) → Web Share API. Fallbacks: descarga del PNG + texto por
@@ -59,22 +59,9 @@ export default function PlayerShareCard({ onClose }) {
     if (!cardRef.current || busy) return;
     setBusy(true);
     try {
-      const dataUrl = await toPng(cardRef.current, { pixelRatio: 2, cacheBust: true });
       const mes = monthName(data.period.year, data.period.month);
-      const fileName = `mi-mes-${mes}.png`;
-      const blob = await (await fetch(dataUrl)).blob();
-      const file = new File([blob], fileName, { type: 'image/png' });
-      if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ files: [file], text: shareText() });
-        setShared('shared');
-      } else {
-        // Escritorio / navegadores sin Web Share: descarga + botón de WhatsApp
-        const a = document.createElement('a');
-        a.href = dataUrl;
-        a.download = fileName;
-        a.click();
-        setShared('downloaded');
-      }
+      const outcome = await shareCardImage(cardRef.current, { shareText: shareText(), fileName: `mi-mes-${mes}.png` });
+      setShared(outcome);
     } catch (e) {
       if (e?.name !== 'AbortError') setShared('downloaded_failed');
     } finally {
