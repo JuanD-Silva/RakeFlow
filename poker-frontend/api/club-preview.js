@@ -15,11 +15,17 @@ const BACKEND = 'https://rakeflow-production.up.railway.app';
 const esc = (s) => String(s)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-const attr = (html, re, value) => html.replace(re, `$1${value}$2`);
+// Reemplazo por FUNCIÓN, nunca por string: en replace(re, string) JS interpreta
+// $1/$2/$'/$& DENTRO del valor — y los anuncios de poker llevan '$' casi
+// siempre ("Freeroll $100.000") → corrompería las metas (hallazgo del review).
+const attr = (html, re, value) => html.replace(re, (_m, p1, p2) => p1 + value + p2);
 
 export default async function handler(req, res) {
   const token = (req.query?.token || '').toString();
-  const host = req.headers['x-forwarded-host'] || req.headers.host || 'rakeflow.site';
+  // Host con allowlist: x-forwarded-host lo fija Vercel, pero el fallback a
+  // Host es spoofeable — jamás reflejar un host ajeno en og:url/canonical.
+  const rawHost = String(req.headers['x-forwarded-host'] || req.headers.host || '');
+  const host = /^(www\.)?rakeflow\.site$|\.vercel\.app$/.test(rawHost) ? rawHost : 'rakeflow.site';
   const origin = `https://${host}`;
 
   // Shell del SPA desde el propio deploy (así los <script> con hash siempre
@@ -49,7 +55,9 @@ export default async function handler(req, res) {
 
   if (club?.club_name) {
     const name = esc(club.club_name);
-    const title = `${name} · Poker en vivo ♠`;
+    // título en CRUDO — esc() se aplica una sola vez, al insertar (si se
+    // construyera desde `name` ya escapado, quedaría doble-escapado: &amp;quot;)
+    const title = `${club.club_name} · Poker en vivo ♠`;
     const url = `${origin}/c/${esc(token)}`;
     const img = `${origin}/og-club.jpg`;
 
@@ -70,7 +78,7 @@ export default async function handler(req, res) {
           : 'Mesas, sillas libres y torneos, en vivo. Guardá el link: cuando la sala abra, acá la ves primero.'
     );
 
-    html = html.replace(/<title>[\s\S]*?<\/title>/, `<title>${esc(title)}</title>`);
+    html = html.replace(/<title>[\s\S]*?<\/title>/, () => `<title>${esc(title)}</title>`);
     html = attr(html, /(<meta name="description" content=")[^"]*(")/, desc);
     html = attr(html, /(<meta property="og:site_name" content=")[^"]*(")/, name);
     html = attr(html, /(<meta property="og:title" content=")[^"]*(")/, esc(title));
