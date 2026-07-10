@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/c/:token",
+      "destination": "/api/club-preview?token=:token"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
