@@ -576,6 +576,19 @@ def compute_streak(weeks: list, today=None) -> dict:
     return {"weeks": streak, "at_risk": bool(at_risk and streak), "days_since_last_visit": days_since}
 
 
+def challenge_progress(metric: str, m_cash: list, m_tour: list) -> float:
+    """Progreso del jugador en la métrica de un reto del mes, sobre filas YA
+    cortadas al mes en curso (mismo criterio que el bloque 'month' del panel).
+    La comparten el endpoint /player/my-challenges y el cron de push."""
+    if metric == "visitas":
+        return sum(1 for r in m_cash if r.get("played", True)) + len(m_tour)
+    if metric == "horas":
+        return round(sum(r["hours"] for r in m_cash), 1)
+    if metric == "torneos":
+        return len(m_tour)
+    return 0
+
+
 def compute_level(visits: int) -> dict:
     """Nivel por visitas con progreso hacia el siguiente."""
     name, floor = LEVEL_TIERS[0]

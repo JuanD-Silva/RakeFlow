@@ -113,6 +113,12 @@ class AuditAction:
     # dura 30 días (un jugador fiel que abre a diario genera un solo LOGIN_SUCCESS).
     PANEL_OPEN = "PANEL_OPEN"
 
+    # Web Push: además de rastro, estas acciones SON el dedupe de los
+    # disparadores (push_triggers consulta audit_logs antes de enviar).
+    PUSH_WEEKLY_SENT = "PUSH_WEEKLY_SENT"      # cron jueves: racha/reto por user (1/semana)
+    PUSH_TABLE_OPEN = "PUSH_TABLE_OPEN"        # "hoy hay mesa" por club (1/día)
+    PUSH_ANNOUNCEMENT = "PUSH_ANNOUNCEMENT"    # anuncio del club (1/día)
+
 
 async def log_action(
     db: AsyncSession,

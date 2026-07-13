@@ -14,7 +14,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Importamos modelos y esquemas
-from .. import models, schemas, services, player_stats
+from .. import models, schemas, services, player_stats, push_triggers
 # Importamos las dependencias SaaS
 from ..dependencies import get_db, get_current_club, require_role
 from ..audit import log_action, AuditAction
@@ -51,6 +51,10 @@ async def create_session(
     db.add(new_session)
     await db.commit()
     await db.refresh(new_session)
+    # "Hoy hay mesa": push a los jugadores suscritos del club. Fire-and-forget
+    # DESPUÉS del commit (sesión DB propia, dedupe 1/día adentro): abrir la mesa
+    # jamás se demora ni falla por culpa de las notificaciones.
+    push_triggers.spawn(push_triggers.notify_table_open(current_club.id, current_club.name))
     return new_session
 
 
