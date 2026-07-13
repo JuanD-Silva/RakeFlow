@@ -145,6 +145,13 @@ body {
 /* Aura VIP (pilar del club): la pantalla ENTERA se siente premium. Fondo dorado
    ambiental (reemplaza el gradiente base) + un halo dorado que respira en los
    bordes. Sutil: reconocimiento, no distracción. */
+/* Alto REAL del viewport (iOS: la barra de Safari colapsa/expande y el 100vh
+   clásico queda corto/largo; dvh lo sigue). Fallback a vh para navegadores viejos. */
+.rf-vh { height: 100vh; }
+/* @supports explícito: el minificador colapsa las propiedades duplicadas y se
+   comería el fallback 100vh para iOS viejos (<15.4). */
+@supports (height: 100dvh) { .rf-vh { height: 100dvh; } }
+
 .rf-aura {
   background:
     radial-gradient(120% 55% at 50% -8%, rgba(34,211,238,0.18), transparent 55%),

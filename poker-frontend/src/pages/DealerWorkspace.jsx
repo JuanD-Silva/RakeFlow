@@ -29,12 +29,18 @@ const TABS = [
 export default function DealerWorkspace() {
   const { logout } = useAuth();
   const [tab, setTab] = useState('table');
+  // Cambiar de pestaña vuelve arriba (paridad con el panel del jugador).
+  const scrollRef = useRef(null);
+  useEffect(() => { scrollRef.current?.scrollTo(0, 0); }, [tab]);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const id = setInterval(() => setNow(Date.now()), 60000); return () => clearInterval(id); }, []);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#0b1220] via-[#0a0f1a] to-black text-gray-100 font-sans">
-      <div className="max-w-md mx-auto px-4 py-6 pb-28">
+    /* APP-SHELL (fix iOS): documento sin scroll + scroller interno; la nav en
+       `absolute` no baila con la barra de Safari (mismo fix que PlayerWorkspace). */
+    <div className="relative rf-vh overflow-hidden bg-gradient-to-b from-[#0b1220] via-[#0a0f1a] to-black text-gray-100 font-sans">
+      <div ref={scrollRef} className="h-full overflow-y-auto overscroll-contain">
+      <div className="max-w-md mx-auto px-4 pt-[calc(1.5rem+env(safe-area-inset-top))] pb-[calc(7rem+env(safe-area-inset-bottom))] min-h-full">
         <div className="flex items-center justify-between mb-5">
           <p className="text-emerald-500 text-[11px] font-black tracking-[0.3em] uppercase">RakeFlow · Dealer</p>
           <button onClick={logout} className="text-xs text-gray-400 hover:text-white font-bold">Salir</button>
@@ -45,9 +51,10 @@ export default function DealerWorkspace() {
         {tab === 'history' && <HistoryTab />}
         {tab === 'summary' && <SummaryTab />}
       </div>
+      </div>
 
-      {/* Bottom nav */}
-      <nav className="fixed bottom-0 inset-x-0 bg-[#0a0f1a]/95 backdrop-blur border-t border-gray-800">
+      {/* Bottom nav (+ safe-area: antes quedaba pegada al home-indicator) */}
+      <nav className="absolute bottom-0 inset-x-0 z-20 bg-[#0a0f1a]/95 backdrop-blur border-t border-gray-800 pb-[env(safe-area-inset-bottom)]">
         <div className="max-w-md mx-auto grid grid-cols-4">
           {TABS.map((t) => (
             <button
