@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import ProfitSparkline from '../components/ProfitSparkline';
 import PlayerShareCard from '../components/PlayerShareCard';
 import AchievementShareCard from '../components/AchievementShareCard';
+import InstallAppBanner from '../components/InstallAppBanner';
 import { cop, signCop, fmtDate, monthName } from '../utils/formatters';
 
 // Panel del Jugador (clon estructural de DealerWorkspace: móvil-first, max-w-md,
@@ -157,6 +158,8 @@ export default function PlayerWorkspace() {
           </div>
           <button onClick={logout} className="rf-tap shrink-0 text-xs text-gray-400 hover:text-white font-bold px-2 py-1">Salir</button>
         </header>
+
+        <InstallAppBanner />
 
         {/* flex-1 empuja el footer al fondo cuando el contenido es corto (Ranking),
             sin afectar las vistas largas (Inicio). */}

@@ -4,6 +4,14 @@ import * as Sentry from '@sentry/react'
 import './index.css'
 import App from './App.jsx'
 
+// PWA: capturar beforeinstallprompt TEMPRANO (Chrome puede dispararlo antes de
+// que monte el componente del banner). InstallAppBanner lo consume.
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault()
+  window.__rfDeferredInstall = e
+  window.dispatchEvent(new Event('rf-install-ready'))
+})
+
 const SENTRY_DSN = import.meta.env.VITE_SENTRY_DSN
 if (SENTRY_DSN) {
   Sentry.init({
