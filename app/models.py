@@ -619,3 +619,26 @@ class MonthlyChallenge(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     club = relationship("Club")
+
+
+class PushSubscription(Base):
+    """Suscripción Web Push de una cuenta (hoy solo rol PLAYER). Una fila por
+    navegador/dispositivo instalado; un mismo user puede tener varias (teléfono
+    + PC). El endpoint es único GLOBAL (lo emite el push service del navegador):
+    si otro user se loguea en el mismo navegador, el subscribe re-asigna la fila
+    (el navegador solo puede tener UNA suscripción por service worker, así que la
+    fila vieja quedaría muerta de todos modos). Las suscripciones vencidas se
+    borran al recibir 404/410 del push service (push_service.py)."""
+    __tablename__ = "push_subscriptions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+
+    # unique+index juntos => create_all genera el índice ix_push_subscriptions_endpoint,
+    # EXACTAMENTE el mismo nombre que crea la migración (evita índices duplicados).
+    endpoint = Column(String, nullable=False, unique=True, index=True)
+    # Claves del navegador para cifrar el payload (RFC 8291); opacas para nosotros.
+    p256dh = Column(String, nullable=False)
+    auth = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
