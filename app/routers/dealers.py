@@ -17,7 +17,7 @@ import asyncio
 from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import func, or_, and_
+from sqlalchemy import func, or_, and_, delete as sa_delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.future import select
@@ -499,6 +499,11 @@ async def _hard_delete_dealer(db: AsyncSession, dealer: models.Dealer):
     await db.delete(dealer)
     await db.flush()
     if user_id:
+        # Suscripciones push de la cuenta (FK NOT NULL a users). Hoy solo el rol
+        # PLAYER se suscribe, pero borrarlas acá evita repetir el bug de FKs (#49)
+        # si algún día el panel del dealer también recibe push.
+        await db.execute(sa_delete(models.PushSubscription).where(
+            models.PushSubscription.user_id == user_id))
         user = (await db.execute(
             select(models.User).where(models.User.id == user_id)
         )).scalars().first()

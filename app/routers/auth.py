@@ -299,8 +299,10 @@ async def delete_my_account(
         await db.execute(delete(models.DistributionRule).where(models.DistributionRule.club_id == cid))
         await db.execute(delete(models.BlindTemplate).where(models.BlindTemplate.club_id == cid))
 
-        # 7. Usuarios: al final de sus referentes (dealers, payouts, alertas);
+        # 7. Usuarios: al final de sus referentes (dealers, payouts, alertas,
+        # suscripciones push — FK NOT NULL a users);
         # el self-FK invited_by_user_id se resuelve dentro del mismo DELETE.
+        await db.execute(delete(models.PushSubscription).where(models.PushSubscription.club_id == cid))
         await db.execute(delete(models.User).where(models.User.club_id == cid))
 
         # 8. Audit logs (FK -> clubs) y el club
