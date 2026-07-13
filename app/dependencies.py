@@ -1,5 +1,6 @@
 # app/dependencies.py
 import os
+import secrets
 from typing import List, Optional
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
@@ -116,10 +117,12 @@ async def get_current_club(
 def verify_internal_token(request: Request) -> None:
     """Auth por token compartido para endpoints internos de cron (GitHub
     Actions manda el header X-Internal-Token == env INTERNAL_CRON_TOKEN).
-    Mismo contrato que el cron de renovaciones Wompi (payments.py)."""
+    La usan el cron de renovaciones Wompi (payments.py) y el de push.
+    compare_digest: comparación constant-time — un != filtra por timing la
+    longitud del prefijo acertado; impráctico por red, pero gratis evitarlo."""
     expected = os.getenv("INTERNAL_CRON_TOKEN", "")
     received = request.headers.get("x-internal-token", "")
-    if not expected or received != expected:
+    if not expected or not secrets.compare_digest(received, expected):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 

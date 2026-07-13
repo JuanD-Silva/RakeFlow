@@ -30,7 +30,7 @@ jobs:
           QS=""
           if [ "$DRY_RUN" = "true" ]; then QS="?dry_run=true"; fi
           set -e
-          RESP=$(curl -fsS -X POST \
+          RESP=$(curl -fsS --max-time 300 -X POST \
             -H "X-Internal-Token: $TOKEN" \
             -H "Content-Type: application/json" \
             "$API_URL/player/push/run-weekly$QS")

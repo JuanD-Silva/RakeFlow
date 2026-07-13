@@ -148,7 +148,9 @@ async def run_weekly(db: AsyncSession, *, dry_run: bool = False) -> dict:
         by_user.setdefault((s.club_id, s.user_id), []).append(s)
 
     week_start = player_stats.start_of_week_col_as_utc()
-    summary = {"subscribed_users": len(by_user), "sent": 0, "skipped_dedupe": 0,
+    # "notified" cuenta usuarios con aviso PROCESADO (el resultado real del
+    # envío por-suscripción —sent/gone/errors— viaja en details).
+    summary = {"subscribed_users": len(by_user), "notified": 0, "skipped_dedupe": 0,
                "no_message": 0, "no_player": 0, "errors": 0, "details": []}
 
     for (club_id, user_id), user_subs in by_user.items():
@@ -174,7 +176,7 @@ async def run_weekly(db: AsyncSession, *, dry_run: bool = False) -> dict:
             if dry_run:
                 summary["details"].append({"club_id": club_id, "user_id": user_id,
                                            "reason": reason, "title": payload["title"]})
-                summary["sent"] += 1
+                summary["notified"] += 1
                 continue
 
             result = await push_service.send_to_subscriptions(user_subs, payload)
@@ -185,7 +187,7 @@ async def run_weekly(db: AsyncSession, *, dry_run: bool = False) -> dict:
                 action=AuditAction.PUSH_WEEKLY_SENT, actor_type="SYSTEM",
                 meta={"user_id": user_id, "reason": reason, **result},
             )
-            summary["sent"] += 1
+            summary["notified"] += 1
             summary["details"].append({"club_id": club_id, "user_id": user_id,
                                        "reason": reason, **result})
         except Exception:
@@ -197,12 +199,19 @@ async def run_weekly(db: AsyncSession, *, dry_run: bool = False) -> dict:
 # ---------------------------------------------------------------------------
 # Hooks de eventos del club: "hoy hay mesa" / anuncio
 # ---------------------------------------------------------------------------
+# Referencias fuertes a las tasks en vuelo: create_task solo guarda weak-ref
+# y el GC podría matar un aviso a medio enviar. Se descartan al completar.
+_bg_tasks: set = set()
+
+
 def spawn(coro) -> None:
     """Dispara un aviso en background sin bloquear el request del staff.
     El error jamás sube: solo log."""
     task = asyncio.create_task(coro)
+    _bg_tasks.add(task)
 
     def _done(t):
+        _bg_tasks.discard(t)
         exc = t.exception()
         if exc:
             logger.warning("push_trigger_failed: %r", exc)

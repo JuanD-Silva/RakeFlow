@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from pydantic import BaseModel
 from .. import models
-from ..dependencies import get_db, get_current_club, require_role
+from ..dependencies import get_db, get_current_club, require_role, verify_internal_token
 from ..audit import log_action, AuditAction
 from .. import payments_wompi
 from .. import subscription_renewals
@@ -429,12 +429,9 @@ async def wompi_subscribe(
 # ===========================================================
 # CRON DE RENOVACIONES (interno)
 # ===========================================================
-def _verify_internal_token(request: Request) -> None:
-    """Auth simple por token compartido para el endpoint de cron."""
-    expected = os.getenv("INTERNAL_CRON_TOKEN", "")
-    received = request.headers.get("x-internal-token", "")
-    if not expected or received != expected:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+# La verificación del token interno vive en dependencies.verify_internal_token
+# (la comparten este cron y el de push); alias para los call-sites existentes.
+_verify_internal_token = verify_internal_token
 
 
 @router.post("/wompi/charge-renewals")

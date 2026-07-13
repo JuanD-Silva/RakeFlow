@@ -113,7 +113,7 @@ with httpx.Client(base_url=BASE, timeout=30) as c:
     check("dry-run 200", r.status_code == 200)
     d = r.json()
     check("dry-run: 2 suscritos, 0 mensajes", d["subscribed_users"] == 2
-          and d["sent"] == 0 and d["no_message"] == 2)
+          and d["notified"] == 0 and d["no_message"] == 2)
 
     # --- hook "hoy hay mesa": 1ª mesa avisa, la 2ª no (dedupe diario) ---
     r = c.post("/sessions/", json={"name": "Mesa 1"}, headers=hA)
@@ -177,14 +177,14 @@ with httpx.Client(base_url=BASE, timeout=30) as c:
     r = c.post("/player/push/run-weekly", headers=CRON_H)
     check("run-weekly real 200", r.status_code == 200)
     d = r.json()
-    check("run-weekly: 2 enviados", d["sent"] == 2)
+    check("run-weekly: 2 notificados", d["notified"] == 2)
     reasons = sorted(x["reason"] for x in d["details"])
     check("motivos = challenge + streak", reasons == ["challenge", "streak"])
 
     # --- idempotencia semanal: la 2ª corrida no re-envía ---
     r = c.post("/player/push/run-weekly", headers=CRON_H)
     d = r.json()
-    check("re-corrida: 0 enviados, 2 dedupe", d["sent"] == 0 and d["skipped_dedupe"] == 2)
+    check("re-corrida: 0 notificados, 2 dedupe", d["notified"] == 0 and d["skipped_dedupe"] == 2)
 
 print(f"\ne2e push triggers: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
