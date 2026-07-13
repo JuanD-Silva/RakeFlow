@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { dealerSelfService } from '../api/services';
+import InstallAppBanner from '../components/InstallAppBanner';
 import { useAuth } from '../context/AuthContext';
 
 const ALERTS = [
@@ -45,6 +46,8 @@ export default function DealerWorkspace() {
           <p className="text-emerald-500 text-[11px] font-black tracking-[0.3em] uppercase">RakeFlow · Dealer</p>
           <button onClick={logout} className="text-xs text-gray-400 hover:text-white font-bold">Salir</button>
         </div>
+
+        <InstallAppBanner />
 
         {tab === 'table' && <TableTab now={now} />}
         {tab === 'shift' && <ShiftTab />}
