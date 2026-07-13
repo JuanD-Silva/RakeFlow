@@ -304,16 +304,9 @@ async def club_info(
     }
 
 
-def _challenge_progress(metric: str, m_cash: list, m_tour: list) -> float:
-    """Progreso del jugador en la métrica del reto, sobre las filas del mes ya
-    cortadas por stats_since (mismo criterio que el bloque 'month' del panel)."""
-    if metric == "visitas":
-        return sum(1 for r in m_cash if r.get("played", True)) + len(m_tour)
-    if metric == "horas":
-        return round(sum(r["hours"] for r in m_cash), 1)
-    if metric == "torneos":
-        return len(m_tour)
-    return 0
+# Movida a player_stats.challenge_progress (la comparte el cron de push);
+# alias local para no tocar los call-sites de este router.
+_challenge_progress = player_stats.challenge_progress
 
 
 def _tiers_view(tiers: list, current: float, vip: bool) -> dict:

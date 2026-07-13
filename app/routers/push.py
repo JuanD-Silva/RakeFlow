@@ -21,8 +21,8 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from .. import models, push_service
-from ..dependencies import get_db, require_role
+from .. import models, push_service, push_triggers
+from ..dependencies import get_db, require_role, verify_internal_token
 from ..rate_limit import limiter
 
 logger = logging.getLogger(__name__)
@@ -169,3 +169,18 @@ async def send_test(
     if result["sent"] == 0 and result["gone"] == 0 and result["errors"] == 0:
         raise HTTPException(status_code=404, detail="No tenés suscripciones activas")
     return result
+
+
+@router.post("/run-weekly")
+async def run_weekly_push(
+    request: Request,
+    dry_run: bool = False,
+    db: AsyncSession = Depends(get_db),
+):
+    """Cron semanal (GitHub Actions, jueves 6pm Colombia): racha en riesgo /
+    reto casi logrado para las cuentas suscritas. Interno (X-Internal-Token),
+    idempotente por semana ISO vía audit_logs. dry_run=true lista sin enviar."""
+    verify_internal_token(request)
+    summary = await push_triggers.run_weekly(db, dry_run=dry_run)
+    logger.info("push_weekly_run %s", {k: v for k, v in summary.items() if k != "details"})
+    return summary

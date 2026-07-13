@@ -591,6 +591,16 @@ export const playerSelfService = {
     getHighlight: async () => (await api.get('/player/my-highlight')).data,
 };
 
+// Web Push del panel del jugador (toggle 🔔)
+export const pushService = {
+    config: async () => (await api.get('/player/push/config')).data,
+    subscribe: async (subscription) =>
+        (await api.post('/player/push/subscribe', subscription)).data,
+    unsubscribe: async (endpoint) =>
+        (await api.post('/player/push/unsubscribe', { endpoint })).data,
+    test: async () => (await api.post('/player/push/test')).data,
+};
+
 // Retos rotativos mensuales (hasta 3) — lado staff (OWNER/MANAGER)
 export const challengeService = {
     get: async () => (await api.get('/config/monthly-challenges')).data,

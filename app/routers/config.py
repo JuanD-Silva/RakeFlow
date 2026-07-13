@@ -5,7 +5,7 @@ from sqlalchemy.future import select
 from sqlalchemy import delete, text
 from typing import List
 
-from .. import models, schemas
+from .. import models, schemas, push_triggers
 from ..dependencies import get_db, get_current_club, require_role
 
 router = APIRouter(
@@ -37,8 +37,15 @@ async def update_club_public(
     club = (await db.execute(
         select(models.Club).where(models.Club.id == current_club.id)
     )).scalars().first()
+    prev = club.public_announcement
     club.public_announcement = (data.public_announcement or "").strip() or None
     await db.commit()
+    # Anuncio nuevo (no vacío y distinto) → push a los suscritos del club.
+    # Fire-and-forget post-commit con dedupe 1/día adentro: editar tres veces
+    # el mismo día no spamea; borrar el anuncio jamás notifica.
+    if club.public_announcement and club.public_announcement != prev:
+        push_triggers.spawn(push_triggers.notify_announcement(
+            club.id, club.name, club.public_announcement))
     return {"public_announcement": club.public_announcement}
 
 

@@ -6,6 +6,7 @@ import ProfitSparkline from '../components/ProfitSparkline';
 import PlayerShareCard from '../components/PlayerShareCard';
 import AchievementShareCard from '../components/AchievementShareCard';
 import InstallAppBanner from '../components/InstallAppBanner';
+import PushToggle from '../components/PushToggle';
 import { cop, signCop, fmtDate, monthName } from '../utils/formatters';
 
 // Panel del Jugador (clon estructural de DealerWorkspace: móvil-first, max-w-md,
@@ -160,6 +161,7 @@ export default function PlayerWorkspace() {
         </header>
 
         <InstallAppBanner />
+        <PushToggle />
 
         {/* flex-1 empuja el footer al fondo cuando el contenido es corto (Ranking),
             sin afectar las vistas largas (Inicio). */}

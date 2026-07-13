@@ -1,6 +1,8 @@
 # app/dependencies.py
+import os
+import secrets
 from typing import List, Optional
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -110,6 +112,18 @@ async def get_current_club(
             headers={"WWW-Authenticate": "Bearer"},
         )
     return club
+
+
+def verify_internal_token(request: Request) -> None:
+    """Auth por token compartido para endpoints internos de cron (GitHub
+    Actions manda el header X-Internal-Token == env INTERNAL_CRON_TOKEN).
+    La usan el cron de renovaciones Wompi (payments.py) y el de push.
+    compare_digest: comparación constant-time — un != filtra por timing la
+    longitud del prefijo acertado; impráctico por red, pero gratis evitarlo."""
+    expected = os.getenv("INTERNAL_CRON_TOKEN", "")
+    received = request.headers.get("x-internal-token", "")
+    if not expected or not secrets.compare_digest(received, expected):
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 def require_role(allowed_roles: List[models.UserRole]):
