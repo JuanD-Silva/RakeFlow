@@ -52,6 +52,9 @@ export default function InstallAppBanner() {
 
   const install = async () => {
     if (!promptEvt) return;
+    // Nulear ANTES del await: prompt() solo acepta una llamada — un doble-tap
+    // rápido no debe re-invocarlo (review #77).
+    setPromptEvt(null);
     promptEvt.prompt();
     try {
       const { outcome } = await promptEvt.userChoice;
@@ -59,7 +62,6 @@ export default function InstallAppBanner() {
       else setVisible(false);
     } catch { setVisible(false); }
     window.__rfDeferredInstall = null;
-    setPromptEvt(null);
   };
 
   return (
