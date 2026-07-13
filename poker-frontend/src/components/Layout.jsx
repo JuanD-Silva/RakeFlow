@@ -12,7 +12,9 @@ export default function Layout({ children }) {
   return (
 <div className="min-h-screen bg-gray-900 text-white flex flex-col w-full max-w-full overflow-x-hidden">      
       {/* --- NAVBAR SUPERIOR (Horizontal) --- */}
-      <nav className="bg-gray-800 border-b border-gray-700 shadow-lg sticky top-0 z-50">
+      {/* pt safe-area: con la PWA instalada en iPhone (status bar translúcida),
+          la nav del staff no debe quedar bajo el reloj/notch. En navegador es 0. */}
+      <nav className="bg-gray-800 border-b border-gray-700 shadow-lg sticky top-0 z-50 pt-[env(safe-area-inset-top)]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             
