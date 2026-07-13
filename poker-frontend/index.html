@@ -5,6 +5,14 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48.png" />
     <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <!-- PWA: color del marco del sistema + modo app en iOS (agregar a inicio).
+         black-translucent = contenido bajo la barra de estado; el safe-area-top
+         del shell (fix iOS #75) ya lo compensa. -->
+    <meta name="theme-color" content="#0a0f1a" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="RakeFlow" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 
     <!-- Google Search Console -->
