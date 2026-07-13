@@ -46,10 +46,16 @@ self.addEventListener('notificationclick', (event) => {
   event.notification.close()
   const url = event.notification.data?.url || '/'
   event.waitUntil((async () => {
-    // Si la app ya está abierta, enfocarla (sin recargar el SPA); si no, abrirla.
+    // Si la app ya está abierta: enfocarla, navegando al deep-link del aviso
+    // solo si trae uno (url '/' = solo traer al frente, sin recargar el SPA).
     const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
     for (const client of wins) {
-      if ('focus' in client) return client.focus()
+      if ('focus' in client) {
+        if (url !== '/' && 'navigate' in client) {
+          try { await client.navigate(url) } catch { /* cross-origin u obsoleta: solo enfocar */ }
+        }
+        return client.focus()
+      }
     }
     return self.clients.openWindow(url)
   })())

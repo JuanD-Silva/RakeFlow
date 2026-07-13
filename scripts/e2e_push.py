@@ -9,6 +9,13 @@ import httpx
 
 BASE = "http://127.0.0.1:8010"
 suffix = os.urandom(4).hex()
+# Teléfonos únicos por corrida: users.phone es único GLOBAL (entre clubes),
+# así el e2e puede re-correrse contra la misma DB sin chocar.
+_pbase = int.from_bytes(os.urandom(4), "big") % 10**8
+
+
+def phone_n(n):
+    return f"30{(_pbase + n) % 10**8:08d}"
 
 passed = failed = 0
 
@@ -47,8 +54,8 @@ def club_con_jugador(c, tag, phone):
 EP1 = f"https://push.example.test/sub/{suffix}-1"
 
 with httpx.Client(base_url=BASE, timeout=30) as c:
-    h1, hp1 = club_con_jugador(c, "a", "3001110001")
-    h2, hp2 = club_con_jugador(c, "b", "3001110002")
+    h1, hp1 = club_con_jugador(c, "a", phone_n(1))
+    h2, hp2 = club_con_jugador(c, "b", phone_n(2))
 
     # --- config: auth y rol ---
     r = c.get("/player/push/config")
@@ -96,6 +103,26 @@ with httpx.Client(base_url=BASE, timeout=30) as c:
           r.status_code == 200 and r.json()["unsubscribed"] is False)
     r = c.post("/player/push/test", headers=hp1)
     check("test tras unsubscribe → 404", r.status_code == 404)
+
+    # --- cap de suscripciones por cuenta (MAX_SUBS_PER_USER=10) ---
+    # 11 endpoints para el jugador B: la #1 (más vieja) debe caer del cap y
+    # /test debe intentar exactamente 10 envíos (todos fallan: endpoint fake).
+    for i in range(11):
+        r = c.post("/player/push/subscribe", json={
+            "endpoint": f"https://push.example.test/cap/{suffix}-{i}",
+            "keys": {"p256dh": "BPk", "auth": "abc"}}, headers=hp2)
+        assert r.status_code == 200, f"subscribe cap {i}: {r.text}"
+    r = c.post("/player/push/test", headers=hp2)
+    check("cap 10: /test intenta exactamente 10 (la más vieja cayó)",
+          r.status_code == 200 and r.json()["errors"] == 10)
+
+    # --- cascada de delete-my-account con suscripción push VIVA ---
+    # (la FK NOT NULL de push_subscriptions a users rompería el borrado del
+    # club si auth.py no borra las suscripciones antes que los users)
+    r = c.post("/player/push/subscribe", json=body, headers=hp1)
+    check("re-subscribe para probar la cascada", r.status_code == 200)
+    r = c.delete("/me/delete-account", headers=h1)
+    check("delete-my-account con suscripción viva → 200", r.status_code == 200)
 
 print(f"\ne2e push: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

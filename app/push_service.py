@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from . import models
+from .database import AsyncSessionLocal
 
 logger = logging.getLogger(__name__)
 
@@ -53,12 +54,12 @@ def _send_one(sub_info: dict, payload: str) -> None:
     )
 
 
-async def send_to_subscriptions(
-    db: AsyncSession, subs: list, payload: dict
-) -> dict:
+async def send_to_subscriptions(subs: list, payload: dict) -> dict:
     """Envía `payload` (title/body/tag/url — lo interpreta el SW) a una lista de
     PushSubscription YA CARGADA — el caller es responsable del filtro por
-    club/user (tenant isolation). Borra las suscripciones vencidas (404/410).
+    club/user (tenant isolation). Borra las suscripciones vencidas (404/410)
+    en una sesión DB PROPIA: jamás commitea la transacción del caller (un
+    request/cron con cambios pendientes no debe heredar un commit oculto).
     Devuelve {"sent", "gone", "errors"} para logs/response."""
     if not push_enabled() or not subs:
         return {"sent": 0, "gone": 0, "errors": 0}
@@ -83,22 +84,24 @@ async def send_to_subscriptions(
             errors += 1
             logger.exception("webpush_unexpected sub=%s", s.id)
     if dead_ids:
-        await db.execute(
-            delete(models.PushSubscription)
-            .where(models.PushSubscription.id.in_(dead_ids))
-        )
-        await db.commit()
+        async with AsyncSessionLocal() as cleanup_db:
+            await cleanup_db.execute(
+                delete(models.PushSubscription)
+                .where(models.PushSubscription.id.in_(dead_ids))
+            )
+            await cleanup_db.commit()
     return {"sent": sent, "gone": gone, "errors": errors}
 
 
 async def send_to_user(
     db: AsyncSession, club_id: int, user_id: int, payload: dict
 ) -> dict:
-    """Todas las suscripciones (teléfono + PC) de UNA cuenta del club."""
+    """Todas las suscripciones (teléfono + PC) de UNA cuenta del club.
+    `db` se usa SOLO para leer; la limpieza va en sesión propia."""
     subs = (await db.execute(
         select(models.PushSubscription).where(
             models.PushSubscription.club_id == club_id,
             models.PushSubscription.user_id == user_id,
         )
     )).scalars().all()
-    return await send_to_subscriptions(db, subs, payload)
+    return await send_to_subscriptions(subs, payload)

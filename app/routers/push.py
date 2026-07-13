@@ -12,6 +12,8 @@ panel si tiene suscripción local (upsert idempotente que auto-repara).
 iOS: Web Push existe solo en iOS 16.4+ y ÚNICAMENTE con la app instalada
 (Añadir a pantalla de inicio); esa aclaración vive en la UI del toggle (PR2).
 """
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import delete
@@ -22,6 +24,8 @@ from sqlalchemy.future import select
 from .. import models, push_service
 from ..dependencies import get_db, require_role
 from ..rate_limit import limiter
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/player/push", tags=["Push"])
 
@@ -52,11 +56,16 @@ async def push_config(user: models.User = Depends(_require_player)):
     }
 
 
+# Máximo de dispositivos por cuenta: acota lo que un cliente roto o malicioso
+# puede inflar la tabla (subscribe NO tiene rate limit por IP a propósito: en
+# el WiFi del club decenas de teléfonos comparten UNA IP pública y el panel
+# re-postea al abrir; un bucket por IP daría 429 a suscripciones legítimas).
+MAX_SUBS_PER_USER = 10
+
+
 @router.post("/subscribe")
-@limiter.limit("30/hour")
 async def subscribe(
     data: SubscribeIn,
-    request: Request,
     db: AsyncSession = Depends(get_db),
     user: models.User = Depends(_require_player),
 ):
@@ -68,6 +77,14 @@ async def subscribe(
         raise HTTPException(status_code=503, detail="Push no configurado en el servidor")
     if not data.endpoint.startswith("https://"):
         raise HTTPException(status_code=422, detail="Endpoint inválido")
+    # Rastro de re-asignación (auditoría barata): si la fila cambia de dueño
+    # que quede en logs — un takeover requeriría robar endpoint+claves del
+    # navegador de la víctima, pero si pasa, que sea visible. La carrera
+    # select→upsert puede perder un log; el upsert en sí es atómico.
+    prev = (await db.execute(
+        select(models.PushSubscription.user_id, models.PushSubscription.club_id)
+        .where(models.PushSubscription.endpoint == data.endpoint)
+    )).first()
     stmt = pg_insert(models.PushSubscription).values(
         club_id=user.club_id,
         user_id=user.id,
@@ -84,7 +101,31 @@ async def subscribe(
         },
     )
     await db.execute(stmt)
+    # Cap por cuenta: conservar las MAX_SUBS_PER_USER más recientes.
+    keep = (
+        select(models.PushSubscription.id)
+        .where(
+            models.PushSubscription.user_id == user.id,
+            models.PushSubscription.club_id == user.club_id,
+        )
+        .order_by(models.PushSubscription.created_at.desc(),
+                  models.PushSubscription.id.desc())
+        .limit(MAX_SUBS_PER_USER)
+        .scalar_subquery()
+    )
+    await db.execute(
+        delete(models.PushSubscription).where(
+            models.PushSubscription.user_id == user.id,
+            models.PushSubscription.club_id == user.club_id,
+            models.PushSubscription.id.not_in(keep),
+        )
+    )
     await db.commit()
+    if prev and (prev.user_id != user.id or prev.club_id != user.club_id):
+        logger.warning(
+            "push_sub_reassigned old_user=%s old_club=%s -> new_user=%s new_club=%s",
+            prev.user_id, prev.club_id, user.id, user.club_id,
+        )
     return {"subscribed": True}
 
 
