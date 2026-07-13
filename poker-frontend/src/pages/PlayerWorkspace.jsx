@@ -115,6 +115,10 @@ const GridSkeleton = () => (
 export default function PlayerWorkspace() {
   const { logout } = useAuth();
   const [tab, setTab] = useState('inicio');
+  // Con el scroll interno (app-shell), cambiar de pestaña vuelve arriba —
+  // como una app nativa (antes el scroll del documento quedaba a mitad).
+  const scrollRef = useRef(null);
+  useEffect(() => { scrollRef.current?.scrollTo(0, 0); }, [tab]);
   // El club protagoniza el header: el jugador es cliente del CLUB, no del SaaS.
   // Se lo pasamos a HomeTab para no duplicar el GET /player/club-info.
   const { data: club, error: clubError } = usePlayerResource(playerSelfService.getClubInfo);
@@ -124,14 +128,21 @@ export default function PlayerWorkspace() {
   const isVip = !!profile?.is_vip;
 
   return (
-    <div className={`relative min-h-screen text-gray-100 font-sans ${isVip ? 'rf-aura' : 'bg-gradient-to-b from-[#0b1220] via-[#0a0f1a] to-black'}`}>
+    /* APP-SHELL (fix iOS): el documento NO scrollea (rf-vh + overflow-hidden);
+       scrollea el contenedor interno. Con scroll de documento, la bottom-nav en
+       `fixed` baila en iPhone (colapso de la barra de Safari + rebote elástico
+       mueven los fixed). Anclada con `absolute` a este shell, no se mueve. */
+    <div className={`relative rf-vh overflow-hidden text-gray-100 font-sans ${isVip ? 'rf-aura' : 'bg-gradient-to-b from-[#0b1220] via-[#0a0f1a] to-black'}`}>
       {/* Aura VIP: halo dorado que respira en los bordes de toda la pantalla. */}
-      {isVip && <div className="pointer-events-none fixed inset-0 z-0 rf-aura-ring" aria-hidden="true" />}
-      {/* pb reserva el alto de la nav + el home-indicator del iPhone (safe-area).
+      {isVip && <div className="pointer-events-none absolute inset-0 z-0 rf-aura-ring" aria-hidden="true" />}
+      {/* overscroll-contain: el rebote elástico queda DENTRO del scroller. */}
+      <div ref={scrollRef} className="h-full overflow-y-auto overscroll-contain">
+      {/* pb reserva el alto de la nav + el home-indicator del iPhone (safe-area);
+          pt suma el notch cuando el panel corre a pantalla completa (PWA).
           `relative` SIN z-index: mantiene el contenido sobre el aura-ring por orden
           de árbol pero NO crea stacking context, así el modal de compartir (z-50)
           escapa por encima de la bottom-nav (z-20) en vez de quedar atrapado. */}
-      <div className="relative max-w-md mx-auto px-4 py-6 pb-[calc(6.5rem+env(safe-area-inset-bottom))] min-h-screen flex flex-col">
+      <div className="relative max-w-md mx-auto px-4 pt-[calc(1.5rem+env(safe-area-inset-top))] pb-[calc(6.5rem+env(safe-area-inset-bottom))] min-h-full flex flex-col">
         <header className="flex items-center justify-between gap-3 mb-5">
           {/* No es <h1>: el título de contenido de cada tab (ej. "Hola, …") es el
               h1. Acá el club es contexto/marca. En outage sostenido de club-info
@@ -160,8 +171,9 @@ export default function PlayerWorkspace() {
           <p className="text-[10px] text-gray-600 font-black tracking-[0.25em] uppercase">RakeFlow</p>
         </footer>
       </div>
+      </div>
 
-      <nav className="fixed bottom-0 inset-x-0 z-20 bg-[#0a0f1a]/95 backdrop-blur border-t border-gray-800 pb-[env(safe-area-inset-bottom)]">
+      <nav className="absolute bottom-0 inset-x-0 z-20 bg-[#0a0f1a]/95 backdrop-blur border-t border-gray-800 pb-[env(safe-area-inset-bottom)]">
         <div className="max-w-md mx-auto grid grid-cols-4">
           {TABS.map((t) => {
             const active = tab === t.key;
