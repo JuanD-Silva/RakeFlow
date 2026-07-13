@@ -34,10 +34,13 @@ export default function PushToggle() {
   const canPush = supported() && !iosNeedsInstall;
 
   const [serverKey, setServerKey] = useState(null);  // null = config no cargada / push apagado en el server
-  const [on, setOn] = useState(false);
+  // 'hidden' = ya suscrito (de antes, o recién activado): la card no se
+  // renderiza — la confirmación de la activación es la notificación de
+  // bienvenida que dispara enable(). Apagar se hace en los ajustes del
+  // navegador/sistema, como en cualquier app.
+  const [hidden, setHidden] = useState(false);
   const [denied, setDenied] = useState(() => canPush && Notification.permission === 'denied');
   const [busy, setBusy] = useState(false);
-  const [tested, setTested] = useState(false);
 
   // Al montar: config del server + estado real (permiso + suscripción local).
   useEffect(() => {
@@ -52,9 +55,10 @@ export default function PushToggle() {
         const reg = await navigator.serviceWorker.ready;
         const sub = await reg.pushManager.getSubscription();
         if (cancelled || !sub) return;
-        // Auto-reparación silenciosa: re-registra esta suscripción a MI cuenta.
+        // Auto-reparación silenciosa: re-registra esta suscripción a MI cuenta
+        // y esconde la card (ya está suscrito; no hay nada que ofrecerle).
         await pushService.subscribe(sub.toJSON());
-        if (!cancelled) setOn(true);
+        if (!cancelled) setHidden(true);
       } catch { /* sin config no hay toggle; el resto del panel sigue */ }
     })();
     return () => { cancelled = true; };
@@ -73,7 +77,9 @@ export default function PushToggle() {
     );
   }
   // Navegador sin push o server sin claves: no mostrar nada.
-  if (!canPush || !serverKey) return null;
+  // Sin soporte, sin claves en el server, o YA SUSCRITO de una visita
+  // anterior: nada que ofrecer, nada que mostrar.
+  if (!canPush || !serverKey || hidden) return null;
 
   const enable = async () => {
     setBusy(true);
@@ -91,31 +97,12 @@ export default function PushToggle() {
           applicationServerKey: urlBase64ToUint8Array(serverKey),
         }));
       await pushService.subscribe(sub.toJSON());
-      setOn(true);
+      // La confirmación ES la primera notificación: el backend manda la
+      // bienvenida y la card desaparece. Best-effort: si el envío falla,
+      // la suscripción ya quedó activa igual.
+      try { await pushService.test(); } catch { /* no crítico */ }
+      setHidden(true);
     } catch { /* p.ej. push service caído: el toggle queda apagado y reintentable */ }
-    finally { setBusy(false); }
-  };
-
-  const disable = async () => {
-    setBusy(true);
-    try {
-      const reg = await navigator.serviceWorker.ready;
-      const sub = await reg.pushManager.getSubscription();
-      if (sub) {
-        const endpoint = sub.endpoint;
-        await sub.unsubscribe();
-        await pushService.unsubscribe(endpoint);
-      }
-      setOn(false);
-      setTested(false);
-    } catch { /* idem: reintentable */ }
-    finally { setBusy(false); }
-  };
-
-  const sendTest = async () => {
-    setBusy(true);
-    try { await pushService.test(); setTested(true); }
-    catch { /* si falla, el botón queda disponible para reintentar */ }
     finally { setBusy(false); }
   };
 
@@ -135,34 +122,18 @@ export default function PushToggle() {
     <div className="flex items-center gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 mb-4">
       <span className="text-2xl shrink-0">🔔</span>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-bold text-white leading-tight">
-          {on ? 'Te vamos a avisar' : 'Avisarme cuando haya mesa'}
-        </p>
-        <p className="text-[11px] text-emerald-200/80 leading-tight mt-0.5">
-          {on
-            ? (tested ? 'Prueba enviada — mirá tus notificaciones' : 'Mesas, retos y tu racha')
-            : 'Mesas abiertas, retos del mes y tu racha'}
-        </p>
+        <p className="text-sm font-bold text-white leading-tight">Avisarme cuando haya mesa</p>
+        <p className="text-[11px] text-emerald-200/80 leading-tight mt-0.5">Mesas abiertas, retos del mes y tu racha</p>
       </div>
-      {on && !tested && (
-        <button onClick={sendTest} disabled={busy}
-          className="rf-tap shrink-0 text-[11px] font-bold text-emerald-300/90 hover:text-white px-2 py-1 disabled:opacity-50">
-          Probar
-        </button>
-      )}
       <button
-        onClick={on ? disable : enable}
+        onClick={enable}
         disabled={busy}
         role="switch"
-        aria-checked={on}
+        aria-checked={false}
         aria-label="Avisarme cuando haya mesa"
-        className={`rf-tap relative shrink-0 w-12 h-7 rounded-full transition-colors duration-200 disabled:opacity-50 ${
-          on ? 'bg-emerald-500' : 'bg-gray-600'
-        }`}
+        className="rf-tap relative shrink-0 w-12 h-7 rounded-full transition-colors duration-200 disabled:opacity-50 bg-gray-600"
       >
-        <span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-all duration-200 ${
-          on ? 'left-6' : 'left-1'
-        }`} />
+        <span className="absolute top-1 left-1 h-5 w-5 rounded-full bg-white shadow" />
       </button>
     </div>
   );

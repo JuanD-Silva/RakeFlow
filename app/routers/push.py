@@ -149,7 +149,10 @@ async def unsubscribe(
 
 
 @router.post("/test")
-@limiter.limit("5/hour")
+# 30/h por IP: el front dispara este endpoint como BIENVENIDA automática al
+# activar el toggle, y en el WiFi del club muchos teléfonos comparten UNA IP
+# (una noche de lanzamiento supera 5 activaciones/hora fácil).
+@limiter.limit("30/hour")
 async def send_test(
     request: Request,
     db: AsyncSession = Depends(get_db),
