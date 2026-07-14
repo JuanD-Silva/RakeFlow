@@ -739,9 +739,6 @@ async def invite_dealer(
         raise HTTPException(status_code=400, detail="Teléfono inválido")
 
     # El teléfono nuevo no puede pertenecer a OTRA cuenta (es la identidad de login).
-    taken = (await db.execute(
-        select(models.User).where(models.User.phone == phone)
-    )).scalars().first()
     if await accounts.phone_taken_by_other(db, phone, current_club.id,
                                            models.UserRole.DEALER, dealer.user_id):
         raise HTTPException(status_code=409,
@@ -840,9 +837,6 @@ async def reset_dealer_access(
         raise HTTPException(status_code=400, detail="Teléfono inválido")
     # Si cambia el número, no puede pertenecer a otra cuenta (es la identidad de login).
     if phone != user.phone:
-        taken = (await db.execute(
-            select(models.User).where(models.User.phone == phone)
-        )).scalars().first()
         if await accounts.phone_taken_by_other(db, phone, current_club.id,
                                                models.UserRole.DEALER, user.id):
             raise HTTPException(status_code=409,
@@ -933,10 +927,9 @@ async def activate_dealer(
         raise HTTPException(status_code=400, detail="Código inválido o vencido")
 
     loop = asyncio.get_event_loop()
+    # Clave PROPIA de esta cuenta (nunca se propaga a sus otras cuentas: el OTP
+    # lo genera el club, no prueba posesión del número — ver app/accounts.py).
     user.hashed_password = await loop.run_in_executor(None, auth_utils.get_password_hash, data.password)
-    # Una persona, una clave (ver accounts.sync_password): sus otras cuentas
-    # —jugador de este club u otro— quedan con esta misma clave.
-    await accounts.sync_password(db, phone, user.hashed_password, keep_id=user.id)
     if data.name:
         user.name = data.name
     user.phone_verified = True

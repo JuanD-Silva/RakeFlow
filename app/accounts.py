@@ -10,14 +10,24 @@ PLAYER y de DEALER en Mambo, y de PLAYER en otro club. El login por teléfono
 devuelve TODAS sus cuentas y la persona elige con cuál entra (o cambia sin
 cerrar sesión con /auth/switch-account).
 
-UNA PERSONA, UNA CLAVE: las cuentas del mismo teléfono comparten hash. Cada
-activación (que exige OTP al número, o sea prueba de posesión) sincroniza la
-clave en todas — equivale a un reset. Así el login por teléfono no es ambiguo.
+BASE DE CONFIANZA (importante): el OTP de invitación NO prueba posesión del
+teléfono — RakeFlow no manda el WhatsApp, le devuelve el código al STAFF que
+invita. Un club puede emitir un código contra cualquier número. Por eso:
+
+- Cada cuenta guarda su PROPIO hash: un club jamás puede cambiar la clave de
+  una cuenta de otro club (si se sincronizaran, cualquiera podría abrir un club
+  de prueba, invitar el teléfono de un jugador de Mambo y sobrescribirle la
+  clave → toma de cuenta).
+- Lo que agrupa las cuentas de una persona en el selector es LA CLAVE, no el
+  teléfono: el login prueba la clave contra cada cuenta de ese número y solo
+  ofrece las que abre. Quien reusa su clave habitual al activar ve todas juntas.
+- El access_token lleva `uids` = las cuentas que esa clave abrió. my-accounts y
+  switch-account NO pueden salirse de ese set (ni listar cuentas ajenas del
+  mismo número, ni saltar a ellas).
 """
 from datetime import datetime, timedelta
 
 from jose import JWTError, jwt
-from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -68,32 +78,30 @@ async def account_views(db: AsyncSession, users: list[models.User],
     return out
 
 
-async def sync_password(db: AsyncSession, phone: str, hashed: str, keep_id: int) -> int:
-    """Una persona, una clave: propaga el hash al resto de cuentas del teléfono.
+async def accounts_opened_by(db: AsyncSession, phone: str | None, password: str,
+                             loop) -> list[models.User]:
+    """Las cuentas de ese teléfono que ESTA clave abre. Es el corazón del
+    modelo: la clave —no el número— es lo que agrupa a la persona.
 
-    Se llama SOLO tras una activación con OTP verificado (prueba de posesión del
-    número), así que equivale a un reset de clave de esa identidad. Devuelve
-    cuántas filas se sincronizaron (0 si es su única cuenta)."""
-    if not phone:
-        return 0
-    result = await db.execute(
-        update(models.User)
-        .where(
-            models.User.phone == phone,
-            models.User.id != keep_id,
-            models.User.hashed_password.isnot(None),  # las pendientes se activan solas
-        )
-        .values(hashed_password=hashed)
-    )
-    return result.rowcount or 0
+    Una cuenta creada por un club ajeno (con OTRA clave) jamás entra acá, así
+    que no se puede listar ni tomar la cuenta de nadie."""
+    out = []
+    for u in await accounts_for_phone(db, phone):
+        ok = await loop.run_in_executor(
+            None, auth_utils.verify_password, password, u.hashed_password)
+        if ok:
+            out.append(u)
+    return out
 
 
 async def phone_taken_by_other(db: AsyncSession, phone: str, club_id: int,
                                role: models.UserRole, own_user_id: int | None) -> bool:
     """¿Ese teléfono ya tiene cuenta EN ESTE CLUB CON ESTE ROL (y no es la suya)?
 
-    Es el único conflicto que queda: la misma persona puede tener cuentas en
-    otros clubes u otros roles. Espeja el índice único (phone, club_id, role)."""
+    Espeja el índice único (phone, club_id, role); NO es un control de
+    seguridad entre clubes (esa garantía la da el hash por cuenta: un club no
+    puede tocar la clave —ni ver— la cuenta que la persona tiene en otro club).
+    """
     other = (await db.execute(
         select(models.User.id).where(
             models.User.phone == phone,
@@ -126,11 +134,17 @@ def decode_select_token(token: str) -> dict | None:
     return payload
 
 
-def token_for(user: models.User, club: models.Club) -> str:
-    """access_token de UNA cuenta concreta (mismo payload que el login simple)."""
+def token_for(user: models.User, club: models.Club,
+              uids: list[int] | None = None) -> str:
+    """access_token de UNA cuenta concreta.
+
+    `uids` = las cuentas que la clave de esta sesión abrió. Viaja en el token y
+    es el ÚNICO set al que my-accounts/switch-account pueden referirse: sin él
+    (tokens viejos) la sesión no puede cambiar de cuenta, solo re-loguear."""
     return auth_utils.create_access_token({
         "sub": user.email or user.phone,
         "club_id": club.id,
         "user_id": user.id,
         "role": user.role.value if hasattr(user.role, "value") else str(user.role),
+        "uids": uids or [user.id],
     })

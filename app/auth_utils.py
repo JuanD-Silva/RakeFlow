@@ -24,6 +24,8 @@ def create_access_token(data: dict):
     """Genera el Token JWT que el frontend guardará"""
     to_encode = data.copy()
     expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
+    # purpose="access": separa explícitamente la sesión del select_token efímero
+    # del login multi-cuenta (purpose="select", que NO es una sesión).
+    to_encode.update({"exp": expire, "purpose": "access"})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt

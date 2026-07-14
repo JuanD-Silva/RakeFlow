@@ -32,7 +32,16 @@ def _decode_token(token: str) -> dict:
         raise credentials_exception
     if payload.get("club_id") is None:
         raise credentials_exception
+    # Un select_token (paso intermedio del login multi-cuenta) JAMÁS vale como
+    # sesión: se separan por PROPÓSITO, no por qué claims traiga de casualidad.
+    if payload.get("purpose") not in (None, "access"):
+        raise credentials_exception
     return payload
+
+
+async def get_token_claims(token: str = Depends(oauth2_scheme)) -> dict:
+    """Claims del access_token (los endpoints multi-cuenta necesitan `uids`)."""
+    return _decode_token(token)
 
 
 async def get_current_user(

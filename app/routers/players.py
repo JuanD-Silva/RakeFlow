@@ -457,11 +457,13 @@ async def reset_player_access(
     if not phone:
         raise HTTPException(status_code=400, detail="Teléfono inválido")
     if phone != user.phone:
-        taken = (await db.execute(
-            select(models.User).where(models.User.phone == phone)
-        )).scalars().first()
-        if taken and taken.id != user.id:
-            raise HTTPException(status_code=409, detail="Ese teléfono ya está registrado en otra cuenta de RakeFlow")
+        # Mismo criterio que el invite: el choque es la MISMA membresía
+        # (jugador de ESTE club). Que la persona tenga cuenta de dealer acá o
+        # de jugador en otro club es legítimo y ya no bloquea el reset.
+        if await accounts.phone_taken_by_other(db, phone, current_club.id,
+                                               models.UserRole.PLAYER, user.id):
+            raise HTTPException(status_code=409,
+                                detail="Ese teléfono ya tiene cuenta de jugador en este club")
 
     code = f"{secrets.randbelow(1000000):06d}"
     user.phone = phone
@@ -550,11 +552,14 @@ async def activate_player(
     es_primera_activacion = user.last_login_at is None
 
     loop = asyncio.get_event_loop()
+    # Clave PROPIA de esta cuenta: NUNCA se propaga a las otras cuentas del
+    # teléfono. El OTP lo genera el club que invita (RakeFlow no manda el
+    # WhatsApp), así que no prueba posesión del número: si la clave se
+    # sincronizara, cualquiera podría abrir un club, invitar el teléfono de un
+    # jugador de otro club y sobrescribirle la clave → toma de cuenta.
+    # Quien quiera ver sus cuentas juntas en el selector, activa con su clave
+    # de siempre (es la clave, no el número, lo que agrupa a la persona).
     user.hashed_password = await loop.run_in_executor(None, auth_utils.get_password_hash, data.password)
-    # Una persona, una clave: si ya tenía otras cuentas (dealer acá, jugador en
-    # otro club), quedan con esta misma clave. El OTP verificado prueba que es
-    # ella, así que equivale a un reset de su identidad.
-    await accounts.sync_password(db, phone, user.hashed_password, keep_id=user.id)
     user.phone_verified = True
     user.invitation_token = None
     user.invitation_expires_at = None

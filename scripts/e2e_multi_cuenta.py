@@ -42,6 +42,14 @@ def invitar_jugador(c, h, phone, nombre="Jugador"):
     return p, r
 
 
+def club_del_token(h):
+    """club_id que viaja en el JWT (el rol jugador no puede usar /auth/me)."""
+    import base64, json
+    payload = h["Authorization"].split()[1].split(".")[1]
+    payload += "=" * (-len(payload) % 4)
+    return json.loads(base64.urlsafe_b64decode(payload))["club_id"]
+
+
 def invitar_dealer(c, h, phone, nombre="Dealer"):
     d = c.post("/dealers/", json={"name": nombre, "phone": phone}, headers=h)
     assert d.status_code in (200, 201), d.text
@@ -114,41 +122,77 @@ with httpx.Client(base_url=BASE, timeout=30) as c:
     prof = c.get("/player/my-profile", headers=h_pb)
     check("el token de jugador B entra a SU panel", prof.status_code == 200)
 
-    # --- 6. Seguridad del select_token ---
-    # Otra persona (otro teléfono, otra cuenta) no puede ser canjeada con MI token
-    pX, rX = invitar_jugador(c, hB, PHONE2, "Ajeno")
-    c.post("/players/activate", json={"phone": PHONE2, "code": rX.json()["code"],
-                                      "password": "Ajeno12345"})
-    ajeno_id = c.post("/auth/login", data={"username": PHONE2, "password": "Ajeno12345"})
-    # (una sola cuenta → token directo; sacamos su user_id vía /auth/me)
-    h_ajeno = {"Authorization": f"Bearer {ajeno_id.json()['access_token']}"}
-    uid_ajeno = c.get("/auth/me", headers=h_ajeno).json().get("user_id")
-    if uid_ajeno is None:  # /auth/me puede no exponerlo: lo deducimos del switch
-        uid_ajeno = -1
-    r = c.post("/auth/select-account", json={"select_token": sel, "user_id": uid_ajeno})
-    check("select-account con cuenta AJENA → 403/401",
-          r.status_code in (401, 403))
-    r = c.post("/auth/select-account", json={"select_token": "basura", "user_id": dealer_acc["user_id"]})
+    # --- 6. ATAQUE: un club falso invita el teléfono de la víctima ---
+    # (los revisores lo encontraron: el OTP se lo damos al club que invita, así
+    # que el teléfono NO prueba identidad. Con clave por cuenta, no hay toma.)
+    hX, _ = nuevo_club(c, "atacante")
+    pX, rX = invitar_jugador(c, hX, PHONE, "Victima Suplantada")
+    check("club falso PUEDE crear la ficha/invitación (no hay oráculo)",
+          rX.status_code == 201)
+    r = c.post("/players/activate", json={"phone": PHONE, "code": rX.json()["code"],
+                                          "password": "ClaveDelAtacante9"})
+    check("el atacante activa SU cuenta con SU clave", r.status_code == 200)
+    h_atk = {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+    # 6.a La clave de la VÍCTIMA no cambió (antes sync_password se la pisaba)
+    r = c.post("/auth/login", data={"username": PHONE, "password": CLAVE})
+    d2 = r.json()
+    check("ATAQUE FALLA: la clave de la víctima sigue funcionando",
+          r.status_code == 200 and d2.get("multi_account") is True)
+    check("...y su login NO muestra la cuenta del club falso",
+          len(d2["accounts"]) == 3
+          and all(a["club_id"] != club_del_token(h_atk) for a in d2["accounts"]))
+
+    # 6.b El atacante entra SOLO a su propia cuenta (la clave manda, no el número)
+    r = c.get("/auth/my-accounts", headers=h_atk)
+    check("ATAQUE FALLA: my-accounts del atacante solo lista SU cuenta",
+          r.status_code == 200 and len(r.json()["accounts"]) == 1)
+
+    # 6.c No puede saltar a la cuenta de la víctima en el club real
+    r = c.post("/auth/switch-account",
+               json={"user_id": dealer_acc["user_id"]}, headers=h_atk)
+    check("ATAQUE FALLA: switch a la cuenta de la víctima → 403",
+          r.status_code == 403)
+    r = c.get("/player/my-profile", headers=h_atk)
+    check("el atacante solo ve SU club (su propio panel)", r.status_code == 200)
+
+    # 6.d Seguridad del select_token
+    r = c.post("/auth/select-account", json={"select_token": "basura",
+                                             "user_id": dealer_acc["user_id"]})
     check("select_token inválido → 401", r.status_code == 401)
+    r = c.post("/auth/select-account", json={"select_token": h_atk["Authorization"].split()[1],
+                                             "user_id": dealer_acc["user_id"]})
+    check("un access_token NO sirve como select_token → 401", r.status_code == 401)
 
     # --- 7. Switcher dentro de la app (sin volver a escribir la clave) ---
     r = c.get("/auth/my-accounts", headers=h_dealer)
-    check("my-accounts → las 3 cuentas", r.status_code == 200 and len(r.json()["accounts"]) == 3)
+    check("my-accounts → las 3 cuentas de la persona", r.status_code == 200
+          and len(r.json()["accounts"]) == 3)
     check("marca cuál es la actual",
           sum(1 for a in r.json()["accounts"] if a["current"]) == 1)
     r = c.post("/auth/switch-account", json={"user_id": player_a["user_id"]}, headers=h_dealer)
     check("switch de dealer → jugador (mismo club) → 200",
           r.status_code == 200 and "access_token" in r.json())
+    check("la respuesta del switch trae role (el front rutea con eso)",
+          r.json().get("role") == "player")
     h_pa = {"Authorization": f"Bearer {r.json()['access_token']}"}
     check("el token nuevo entra al panel de jugador",
           c.get("/player/my-profile", headers=h_pa).status_code == 200)
-    r = c.post("/auth/switch-account", json={"user_id": uid_ajeno}, headers=h_pa)
-    check("switch a cuenta AJENA → 403/401", r.status_code in (401, 403))
     r = c.get("/auth/my-accounts", headers=hA)
     check("staff por email: my-accounts devuelve solo la suya",
           r.status_code == 200 and len(r.json()["accounts"]) == 1)
-    r = c.post("/auth/switch-account", json={"user_id": player_a["user_id"]}, headers=hA)
-    check("staff sin teléfono no puede switchear → 403", r.status_code == 403)
+
+    # --- 7.b LOGIN CON INVITACIÓN PENDIENTE (el otro blocker) ---
+    # La persona ya tiene cuenta activa; el club la invita a otro rol/club: la
+    # fila pendiente (sin clave) NO debe taparle el login.
+    pC, rC = invitar_jugador(c, hX, PHONE2, "Pendiente")
+    c.post("/players/activate", json={"phone": PHONE2, "code": rC.json()["code"],
+                                      "password": "Ajeno12345"})
+    dC, rD = invitar_dealer(c, hX, PHONE2, "Pendiente")   # queda PENDIENTE
+    check("invitación de dealer creada (pendiente)", rD.status_code == 201)
+    r = c.post("/auth/login", data={"username": PHONE2, "password": "Ajeno12345"})
+    check("login con una invitación PENDIENTE en el mismo teléfono → entra igual",
+          r.status_code == 200 and "access_token" in r.json())
 
     # --- 8. Choque real que SÍ debe seguir bloqueado: misma membresía ---
     p2, r = invitar_jugador(c, hA, PHONE, "Otro jugador")
