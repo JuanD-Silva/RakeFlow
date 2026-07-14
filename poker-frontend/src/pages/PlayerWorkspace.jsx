@@ -539,6 +539,14 @@ function HomeTab({ club, data, loaded, error }) {
               ⚪ No hay mesa abierta en este momento
             </div>
           )}
+          {club.jackpot != null && (
+            <div className="bg-gradient-to-r from-amber-500/15 to-yellow-500/10 border border-amber-400/30 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[10px] font-black text-amber-300/90 uppercase tracking-widest">🎰 Jackpot acumulado</p>
+                <p className="text-white text-2xl font-black leading-tight mt-0.5">{cop(club.jackpot)}</p>
+              </div>
+            </div>
+          )}
           {(club.live_tournaments || []).map((t, i) => (
             <div key={`lt${i}`} className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3">
               <p className="text-white font-bold truncate">🏆 {t.name} · <span className="text-amber-300">{t.status}</span></p>

@@ -8,6 +8,7 @@ import { clubPublicService } from '../api/services';
 export default function ClubPublicLink() {
   const [token, setToken] = useState(null);
   const [announcement, setAnnouncement] = useState('');
+  const [showJackpot, setShowJackpot] = useState(true);
   const [savedMsg, setSavedMsg] = useState('');
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -18,6 +19,7 @@ export default function ClubPublicLink() {
         const d = await clubPublicService.get();
         setToken(d.public_token);
         setAnnouncement(d.public_announcement || '');
+        setShowJackpot(d.show_jackpot !== false);
       } catch { /* ignora */ }
       finally { setLoading(false); }
     })();
@@ -33,6 +35,18 @@ export default function ClubPublicLink() {
   const shareWhatsApp = () => {
     const text = `Actividad en vivo de nuestro club 👇\n${url}`;
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener');
+  };
+
+  const toggleJackpot = async () => {
+    const next = !showJackpot;
+    setShowJackpot(next);  // optimista: el switch responde al toque
+    try {
+      await clubPublicService.setShowJackpot(next);
+      setSavedMsg('Guardado ✓'); setTimeout(() => setSavedMsg(''), 2000);
+    } catch {
+      setShowJackpot(!next);  // revertir si el server rechazó
+      setSavedMsg('Error al guardar');
+    }
   };
 
   const saveAnnouncement = async () => {
@@ -83,6 +97,28 @@ export default function ClubPublicLink() {
           </button>
         </div>
         {savedMsg && <p className="text-emerald-400 text-[11px] mt-1">{savedMsg}</p>}
+      </div>
+
+      {/* Jackpot visible para los jugadores (link público + su panel). Es el
+          MISMO número del widget de la mesa: entradas − pagos + ajustes. */}
+      <div className="pt-3 border-t border-gray-700/50">
+        <div className="flex items-center gap-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-white text-sm font-bold">🎰 Mostrar el jackpot a los jugadores</p>
+            <p className="text-gray-400 text-[11px] leading-snug mt-0.5">
+              Aparece en el link público y en el panel de cada jugador. Es el mismo saldo que ves en la mesa; se actualiza al cerrar la caja.
+            </p>
+          </div>
+          <button
+            onClick={toggleJackpot}
+            role="switch"
+            aria-checked={showJackpot}
+            aria-label="Mostrar el jackpot a los jugadores"
+            className={`relative shrink-0 w-12 h-7 rounded-full transition-colors ${showJackpot ? 'bg-emerald-500' : 'bg-gray-600'}`}
+          >
+            <span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-all ${showJackpot ? 'left-6' : 'left-1'}`} />
+          </button>
+        </div>
       </div>
     </div>
   );

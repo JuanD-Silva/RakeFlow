@@ -1,6 +1,6 @@
 from decimal import Decimal, ROUND_HALF_UP
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -156,3 +156,53 @@ async def tournament_gross_pot_in_range(
                 + (p.double_addons_count or 0) * t.double_addon_price
             )
     return total_gross
+
+
+async def club_jackpot(db: AsyncSession, club: models.Club) -> int:
+    """Saldo del jackpot del club: FUENTE ÚNICA DE VERDAD.
+
+    entradas (jackpot declarado en los cierres de caja) − pagos de jackpot
+    + ajuste manual del dueño. Es EXACTAMENTE el número que el staff ve en el
+    widget de la mesa cash (StatsPanel), y ahora también el que ven jugadores
+    en el link público y en su panel: no puede haber dos jackpots distintos.
+
+    Solo suma sesiones CLOSED: el jackpot se declara al cerrar la caja, así que
+    la mesa abierta de esta noche todavía no mueve el número.
+
+    TENANT: `club` DEBE venir del server —get_current_club, user.club_id o
+    _get_club_by_token—, JAMÁS de un payload: uno de los callers es público
+    (sin auth) y esta función confía por completo en el club que recibe.
+
+    Devuelve el saldo REAL (puede ser negativo si el dueño ajustó de más): el
+    staff necesita verlo para corregir la caja. Las superficies de jugador
+    (link público y panel) publican el número SOLO si es > 0 — jamás un
+    "-$500.000" ni un "$0" en la cara del jugador.
+    """
+    total_income = (await db.execute(
+        select(func.sum(models.Session.declared_jackpot_cash))
+        .where(models.Session.status == "CLOSED", models.Session.club_id == club.id)
+    )).scalar() or 0.0
+    total_payouts = (await db.execute(
+        select(func.sum(models.Transaction.amount))
+        # onclause explícito (consistente con transactions.py): la FK es única
+        # hoy, pero no dependemos de que siga siéndolo.
+        .join(models.Session, models.Transaction.session_id == models.Session.id)
+        .where(models.Transaction.type == models.TransactionType.JACKPOT_PAYOUT,
+               models.Session.club_id == club.id)
+    )).scalar() or 0.0
+    # round, no int(): int() trunca hacia cero y los montos son Float.
+    return round(total_income - total_payouts + (club.jackpot_adjustment or 0.0))
+
+
+async def club_jackpot_public(db: AsyncSession, club: models.Club) -> int | None:
+    """El jackpot TAL COMO SE LE MUESTRA AL JUGADOR (link público y panel).
+
+    None = no mostrar la card. Se oculta si el club apagó el flag, si el saldo
+    es 0 (un club que no maneja jackpot no debe publicar "🎰 $0") o si quedó
+    negativo por un ajuste (jamás publicarle un saldo negativo al jugador; el
+    staff sí lo ve en su widget para corregirlo).
+    """
+    if not club.show_jackpot:
+        return None
+    total = await club_jackpot(db, club)
+    return total if total > 0 else None

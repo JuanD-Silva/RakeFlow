@@ -21,7 +21,10 @@ const dismissedRecently = () => {
   catch { return false; }
 };
 
-export default function InstallAppBanner() {
+export default function InstallAppBanner({
+  title = 'Llevá tu panel en el bolsillo',
+  subtitle = 'Ícono en tu pantalla, abre al toque',
+} = {}) {
   // Todo lo decidible en el montaje va en initializers (el lint de React 19
   // prohíbe setState síncrono dentro del effect): iOS es constante, y la
   // visibilidad inicial sale de standalone/descarte/evento ya capturado.
@@ -69,13 +72,13 @@ export default function InstallAppBanner() {
       <span className="text-2xl shrink-0">📲</span>
       {ios ? (
         <p className="flex-1 text-xs text-emerald-100/90 leading-snug">
-          <b className="text-white">Llevá tu panel en el bolsillo:</b> tocá <b>Compartir</b> y luego <b>"Agregar a pantalla de inicio"</b>.
+          <b className="text-white">{title}:</b> tocá <b>Compartir</b> y luego <b>"Agregar a pantalla de inicio"</b>.
         </p>
       ) : (
         <>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-bold text-white leading-tight">Llevá tu panel en el bolsillo</p>
-            <p className="text-[11px] text-emerald-200/80 leading-tight mt-0.5">Ícono en tu pantalla, abre al toque</p>
+            <p className="text-sm font-bold text-white leading-tight">{title}</p>
+            <p className="text-[11px] text-emerald-200/80 leading-tight mt-0.5">{subtitle}</p>
           </div>
           <button onClick={install}
             className="rf-tap shrink-0 bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-black uppercase tracking-wide px-3.5 py-2 rounded-xl">

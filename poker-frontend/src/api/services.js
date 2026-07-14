@@ -23,6 +23,8 @@ export const publicService = {
 export const clubPublicService = {
     get: async () => (await api.get('/config/club-public')).data,
     updateAnnouncement: async (text) => (await api.patch('/config/club-public', { public_announcement: text })).data,
+    // Va solo: el PATCH es parcial (los campos ausentes no se tocan).
+    setShowJackpot: async (show) => (await api.patch('/config/club-public', { show_jackpot: show })).data,
 };
 
 export const alertService = {
