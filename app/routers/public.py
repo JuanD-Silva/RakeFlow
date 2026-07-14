@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from pydantic import BaseModel, Field
 
-from .. import models, tournament_clock, tournament_chips
+from .. import models, tournament_clock, tournament_chips, services
 from ..dependencies import get_db
 from ..audit import log_action, AuditAction
 
@@ -172,6 +172,9 @@ async def get_club_activity(public_token: str, db: AsyncSession = Depends(get_db
     return {
         "club_name": club.name,
         "announcement": club.public_announcement or None,
+        # El jackpot que ve el staff en la mesa (services.club_jackpot): un solo
+        # número para todos. None si el club eligió no exponerlo.
+        "jackpot": (await services.club_jackpot(db, club)) if club.show_jackpot else None,
         "cash": cash,
         "tournaments": tournaments,
         "scheduled": scheduled,

@@ -176,6 +176,17 @@ export default function PublicClub() {
               </div>
             )}
 
+            {/* JACKPOT — el gancho del club. Se muestra SIEMPRE (haya mesa o no):
+                es lo que los jugadores más piden ver. null = el club lo apagó. */}
+            {data.jackpot != null && (
+              <div className="pc-card px-5 py-5 text-center pc-in" style={{ animationDelay: '110ms', borderColor: '#d9b45b77' }}>
+                <p className="pc-display text-[10px] text-[#d9b45b] font-bold uppercase tracking-[0.35em] mb-2">✦ Jackpot acumulado ✦</p>
+                <p className="pc-display text-4xl font-black text-[#f7e9bd] leading-none tracking-wide break-words">
+                  ${Number(data.jackpot).toLocaleString('es-CO')}
+                </p>
+              </div>
+            )}
+
             {/* Estado vacío que VENDE (es lo que más se ve: el club abre de noche) */}
             {empty && (
               <div className="py-12 text-center pc-in" style={{ animationDelay: '120ms' }}>

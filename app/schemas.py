@@ -184,6 +184,8 @@ class DealerShiftResponse(BaseModel):
 
 class ClubPublicUpdate(BaseModel):
     public_announcement: Optional[str] = Field(None, max_length=120)
+    # None = no tocar el flag (el PATCH del anuncio no lo pisa).
+    show_jackpot: Optional[bool] = None
 
 
 class MonthlyChallengeTier(BaseModel):

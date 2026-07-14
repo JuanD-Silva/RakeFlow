@@ -120,12 +120,11 @@ async def get_dashboard_stats(
         monthly_goal = (await db.execute(stmt_meta)).scalar() or 0.0
         efficiency = (range_profit / monthly_goal * 100) if monthly_goal > 0 else 0
 
-        # D. JACKPOT — historico (no filtra fecha, es saldo acumulado)
-        stmt_jackpot_in = select(func.sum(models.Session.declared_jackpot_cash)).where(models.Session.club_id == current_club.id, models.Session.status == "CLOSED")
-        jackpot_in = (await db.execute(stmt_jackpot_in)).scalar() or 0.0
-
-        stmt_jackpot_out = select(func.sum(models.Transaction.amount)).join(models.Session).where(models.Transaction.type == models.TransactionType.JACKPOT_PAYOUT, models.Session.club_id == current_club.id)
-        jackpot_out = (await db.execute(stmt_jackpot_out)).scalar() or 0.0
+        # D. JACKPOT — saldo acumulado (no filtra fecha). Fuente única:
+        # services.club_jackpot. Este KPI ignoraba el ajuste manual del dueño y
+        # daba un número distinto al del widget de la mesa (bug: en Mambo, $1,6M
+        # vs $200k reales). Hoy no se renderiza, pero queda correcto.
+        jackpot_total = await services.club_jackpot(db, current_club)
 
         # E. BUY-IN PROMEDIO DEL RANGO = monto total / numero de entradas.
         stmt_avg_ticket = (
@@ -160,7 +159,7 @@ async def get_dashboard_stats(
             "avg_ticket": avg_ticket,
             "total_in": total_in,
             "efficiency": round(efficiency, 1),
-            "jackpot": int(jackpot_in - jackpot_out),
+            "jackpot": jackpot_total,
             "weekly_profit": 0
         }
 
@@ -370,12 +369,9 @@ async def get_rankings(
 
 @router.get("/jackpot-global")
 async def get_global_jackpot(db: AsyncSession = Depends(get_db), current_club: models.Club = Depends(get_current_club)):
-    stmt_income = select(func.sum(models.Session.declared_jackpot_cash)).where(models.Session.status == "CLOSED", models.Session.club_id == current_club.id)
-    total_income = (await db.execute(stmt_income)).scalar() or 0.0
-    stmt_payouts = select(func.sum(models.Transaction.amount)).join(models.Session).where(models.Transaction.type == models.TransactionType.JACKPOT_PAYOUT, models.Session.club_id == current_club.id)
-    total_payouts = (await db.execute(stmt_payouts)).scalar() or 0.0
-    adjustment = current_club.jackpot_adjustment or 0.0
-    return {"total_jackpot": total_income - total_payouts + adjustment}
+    """Saldo del jackpot (widget de la mesa cash). Misma función que alimenta el
+    link público y el panel del jugador: un solo jackpot para todos."""
+    return {"total_jackpot": await services.club_jackpot(db, current_club)}
 
 @router.post("/jackpot-adjust")
 async def adjust_jackpot(

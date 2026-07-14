@@ -23,6 +23,7 @@ async def get_club_public(
     return {
         "public_token": current_club.public_token,
         "public_announcement": current_club.public_announcement,
+        "show_jackpot": bool(current_club.show_jackpot),
     }
 
 
@@ -39,6 +40,9 @@ async def update_club_public(
     )).scalars().first()
     prev = club.public_announcement
     club.public_announcement = (data.public_announcement or "").strip() or None
+    # show_jackpot: None = no tocar (así el guardado del anuncio no lo pisa).
+    if data.show_jackpot is not None:
+        club.show_jackpot = data.show_jackpot
     await db.commit()
     # Anuncio nuevo (no vacío y distinto) → push a los suscritos del club.
     # Fire-and-forget post-commit con dedupe 1/día adentro: editar tres veces
@@ -46,7 +50,8 @@ async def update_club_public(
     if club.public_announcement and club.public_announcement != prev:
         push_triggers.spawn(push_triggers.notify_announcement(
             club.id, club.name, club.public_announcement))
-    return {"public_announcement": club.public_announcement}
+    return {"public_announcement": club.public_announcement,
+            "show_jackpot": bool(club.show_jackpot)}
 
 
 @router.post("/initial-setup")

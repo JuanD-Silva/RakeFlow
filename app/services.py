@@ -1,6 +1,6 @@
 from decimal import Decimal, ROUND_HALF_UP
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -156,3 +156,27 @@ async def tournament_gross_pot_in_range(
                 + (p.double_addons_count or 0) * t.double_addon_price
             )
     return total_gross
+
+
+async def club_jackpot(db: AsyncSession, club: models.Club) -> int:
+    """Saldo del jackpot del club: FUENTE ÚNICA DE VERDAD.
+
+    entradas (jackpot declarado en los cierres de caja) − pagos de jackpot
+    + ajuste manual del dueño. Es EXACTAMENTE el número que el staff ve en el
+    widget de la mesa cash (StatsPanel), y ahora también el que ven jugadores
+    en el link público y en su panel: no puede haber dos jackpots distintos.
+
+    Solo suma sesiones CLOSED: el jackpot se declara al cerrar la caja, así que
+    la mesa abierta de esta noche todavía no mueve el número.
+    """
+    total_income = (await db.execute(
+        select(func.sum(models.Session.declared_jackpot_cash))
+        .where(models.Session.status == "CLOSED", models.Session.club_id == club.id)
+    )).scalar() or 0.0
+    total_payouts = (await db.execute(
+        select(func.sum(models.Transaction.amount))
+        .join(models.Session)
+        .where(models.Transaction.type == models.TransactionType.JACKPOT_PAYOUT,
+               models.Session.club_id == club.id)
+    )).scalar() or 0.0
+    return int(total_income - total_payouts + (club.jackpot_adjustment or 0.0))

@@ -16,7 +16,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from .. import models, player_stats
+from .. import models, player_stats, services
 from ..audit import log_standalone, AuditAction
 from ..dependencies import get_db, get_current_user, require_role
 from .public import live_tournaments, open_cash_tables
@@ -298,6 +298,7 @@ async def club_info(
     return {
         "club_name": club.name,
         "announcement": club.public_announcement,
+        "jackpot": (await services.club_jackpot(db, club)) if club.show_jackpot else None,
         "open_tables": await open_cash_tables(db, user.club_id),
         "live_tournaments": await live_tournaments(db, user.club_id),
         "scheduled": [
