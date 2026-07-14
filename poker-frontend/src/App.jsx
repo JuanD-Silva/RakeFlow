@@ -13,6 +13,7 @@ import WeeklyReport from './components/WeeklyReport';
 import PlayerLeaderboard from './components/PlayerLeaderboard';
 import ConfigPanel from './components/ConfigPanel';
 import Navigation from './components/Navigation';
+import InstallAppBanner from './components/InstallAppBanner';
 import Landing from './pages/Landing';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -168,6 +169,13 @@ function PokerManagerApp() {
       )}
 
       <main className="py-8 max-w-7xl mx-auto px-4 md:px-6">
+        {/* Instalar la app también desde gestión: el dueño/cajero opera la caja
+            de noche desde el celular y el banner de Chrome es heurístico (por eso
+            existe nuestro botón, #77). Copy propio: acá no es "tu panel". */}
+        <InstallAppBanner
+          title="Llevá el control del club en el bolsillo"
+          subtitle="Ícono en tu pantalla, abre al toque"
+        />
         <ErrorBoundary>
           {currentView === 'game' && <GameControl />}
           {currentView === 'history' && <SessionHistory />}
