@@ -23,7 +23,7 @@ export const publicService = {
 export const clubPublicService = {
     get: async () => (await api.get('/config/club-public')).data,
     updateAnnouncement: async (text) => (await api.patch('/config/club-public', { public_announcement: text })).data,
-    // show_jackpot va solo (el backend ignora los campos None → no pisa el anuncio).
+    // Va solo: el PATCH es parcial (los campos ausentes no se tocan).
     setShowJackpot: async (show) => (await api.patch('/config/club-public', { show_jackpot: show })).data,
 };
 

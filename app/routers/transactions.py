@@ -5,7 +5,7 @@ from sqlalchemy.future import select
 from sqlalchemy import func, delete
 from pydantic import BaseModel
 from sqlalchemy.orm import selectinload
-from .. import models, schemas
+from .. import models, schemas, services
 from ..audit import log_action, AuditAction
 from datetime import datetime
 import logging
@@ -330,27 +330,13 @@ async def create_jackpot_payout(
     Valida que existan fondos reales (Historial Ingresos - Egresos) de ESTE club.
     """
     
-    # --- A. VALIDACIÓN DE FONDOS (Matemática Real-Time SaaS) ---
-    
-    # 1. Total Recaudado (Ingresos Históricos de sesiones cerradas DE ESTE CLUB)
-    stmt_income = select(func.sum(models.Session.declared_jackpot_cash)).where(
-        models.Session.status == models.SessionStatus.CLOSED,
-        models.Session.club_id == current_club.id # 👈 Filtro SaaS
-    )
-    total_income = (await db.execute(stmt_income)).scalar() or 0.0
-    
-    # 2. Total Pagado (Egresos Históricos DE ESTE CLUB)
-    stmt_payouts = (
-        select(func.sum(models.Transaction.amount))
-        .join(models.Session, models.Transaction.session_id == models.Session.id)
-        .where(
-            models.Transaction.type == models.TransactionType.JACKPOT_PAYOUT,
-            models.Session.club_id == current_club.id # 👈 Filtro SaaS
-        )
-    )
-    total_paid_so_far = (await db.execute(stmt_payouts)).scalar() or 0.0
-    
-    current_balance = total_income - total_paid_so_far
+    # --- A. VALIDACIÓN DE FONDOS ---
+    # FUENTE ÚNICA: services.club_jackpot (ingresos de cierres − pagos + ajuste
+    # manual). Este guard tenía su PROPIA copia SIN el ajuste: con el ajuste
+    # negativo de un club (Mambo: −$1,4M) creía que había $1,6M cuando quedaban
+    # $200k y autorizaba pagar de más, dejando el saldo real —el que ahora ven
+    # los jugadores en el link público— en negativo.
+    current_balance = await services.club_jackpot(db, current_club)
 
     # 3. Verificar si alcanza
     if current_balance < tx.amount:

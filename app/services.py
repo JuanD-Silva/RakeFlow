@@ -173,8 +173,10 @@ async def club_jackpot(db: AsyncSession, club: models.Club) -> int:
     _get_club_by_token—, JAMÁS de un payload: uno de los callers es público
     (sin auth) y esta función confía por completo en el club que recibe.
 
-    El saldo se capa en 0: un ajuste manual excesivo no debe publicarle a los
-    jugadores un jackpot NEGATIVO en el link público.
+    Devuelve el saldo REAL (puede ser negativo si el dueño ajustó de más): el
+    staff necesita verlo para corregir la caja. Las superficies de jugador
+    (link público y panel) publican el número SOLO si es > 0 — jamás un
+    "-$500.000" ni un "$0" en la cara del jugador.
     """
     total_income = (await db.execute(
         select(func.sum(models.Session.declared_jackpot_cash))
@@ -188,4 +190,19 @@ async def club_jackpot(db: AsyncSession, club: models.Club) -> int:
         .where(models.Transaction.type == models.TransactionType.JACKPOT_PAYOUT,
                models.Session.club_id == club.id)
     )).scalar() or 0.0
-    return max(0, int(total_income - total_payouts + (club.jackpot_adjustment or 0.0)))
+    # round, no int(): int() trunca hacia cero y los montos son Float.
+    return round(total_income - total_payouts + (club.jackpot_adjustment or 0.0))
+
+
+async def club_jackpot_public(db: AsyncSession, club: models.Club) -> int | None:
+    """El jackpot TAL COMO SE LE MUESTRA AL JUGADOR (link público y panel).
+
+    None = no mostrar la card. Se oculta si el club apagó el flag, si el saldo
+    es 0 (un club que no maneja jackpot no debe publicar "🎰 $0") o si quedó
+    negativo por un ajuste (jamás publicarle un saldo negativo al jugador; el
+    staff sí lo ve en su widget para corregirlo).
+    """
+    if not club.show_jackpot:
+        return None
+    total = await club_jackpot(db, club)
+    return total if total > 0 else None

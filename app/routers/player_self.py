@@ -298,7 +298,7 @@ async def club_info(
     return {
         "club_name": club.name,
         "announcement": club.public_announcement,
-        "jackpot": (await services.club_jackpot(db, club)) if club.show_jackpot else None,
+        "jackpot": await services.club_jackpot_public(db, club),
         "open_tables": await open_cash_tables(db, user.club_id),
         "live_tournaments": await live_tournaments(db, user.club_id),
         "scheduled": [

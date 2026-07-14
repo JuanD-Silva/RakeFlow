@@ -174,7 +174,7 @@ async def get_club_activity(public_token: str, db: AsyncSession = Depends(get_db
         "announcement": club.public_announcement or None,
         # El jackpot que ve el staff en la mesa (services.club_jackpot): un solo
         # número para todos. None si el club eligió no exponerlo.
-        "jackpot": (await services.club_jackpot(db, club)) if club.show_jackpot else None,
+        "jackpot": await services.club_jackpot_public(db, club),
         "cash": cash,
         "tournaments": tournaments,
         "scheduled": scheduled,

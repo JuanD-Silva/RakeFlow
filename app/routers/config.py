@@ -39,8 +39,12 @@ async def update_club_public(
         select(models.Club).where(models.Club.id == current_club.id)
     )).scalars().first()
     prev = club.public_announcement
-    club.public_announcement = (data.public_announcement or "").strip() or None
-    # show_jackpot: None = no tocar (así el guardado del anuncio no lo pisa).
+    # PATCH parcial de verdad: None = "no tocar este campo" en AMBAS direcciones.
+    # (Guardar el toggle del jackpot manda solo show_jackpot y borraba el
+    # anuncio; además el borrado disparaba un push espurio al reescribirlo.)
+    # Para limpiar el anuncio se manda "" explícitamente.
+    if data.public_announcement is not None:
+        club.public_announcement = data.public_announcement.strip() or None
     if data.show_jackpot is not None:
         club.show_jackpot = data.show_jackpot
     await db.commit()

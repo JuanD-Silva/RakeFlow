@@ -44,9 +44,11 @@ with httpx.Client(base_url=BASE, timeout=30) as c:
         panel = c.get("/player/club-info", headers=hp).json()["jackpot"]
         return staff, pub, panel
 
-    # Club nuevo: 0 en las tres vistas
+    # Club nuevo (sin jackpot): staff ve 0; a los jugadores NO se les publica
+    # una card de "🎰 $0" (los clubes que no manejan jackpot no publican nada).
     s0, pu0, pa0 = jackpots()
-    check("jackpot inicial 0 en las 3 vistas", s0 == 0 and pu0 == 0 and pa0 == 0)
+    check("club sin jackpot: staff 0, jugadores null",
+          s0 == 0 and pu0 is None and pa0 is None)
 
     # Sesión con jackpot declarado al cerrar la caja
     sid = c.post("/sessions/", json={"name": "Mesa J"}, headers=h).json()["id"]
@@ -77,21 +79,46 @@ with httpx.Client(base_url=BASE, timeout=30) as c:
     check("apagado: público y panel en null; staff intacto",
           pu3 is None and pa3 is None and s3 == 300000)
 
-    # Guardar el anuncio NO pisa el flag
+    # PATCH parcial en AMBAS direcciones (blocker: el toggle borraba el anuncio)
     c.patch("/config/club-public", json={"public_announcement": "Hoy se rompe"}, headers=h)
     check("el PATCH del anuncio no reactiva el jackpot",
           c.get("/config/club-public", headers=h).json()["show_jackpot"] is False)
-
-    # Reactivar
     c.patch("/config/club-public", json={"show_jackpot": True}, headers=h)
+    cfg2 = c.get("/config/club-public", headers=h).json()
+    check("el PATCH del flag NO borra el anuncio",
+          cfg2["public_announcement"] == "Hoy se rompe" and cfg2["show_jackpot"] is True)
+    r = c.patch("/config/club-public", json={"public_announcement": ""}, headers=h)
+    check('anuncio vacío ("") sí lo limpia', r.json()["public_announcement"] is None)
+
     s4, pu4, pa4 = jackpots()
     check("reactivado: vuelve a las 3 vistas", pu4 == pa4 == s4 == 300000)
 
-    # Ajuste excesivamente negativo: JAMÁS publicar un jackpot negativo
-    c.post("/stats/jackpot-adjust", json={"amount": -900000, "reason": "e2e neg"}, headers=h)
+    # GUARD DE PAGO (blocker): el ajuste negativo debe reducir lo pagable.
+    # Saldo real 300k → un pago de 400k tiene que ser rechazado (antes el guard
+    # veía 500k porque ignoraba el ajuste de -200k y lo autorizaba).
+    sid2 = c.post("/sessions/", json={"name": "Mesa J2"}, headers=h).json()["id"]
+    c.post("/transactions/buyin", json={"player_id": p["id"], "amount": 10000,
+                                        "method": "CASH", "session_id": sid2}, headers=h)
+    r = c.post("/transactions/jackpot-payout", json={"player_id": p["id"], "amount": 400000,
+                                                     "session_id": sid2}, headers=h)
+    check("pago > saldo real (con ajuste) → rechazado", r.status_code == 400)
+    r = c.post("/transactions/jackpot-payout", json={"player_id": p["id"], "amount": 100000,
+                                                     "session_id": sid2}, headers=h)
+    check("pago dentro del saldo real → aceptado", r.status_code in (200, 201))
     s5, pu5, pa5 = jackpots()
-    check("saldo negativo se capa en 0 (no se publica -$600k)",
-          s5 == 0 and pu5 == 0 and pa5 == 0)
+    check("tras pagar 100k: 200k en las 3 vistas", s5 == pu5 == pa5 == 200000)
+
+    # NEGATIVO: el staff ve la verdad; al jugador NO se le publica
+    c.post("/stats/jackpot-adjust", json={"amount": -500000, "reason": "e2e neg"}, headers=h)
+    s6, pu6, pa6 = jackpots()
+    check("staff ve el saldo negativo real (-300k)", s6 == -300000)
+    check("jugadores NO ven negativo (null)", pu6 is None and pa6 is None)
+
+    # CERO: un club que no maneja jackpot no publica "🎰 $0"
+    c.post("/stats/jackpot-adjust", json={"amount": 300000, "reason": "e2e cero"}, headers=h)
+    s7, pu7, pa7 = jackpots()
+    check("saldo 0 → staff 0, jugadores null (sin card de $0)",
+          s7 == 0 and pu7 is None and pa7 is None)
 
 print(f"\ne2e jackpot público: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
