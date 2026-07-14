@@ -60,6 +60,18 @@ with httpx.Client(base_url=BASE, timeout=30) as c:
     m = (r.json().get("open_tables") or [{}])[0]
     check("tras cashout: 0 jugando", m.get("players_count") == 0)
 
+    # Torneo vivo: creado (REGISTERING) aparece en live_tournaments
+    r = c.get("/player/club-info", headers=hp)
+    check("sin torneo: live_tournaments == []", r.json().get("live_tournaments") == [])
+    r = c.post("/tournaments/", json={"name": "Torneo Mesa", "buyin_amount": 50000,
+                                      "rake_percentage": 10, "payout_structure": [100]},
+               headers=h)
+    check("crear torneo → 200/201", r.status_code in (200, 201))
+    r = c.get("/player/club-info", headers=hp)
+    lts = r.json().get("live_tournaments") or []
+    check("torneo vivo aparece", len(lts) == 1 and lts[0]["name"] == "Torneo Mesa")
+    check("estado por iniciar", lts[0]["status"] == "Por iniciar")
+
     # Auth: sin token 401; staff 403 (endpoint del panel del jugador)
     check("sin token → 401", c.get("/player/club-info").status_code == 401)
     check("staff → 403", c.get("/player/club-info", headers=h).status_code == 403)

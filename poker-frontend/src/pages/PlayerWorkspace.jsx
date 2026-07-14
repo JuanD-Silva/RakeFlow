@@ -539,6 +539,15 @@ function HomeTab({ club, data, loaded, error }) {
               ⚪ No hay mesa abierta en este momento
             </div>
           )}
+          {(club.live_tournaments || []).map((t, i) => (
+            <div key={`lt${i}`} className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3">
+              <p className="text-white font-bold truncate">🏆 {t.name} · <span className="text-amber-300">{t.status}</span></p>
+              <p className="text-xs text-amber-200/80 mt-1">
+                {t.active} en juego de {t.registered} inscritos
+                {t.seats_available != null && t.seats_available > 0 && ` · ${t.seats_available} cupo${t.seats_available !== 1 ? 's' : ''}`}
+              </p>
+            </div>
+          ))}
           {club.announcement && (
             <div className="bg-gray-800/50 border border-gray-700/60 rounded-xl px-4 py-3 text-sm text-gray-200">📣 {club.announcement}</div>
           )}

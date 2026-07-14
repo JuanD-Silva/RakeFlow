@@ -97,17 +97,15 @@ async def open_cash_tables(db: AsyncSession, club_id: int) -> list[dict]:
     return cash
 
 
-@router.get("/clubs/{public_token}/activity")
-async def get_club_activity(public_token: str, db: AsyncSession = Depends(get_db)):
-    club = await _get_club_by_token(db, public_token)
-
-    cash = await open_cash_tables(db, club.id)
-
+async def live_tournaments(db: AsyncSession, club_id: int) -> list[dict]:
+    """Torneos EN JUEGO o por iniciar (no COMPLETED, no SCHEDULED, sin
+    end_time) con conteos y cupos. Compartida por el link público y el
+    panel del jugador — misma info, con y sin login."""
     # Torneos EN JUEGO (no COMPLETED, no SCHEDULED, sin end_time). Los SCHEDULED
     # van aparte en scheduled[]; sin excluirlos acá aparecerían duplicados.
     tourneys = (await db.execute(
         select(models.Tournament).where(
-            models.Tournament.club_id == club.id,
+            models.Tournament.club_id == club_id,
             models.Tournament.status != "COMPLETED",
             models.Tournament.status != "SCHEDULED",
             models.Tournament.end_time.is_(None),
@@ -144,6 +142,17 @@ async def get_club_activity(public_token: str, db: AsyncSession = Depends(get_db
             "seats_available": seats_available,
             "status": "En juego" if t.status not in ("REGISTERING",) else "Por iniciar",
         })
+
+    return tournaments
+
+
+@router.get("/clubs/{public_token}/activity")
+async def get_club_activity(public_token: str, db: AsyncSession = Depends(get_db)):
+    club = await _get_club_by_token(db, public_token)
+
+    cash = await open_cash_tables(db, club.id)
+
+    tournaments = await live_tournaments(db, club.id)
 
     # Torneos PROGRAMADOS (status SCHEDULED). Excepción deliberada a la regla de
     # "no plata": se expone el buyin porque es info que el jugador necesita para
