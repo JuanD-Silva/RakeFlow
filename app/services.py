@@ -168,6 +168,13 @@ async def club_jackpot(db: AsyncSession, club: models.Club) -> int:
 
     Solo suma sesiones CLOSED: el jackpot se declara al cerrar la caja, así que
     la mesa abierta de esta noche todavía no mueve el número.
+
+    TENANT: `club` DEBE venir del server —get_current_club, user.club_id o
+    _get_club_by_token—, JAMÁS de un payload: uno de los callers es público
+    (sin auth) y esta función confía por completo en el club que recibe.
+
+    El saldo se capa en 0: un ajuste manual excesivo no debe publicarle a los
+    jugadores un jackpot NEGATIVO en el link público.
     """
     total_income = (await db.execute(
         select(func.sum(models.Session.declared_jackpot_cash))
@@ -175,8 +182,10 @@ async def club_jackpot(db: AsyncSession, club: models.Club) -> int:
     )).scalar() or 0.0
     total_payouts = (await db.execute(
         select(func.sum(models.Transaction.amount))
-        .join(models.Session)
+        # onclause explícito (consistente con transactions.py): la FK es única
+        # hoy, pero no dependemos de que siga siéndolo.
+        .join(models.Session, models.Transaction.session_id == models.Session.id)
         .where(models.Transaction.type == models.TransactionType.JACKPOT_PAYOUT,
                models.Session.club_id == club.id)
     )).scalar() or 0.0
-    return int(total_income - total_payouts + (club.jackpot_adjustment or 0.0))
+    return max(0, int(total_income - total_payouts + (club.jackpot_adjustment or 0.0)))

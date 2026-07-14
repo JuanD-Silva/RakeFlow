@@ -87,5 +87,11 @@ with httpx.Client(base_url=BASE, timeout=30) as c:
     s4, pu4, pa4 = jackpots()
     check("reactivado: vuelve a las 3 vistas", pu4 == pa4 == s4 == 300000)
 
+    # Ajuste excesivamente negativo: JAMÁS publicar un jackpot negativo
+    c.post("/stats/jackpot-adjust", json={"amount": -900000, "reason": "e2e neg"}, headers=h)
+    s5, pu5, pa5 = jackpots()
+    check("saldo negativo se capa en 0 (no se publica -$600k)",
+          s5 == 0 and pu5 == 0 and pa5 == 0)
+
 print(f"\ne2e jackpot público: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

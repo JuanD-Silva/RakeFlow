@@ -58,7 +58,7 @@ class Club(Base):
     # Mostrar el jackpot a los jugadores (link público /c/{token} + panel).
     # Default TRUE: el jackpot es el gancho del club, los jugadores lo piden;
     # el club que no quiera exponerlo lo apaga en Config → Link público.
-    show_jackpot = Column(Boolean, default=True, nullable=False)
+    show_jackpot = Column(Boolean, default=True, server_default=text("true"), nullable=False)
     email_verified = Column(Boolean, default=False)
     setup_completed = Column(Boolean, default=False)
     subscription_active = Column(Boolean, default=False)
