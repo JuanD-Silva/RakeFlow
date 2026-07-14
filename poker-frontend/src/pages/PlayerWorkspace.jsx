@@ -516,10 +516,38 @@ function HomeTab({ club, data, loaded, error }) {
         )}
       </section>
 
-      {/* Razones de volver: anuncio + próximos torneos */}
-      {club && (club.announcement || (club.scheduled || []).length > 0) && (
+      {/* Razones de volver: ¿hay mesa AHORA? + anuncio + próximos torneos.
+          El estado de mesa se muestra SIEMPRE (también el "no hay"): le ahorra
+          al jugador ir a revisar el link público. Misma info que /c/{token}. */}
+      {club && (
         <section className="space-y-2 rf-in" style={{ animationDelay: '360ms' }}>
           <p className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">{club.club_name}</p>
+          {(club.open_tables || []).length > 0 ? (
+            <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl px-4 py-3">
+              <p className="text-white font-bold">🟢 ¡Hay mesa ahora!</p>
+              {club.open_tables.map((m, i) => (
+                <p key={i} className="text-xs text-emerald-200/80 mt-1">
+                  {m.name} · {m.players_count} jugando
+                  {m.seats_available != null && (m.seats_available > 0
+                    ? ` · ${m.seats_available} puesto${m.seats_available !== 1 ? 's' : ''} libre${m.seats_available !== 1 ? 's' : ''}`
+                    : ' · llena')}
+                </p>
+              ))}
+            </div>
+          ) : (
+            <div className="bg-gray-800/50 border border-gray-700/60 rounded-xl px-4 py-3 text-sm text-gray-400">
+              ⚪ No hay mesa abierta en este momento
+            </div>
+          )}
+          {(club.live_tournaments || []).map((t, i) => (
+            <div key={`lt${i}`} className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3">
+              <p className="text-white font-bold truncate">🏆 {t.name} · <span className="text-amber-300">{t.status}</span></p>
+              <p className="text-xs text-amber-200/80 mt-1">
+                {t.active} en juego de {t.registered} inscritos
+                {t.seats_available != null && t.seats_available > 0 && ` · ${t.seats_available} cupo${t.seats_available !== 1 ? 's' : ''}`}
+              </p>
+            </div>
+          ))}
           {club.announcement && (
             <div className="bg-gray-800/50 border border-gray-700/60 rounded-xl px-4 py-3 text-sm text-gray-200">📣 {club.announcement}</div>
           )}

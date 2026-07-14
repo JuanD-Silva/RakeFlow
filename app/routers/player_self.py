@@ -19,6 +19,7 @@ from sqlalchemy.future import select
 from .. import models, player_stats
 from ..audit import log_standalone, AuditAction
 from ..dependencies import get_db, get_current_user, require_role
+from .public import live_tournaments, open_cash_tables
 
 router = APIRouter(prefix="/player", tags=["PlayerSelf"])
 
@@ -292,9 +293,13 @@ async def club_info(
         .order_by(models.Tournament.scheduled_start.asc())
         .limit(10)
     )).scalars().all()
+    # La razón #1 para abrir el panel: ¿hay mesa AHORA? Misma info (y misma
+    # función) que el link público /c/{token} — nada que no sea ya público.
     return {
         "club_name": club.name,
         "announcement": club.public_announcement,
+        "open_tables": await open_cash_tables(db, user.club_id),
+        "live_tournaments": await live_tournaments(db, user.club_id),
         "scheduled": [
             {"name": t.name,
              "scheduled_start": t.scheduled_start.isoformat() if t.scheduled_start else None,

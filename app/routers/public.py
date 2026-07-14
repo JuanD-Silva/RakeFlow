@@ -57,14 +57,12 @@ from ..dealer_view import utc_iso as _utc_iso, current_dealer_name as _current_d
 # ---------------------------------------------------------
 # 1. ACTIVIDAD VIVA DEL CLUB (link público)
 # ---------------------------------------------------------
-@router.get("/clubs/{public_token}/activity")
-async def get_club_activity(public_token: str, db: AsyncSession = Depends(get_db)):
-    club = await _get_club_by_token(db, public_token)
-
-    # Mesas cash OPEN con conteo de jugadores (mismo criterio que active-summary).
-    # Jugador EN MESA = su última entrada (BUYIN/REBUY) es posterior a su última
-    # salida (CASHOUT o BUST). El cashout también libera el cupo (bug 2026-07-03:
-    # solo se restaba el BUST); si vuelve a comprar después, cuenta de nuevo.
+async def open_cash_tables(db: AsyncSession, club_id: int) -> list[dict]:
+    """Mesas cash OPEN con conteo de jugadores (mismo criterio que
+    active-summary). Jugador EN MESA = su última entrada (BUYIN/REBUY) es
+    posterior a su última salida (CASHOUT o BUST). La comparten el link
+    público /c/{token} y el panel del jugador (/player/club-info): misma
+    info, con y sin login."""
     cash_rows = (await db.execute(text("""
         SELECT s.id, s.name, s.start_time, s.max_players,
             COALESCE(a.cnt, 0) AS players_count
@@ -83,7 +81,7 @@ async def get_club_activity(public_token: str, db: AsyncSession = Depends(get_db
         ) a ON a.session_id = s.id
         WHERE s.club_id = :cid AND s.status = 'OPEN'
         ORDER BY s.id DESC
-    """), {"cid": club.id})).fetchall()
+    """), {"cid": club_id})).fetchall()
     cash = []
     for r in cash_rows:
         count = int(r.players_count or 0)
@@ -96,12 +94,18 @@ async def get_club_activity(public_token: str, db: AsyncSession = Depends(get_db
             "start_time": _utc_iso(r.start_time),
             "status": "Abierta",
         })
+    return cash
 
+
+async def live_tournaments(db: AsyncSession, club_id: int) -> list[dict]:
+    """Torneos EN JUEGO o por iniciar (no COMPLETED, no SCHEDULED, sin
+    end_time) con conteos y cupos. Compartida por el link público y el
+    panel del jugador — misma info, con y sin login."""
     # Torneos EN JUEGO (no COMPLETED, no SCHEDULED, sin end_time). Los SCHEDULED
     # van aparte en scheduled[]; sin excluirlos acá aparecerían duplicados.
     tourneys = (await db.execute(
         select(models.Tournament).where(
-            models.Tournament.club_id == club.id,
+            models.Tournament.club_id == club_id,
             models.Tournament.status != "COMPLETED",
             models.Tournament.status != "SCHEDULED",
             models.Tournament.end_time.is_(None),
@@ -138,6 +142,17 @@ async def get_club_activity(public_token: str, db: AsyncSession = Depends(get_db
             "seats_available": seats_available,
             "status": "En juego" if t.status not in ("REGISTERING",) else "Por iniciar",
         })
+
+    return tournaments
+
+
+@router.get("/clubs/{public_token}/activity")
+async def get_club_activity(public_token: str, db: AsyncSession = Depends(get_db)):
+    club = await _get_club_by_token(db, public_token)
+
+    cash = await open_cash_tables(db, club.id)
+
+    tournaments = await live_tournaments(db, club.id)
 
     # Torneos PROGRAMADOS (status SCHEDULED). Excepción deliberada a la regla de
     # "no plata": se expone el buyin porque es info que el jugador necesita para
