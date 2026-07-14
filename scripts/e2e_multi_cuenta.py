@@ -123,46 +123,43 @@ with httpx.Client(base_url=BASE, timeout=30) as c:
     check("el token de jugador B entra a SU panel", prof.status_code == 200)
 
     # --- 6. ATAQUE: un club falso invita el teléfono de la víctima ---
-    # (los revisores lo encontraron: el OTP se lo damos al club que invita, así
-    # que el teléfono NO prueba identidad. Con clave por cuenta, no hay toma.)
+    # (opción 2: como PHONE ya tiene cuentas activadas, activar una nueva exige
+    # la clave de una existente. El atacante no la conoce → NO puede activar.)
     hX, _ = nuevo_club(c, "atacante")
     pX, rX = invitar_jugador(c, hX, PHONE, "Victima Suplantada")
-    check("club falso PUEDE crear la ficha/invitación (no hay oráculo)",
+    check("club falso PUEDE crear la ficha/invitación (invite permisivo, sin oráculo)",
           rX.status_code == 201)
     r = c.post("/players/activate", json={"phone": PHONE, "code": rX.json()["code"],
                                           "password": "ClaveDelAtacante9"})
-    check("el atacante activa SU cuenta con SU clave", r.status_code == 200)
-    h_atk = {"Authorization": f"Bearer {r.json()['access_token']}"}
-
-    # 6.a La clave de la VÍCTIMA no cambió (antes sync_password se la pisaba)
+    check("ATAQUE MUERE EN activate: clave ajena → 400 (pide la cuenta existente)",
+          r.status_code == 400)
+    # 6.a La clave de la víctima intacta; su login NO muestra nada del club falso
     r = c.post("/auth/login", data={"username": PHONE, "password": CLAVE})
     d2 = r.json()
-    check("ATAQUE FALLA: la clave de la víctima sigue funcionando",
-          r.status_code == 200 and d2.get("multi_account") is True)
-    check("...y su login NO muestra la cuenta del club falso",
-          len(d2["accounts"]) == 3
-          and all(a["club_id"] != club_del_token(h_atk) for a in d2["accounts"]))
+    check("la clave de la víctima sigue funcionando", r.status_code == 200
+          and d2.get("multi_account") is True and len(d2["accounts"]) == 3)
+    check("...y su login NO muestra la cuenta del club falso (no se activó)",
+          all(a["club_id"] != club_del_token(hX) for a in d2["accounts"]))
 
-    # 6.b El atacante entra SOLO a su propia cuenta (la clave manda, no el número)
-    r = c.get("/auth/my-accounts", headers=h_atk)
-    check("ATAQUE FALLA: my-accounts del atacante solo lista SU cuenta",
-          r.status_code == 200 and len(r.json()["accounts"]) == 1)
-
-    # 6.c No puede saltar a la cuenta de la víctima en el club real
-    r = c.post("/auth/switch-account",
-               json={"user_id": dealer_acc["user_id"]}, headers=h_atk)
-    check("ATAQUE FALLA: switch a la cuenta de la víctima → 403",
-          r.status_code == 403)
-    r = c.get("/player/my-profile", headers=h_atk)
-    check("el atacante solo ve SU club (su propio panel)", r.status_code == 200)
-
-    # 6.d Seguridad del select_token
-    r = c.post("/auth/select-account", json={"select_token": "basura",
-                                             "user_id": dealer_acc["user_id"]})
-    check("select_token inválido → 401", r.status_code == 401)
-    r = c.post("/auth/select-account", json={"select_token": h_atk["Authorization"].split()[1],
-                                             "user_id": dealer_acc["user_id"]})
-    check("un access_token NO sirve como select_token → 401", r.status_code == 401)
+    # --- 6.b VINCULACIÓN LEGÍTIMA desde cero: la 2da cuenta prueba la 1ra ---
+    # (reusa hA/hB — el registro tiene rate limit 3/hora)
+    PHONE3 = f"34{(_pb + 5) % 10**8:08d}"
+    _, r = invitar_jugador(c, hA, PHONE3, "Link")
+    r = c.post("/players/activate", json={"phone": PHONE3, "code": r.json()["code"],
+                                          "password": "PrimeraClave1"})
+    check("1ra cuenta activa (sin cuenta previa, clave nueva)", r.status_code == 200)
+    _, r2 = invitar_jugador(c, hB, PHONE3, "Link")
+    r = c.post("/players/activate", json={"phone": PHONE3, "code": r2.json()["code"],
+                                          "password": "ClaveEquivocada9"})
+    check("2da cuenta con clave que NO abre la 1ra → 400", r.status_code == 400)
+    _, r3 = invitar_jugador(c, hB, PHONE3, "Link")
+    r = c.post("/players/activate", json={"phone": PHONE3, "code": r3.json()["code"],
+                                          "password": "PrimeraClave1"})
+    check("2da cuenta probando la 1ra (clave correcta) → 200 vinculada",
+          r.status_code == 200)
+    r = c.post("/auth/login", data={"username": PHONE3, "password": "PrimeraClave1"})
+    check("login del vinculado muestra sus 2 cuentas juntas",
+          r.json().get("multi_account") is True and len(r.json()["accounts"]) == 2)
 
     # --- 7. Switcher dentro de la app (sin volver a escribir la clave) ---
     r = c.get("/auth/my-accounts", headers=h_dealer)

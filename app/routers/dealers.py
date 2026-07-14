@@ -926,9 +926,20 @@ async def activate_dealer(
         await db.commit()
         raise HTTPException(status_code=400, detail="Código inválido o vencido")
 
+    # Primera activación (nunca entró) vs. reset (last_login_at ya no es NULL):
+    # la puerta de vinculación solo aplica a la primera.
+    es_primera_activacion = user.last_login_at is None
+
     loop = asyncio.get_event_loop()
-    # Clave PROPIA de esta cuenta (nunca se propaga a sus otras cuentas: el OTP
-    # lo genera el club, no prueba posesión del número — ver app/accounts.py).
+
+    # VINCULACIÓN POR PRUEBA (opción 2, ver app/accounts.py y players.activate):
+    # si el teléfono ya tiene otra cuenta activada y es la 1ra activación de
+    # ésta, hay que probar la clave de la cuenta existente (misma persona).
+    otras = await accounts.other_activated_accounts(db, phone, exclude_id=user.id)
+    hermanas = await accounts.accounts_opening(otras, data.password, loop)
+    if es_primera_activacion and otras and not hermanas:
+        raise HTTPException(status_code=400, detail=accounts.LINK_REQUIRED_MSG)
+
     user.hashed_password = await loop.run_in_executor(None, auth_utils.get_password_hash, data.password)
     if data.name:
         user.name = data.name
@@ -946,12 +957,8 @@ async def activate_dealer(
     )
     await db.commit()
 
-    access_token = auth_utils.create_access_token(data={
-        "sub": user.phone,
-        "club_id": user.club_id,
-        "user_id": user.id,
-        "role": user.role.value if hasattr(user.role, "value") else str(user.role),
-    })
+    uids = [user.id] + [u.id for u in hermanas]
+    access_token = accounts.token_for(user, club, uids)
     return {
         "access_token": access_token,
         "token_type": "bearer",

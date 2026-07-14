@@ -94,6 +94,30 @@ async def accounts_opened_by(db: AsyncSession, phone: str | None, password: str,
     return out
 
 
+async def other_activated_accounts(db: AsyncSession, phone: str,
+                                  exclude_id: int) -> list[models.User]:
+    """Cuentas YA activadas de este teléfono, distintas de la que se activa.
+    Si hay alguna, la nueva activación es una SEGUNDA cuenta sobre el número."""
+    return [u for u in await accounts_for_phone(db, phone) if u.id != exclude_id]
+
+
+async def accounts_opening(users: list[models.User], password: str, loop) -> list[models.User]:
+    """De `users`, las que esta clave abre. Prueba de que quien activa la 2da
+    cuenta es la MISMA persona que ya tiene cuenta en este número."""
+    out = []
+    for u in users:
+        if await loop.run_in_executor(
+                None, auth_utils.verify_password, password, u.hashed_password):
+            out.append(u)
+    return out
+
+
+LINK_REQUIRED_MSG = (
+    "Ya tenés una cuenta en RakeFlow con este número. Para vincular esta nueva, "
+    "ingresá la contraseña de tu cuenta actual."
+)
+
+
 async def phone_taken_by_other(db: AsyncSession, phone: str, club_id: int,
                                role: models.UserRole, own_user_id: int | None) -> bool:
     """¿Ese teléfono ya tiene cuenta EN ESTE CLUB CON ESTE ROL (y no es la suya)?

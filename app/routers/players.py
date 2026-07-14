@@ -552,13 +552,21 @@ async def activate_player(
     es_primera_activacion = user.last_login_at is None
 
     loop = asyncio.get_event_loop()
-    # Clave PROPIA de esta cuenta: NUNCA se propaga a las otras cuentas del
-    # teléfono. El OTP lo genera el club que invita (RakeFlow no manda el
-    # WhatsApp), así que no prueba posesión del número: si la clave se
-    # sincronizara, cualquiera podría abrir un club, invitar el teléfono de un
-    # jugador de otro club y sobrescribirle la clave → toma de cuenta.
-    # Quien quiera ver sus cuentas juntas en el selector, activa con su clave
-    # de siempre (es la clave, no el número, lo que agrupa a la persona).
+
+    # VINCULACIÓN POR PRUEBA (opción 2): si este teléfono YA tiene otra cuenta
+    # activada (jugador o dealer, cualquier club) y esta es la PRIMERA
+    # activación de ESTA cuenta, hay que probar que sos la misma persona con la
+    # contraseña de tu cuenta existente. Así "compartir teléfono" ⟹ misma
+    # persona probada — y como el OTP lo ve el club que invita (no prueba
+    # posesión del número), esta es la barrera real: cierra la toma de cuentas
+    # (el club ajeno no conoce esa clave) y la colisión de dos personas con la
+    # misma clave (la 2da no puede activar). El reset NO pasa por acá
+    # (last_login_at ya no es NULL): solo cambia la clave de una cuenta suya.
+    otras = await accounts.other_activated_accounts(db, phone, exclude_id=user.id)
+    hermanas = await accounts.accounts_opening(otras, data.password, loop)
+    if es_primera_activacion and otras and not hermanas:
+        raise HTTPException(status_code=400, detail=accounts.LINK_REQUIRED_MSG)
+
     user.hashed_password = await loop.run_in_executor(None, auth_utils.get_password_hash, data.password)
     user.phone_verified = True
     user.invitation_token = None
@@ -586,12 +594,10 @@ async def activate_player(
     )
     await db.commit()
 
-    access_token = auth_utils.create_access_token(data={
-        "sub": user.phone,
-        "club_id": user.club_id,
-        "user_id": user.id,
-        "role": user.role.value if hasattr(user.role, "value") else str(user.role),
-    })
+    # Token con uids = esta cuenta + las hermanas que la misma clave abre, para
+    # que el switcher funcione apenas activás una 2da cuenta.
+    uids = [user.id] + [u.id for u in hermanas]
+    access_token = accounts.token_for(user, club, uids)
     return {
         "access_token": access_token,
         "token_type": "bearer",
