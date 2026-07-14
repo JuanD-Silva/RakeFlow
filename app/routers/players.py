@@ -11,7 +11,7 @@ from sqlalchemy.future import select
 from typing import List, Optional
 from datetime import datetime, timedelta
 
-from .. import models, schemas, auth_utils, player_stats
+from .. import models, schemas, accounts, auth_utils, player_stats
 from ..dependencies import get_db, get_current_club, require_role
 from ..audit import log_action, AuditAction
 from ..phone_utils import normalize_phone
@@ -360,13 +360,13 @@ async def invite_player(
     if not phone:
         raise HTTPException(status_code=400, detail="Teléfono inválido")
 
-    # El teléfono es la identidad de login: no puede pertenecer a OTRA cuenta
-    # (ni de otro club, ni a un dealer). Regla idéntica a dealers.
-    taken = (await db.execute(
-        select(models.User).where(models.User.phone == phone)
-    )).scalars().first()
-    if taken and not (player.user_id and taken.id == player.user_id):
-        raise HTTPException(status_code=409, detail="Ese teléfono ya está registrado en otra cuenta de RakeFlow")
+    # MULTI-CUENTA: una persona puede ser jugador acá y dealer acá, o jugador en
+    # otro club. El único choque es la MISMA membresía: ya hay cuenta de jugador
+    # con ese teléfono en ESTE club (y no es la de esta ficha).
+    if await accounts.phone_taken_by_other(db, phone, current_club.id,
+                                           models.UserRole.PLAYER, player.user_id):
+        raise HTTPException(status_code=409,
+                            detail="Ese teléfono ya tiene cuenta de jugador en este club")
 
     code = f"{secrets.randbelow(1000000):06d}"  # OTP 6 dígitos
     expires = datetime.utcnow() + timedelta(hours=24)
@@ -457,11 +457,13 @@ async def reset_player_access(
     if not phone:
         raise HTTPException(status_code=400, detail="Teléfono inválido")
     if phone != user.phone:
-        taken = (await db.execute(
-            select(models.User).where(models.User.phone == phone)
-        )).scalars().first()
-        if taken and taken.id != user.id:
-            raise HTTPException(status_code=409, detail="Ese teléfono ya está registrado en otra cuenta de RakeFlow")
+        # Mismo criterio que el invite: el choque es la MISMA membresía
+        # (jugador de ESTE club). Que la persona tenga cuenta de dealer acá o
+        # de jugador en otro club es legítimo y ya no bloquea el reset.
+        if await accounts.phone_taken_by_other(db, phone, current_club.id,
+                                               models.UserRole.PLAYER, user.id):
+            raise HTTPException(status_code=409,
+                                detail="Ese teléfono ya tiene cuenta de jugador en este club")
 
     code = f"{secrets.randbelow(1000000):06d}"
     user.phone = phone
@@ -515,26 +517,33 @@ async def activate_player(
     if not phone:
         raise HTTPException(status_code=400, detail="Teléfono inválido")
 
-    user = (await db.execute(
-        select(models.User).where(
-            models.User.phone == phone,
-            models.User.role == models.UserRole.PLAYER,
-        )
-    )).scalars().first()
-
+    # MULTI-CUENTA: un teléfono puede tener varias cuentas de jugador (una por
+    # club). La que se activa es la que tiene invitación PENDIENTE con ESTE
+    # código — no la primera que aparezca (antes: .first() elegía la ya activada
+    # de otro club y devolvía "código inválido").
+    pendientes = [
+        u for u in (await db.execute(
+            select(models.User).where(
+                models.User.phone == phone,
+                models.User.role == models.UserRole.PLAYER,
+            )
+        )).scalars().all()
+        if u.hashed_password is None and u.invitation_token
+        and u.invitation_expires_at and u.invitation_expires_at >= datetime.utcnow()
+    ]
     # Mensaje genérico: no filtra si el número existe.
-    if (not user or user.hashed_password is not None
-            or not user.invitation_token
-            or not user.invitation_expires_at
-            or user.invitation_expires_at < datetime.utcnow()):
+    if not pendientes:
         raise HTTPException(status_code=400, detail="Código inválido o vencido")
 
-    # Lockout anti-fuerza-bruta POR TELÉFONO (además del rate limit por IP).
-    if user.invitation_token != data.code.strip():
-        user.invitation_attempts = (user.invitation_attempts or 0) + 1
-        if user.invitation_attempts >= 5:
-            user.invitation_token = None
-            user.invitation_expires_at = None
+    user = next((u for u in pendientes if u.invitation_token == data.code.strip()), None)
+    if user is None:
+        # Lockout anti-fuerza-bruta POR TELÉFONO (además del rate limit por IP):
+        # el intento fallido cuenta para TODAS sus invitaciones pendientes.
+        for u in pendientes:
+            u.invitation_attempts = (u.invitation_attempts or 0) + 1
+            if u.invitation_attempts >= 5:
+                u.invitation_token = None
+                u.invitation_expires_at = None
         await db.commit()
         raise HTTPException(status_code=400, detail="Código inválido o vencido")
 
@@ -543,6 +552,21 @@ async def activate_player(
     es_primera_activacion = user.last_login_at is None
 
     loop = asyncio.get_event_loop()
+
+    # VINCULACIÓN POR PRUEBA (opción 2): si este teléfono YA tiene otra cuenta
+    # activada (jugador o dealer, cualquier club) y esta es la PRIMERA
+    # activación de ESTA cuenta, hay que probar que sos la misma persona con la
+    # contraseña de tu cuenta existente. Así "compartir teléfono" ⟹ misma
+    # persona probada — y como el OTP lo ve el club que invita (no prueba
+    # posesión del número), esta es la barrera real: cierra la toma de cuentas
+    # (el club ajeno no conoce esa clave) y la colisión de dos personas con la
+    # misma clave (la 2da no puede activar). El reset NO pasa por acá
+    # (last_login_at ya no es NULL): solo cambia la clave de una cuenta suya.
+    otras = await accounts.other_activated_accounts(db, phone, exclude_id=user.id)
+    hermanas = await accounts.accounts_opening(otras, data.password, loop)
+    if es_primera_activacion and otras and not hermanas:
+        raise HTTPException(status_code=400, detail=accounts.LINK_REQUIRED_MSG)
+
     user.hashed_password = await loop.run_in_executor(None, auth_utils.get_password_hash, data.password)
     user.phone_verified = True
     user.invitation_token = None
@@ -570,12 +594,10 @@ async def activate_player(
     )
     await db.commit()
 
-    access_token = auth_utils.create_access_token(data={
-        "sub": user.phone,
-        "club_id": user.club_id,
-        "user_id": user.id,
-        "role": user.role.value if hasattr(user.role, "value") else str(user.role),
-    })
+    # Token con uids = esta cuenta + las hermanas que la misma clave abre, para
+    # que el switcher funcione apenas activás una 2da cuenta.
+    uids = [user.id] + [u.id for u in hermanas]
+    access_token = accounts.token_for(user, club, uids)
     return {
         "access_token": access_token,
         "token_type": "bearer",

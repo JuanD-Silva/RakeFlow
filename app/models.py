@@ -103,10 +103,12 @@ class User(Base):
     # email opcional: los dealers entran por teléfono (sin email). El índice único
     # permite múltiples NULL en Postgres.
     email = Column(String, unique=True, index=True, nullable=True)
-    # Teléfono = identidad/login del dealer (verificado por WhatsApp). La unicidad
-    # la da el índice ÚNICO PARCIAL de la migración (uq_users_phone WHERE NOT NULL);
-    # acá NO ponemos unique=True para que create_all no cree un índice total que
-    # contradiga al parcial.
+    # Teléfono = login de jugadores y dealers. YA NO es único global: una persona
+    # puede tener cuenta de jugador Y de dealer, o jugar en varios clubes. La
+    # unicidad es (phone, club_id, role) — índice parcial uq_users_phone_club_role
+    # (migración ii6e7f8a9b0c). OJO: el teléfono NO prueba identidad (el OTP se lo
+    # damos al club que invita); lo que agrupa las cuentas de una persona es su
+    # CLAVE (ver app/accounts.py).
     phone = Column(String, index=True, nullable=True)
     phone_verified = Column(Boolean, default=False)
     # Intentos de activación fallidos: lockout anti-fuerza-bruta del OTP por teléfono.

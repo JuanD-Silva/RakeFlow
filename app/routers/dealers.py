@@ -24,7 +24,7 @@ from sqlalchemy.future import select
 from typing import List, Optional
 from datetime import datetime, timedelta
 
-from .. import models, schemas, services, dealer_view, auth_utils
+from .. import models, schemas, accounts, services, dealer_view, auth_utils
 from ..dependencies import get_db, get_current_club, require_role
 from ..audit import log_action, AuditAction
 from ..phone_utils import normalize_phone
@@ -739,11 +739,10 @@ async def invite_dealer(
         raise HTTPException(status_code=400, detail="Teléfono inválido")
 
     # El teléfono nuevo no puede pertenecer a OTRA cuenta (es la identidad de login).
-    taken = (await db.execute(
-        select(models.User).where(models.User.phone == phone)
-    )).scalars().first()
-    if taken and not (dealer.user_id and taken.id == dealer.user_id):
-        raise HTTPException(status_code=409, detail="Ese teléfono ya está registrado en otra cuenta")
+    if await accounts.phone_taken_by_other(db, phone, current_club.id,
+                                           models.UserRole.DEALER, dealer.user_id):
+        raise HTTPException(status_code=409,
+                            detail="Ese teléfono ya tiene cuenta de dealer en este club")
 
     code = f"{secrets.randbelow(1000000):06d}"  # OTP 6 dígitos, fácil de tipear
     expires = datetime.utcnow() + timedelta(hours=24)
@@ -838,11 +837,10 @@ async def reset_dealer_access(
         raise HTTPException(status_code=400, detail="Teléfono inválido")
     # Si cambia el número, no puede pertenecer a otra cuenta (es la identidad de login).
     if phone != user.phone:
-        taken = (await db.execute(
-            select(models.User).where(models.User.phone == phone)
-        )).scalars().first()
-        if taken and taken.id != user.id:
-            raise HTTPException(status_code=409, detail="Ese teléfono ya está registrado en otra cuenta")
+        if await accounts.phone_taken_by_other(db, phone, current_club.id,
+                                               models.UserRole.DEALER, user.id):
+            raise HTTPException(status_code=409,
+                                detail="Ese teléfono ya tiene cuenta de dealer en este club")
 
     code = f"{secrets.randbelow(1000000):06d}"  # OTP 6 dígitos
     user.phone = phone
@@ -899,32 +897,49 @@ async def activate_dealer(
     if not phone:
         raise HTTPException(status_code=400, detail="Teléfono inválido")
 
-    user = (await db.execute(
-        select(models.User).where(
-            models.User.phone == phone,
-            models.User.role == models.UserRole.DEALER,
-        )
-    )).scalars().first()
-
+    # MULTI-CUENTA: un teléfono puede tener cuenta de dealer en varios clubes
+    # (y de jugador). Se activa la que tiene invitación PENDIENTE con ESTE código.
+    pendientes = [
+        u for u in (await db.execute(
+            select(models.User).where(
+                models.User.phone == phone,
+                models.User.role == models.UserRole.DEALER,
+            )
+        )).scalars().all()
+        if u.hashed_password is None and u.invitation_token
+        and u.invitation_expires_at and u.invitation_expires_at >= datetime.utcnow()
+    ]
     # Cuenta inexistente / ya activada / sin código vigente => mensaje genérico
     # (no filtra si el número existe).
-    if (not user or user.hashed_password is not None
-            or not user.invitation_token
-            or not user.invitation_expires_at
-            or user.invitation_expires_at < datetime.utcnow()):
+    if not pendientes:
         raise HTTPException(status_code=400, detail="Código inválido o vencido")
 
-    # Lockout anti-fuerza-bruta POR TELÉFONO (además del rate limit por IP): tras
-    # 5 intentos fallidos invalidamos el código (hay que re-invitar).
-    if user.invitation_token != data.code.strip():
-        user.invitation_attempts = (user.invitation_attempts or 0) + 1
-        if user.invitation_attempts >= 5:
-            user.invitation_token = None
-            user.invitation_expires_at = None
+    user = next((u for u in pendientes if u.invitation_token == data.code.strip()), None)
+    if user is None:
+        # Lockout anti-fuerza-bruta POR TELÉFONO (además del rate limit por IP):
+        # tras 5 intentos fallidos invalidamos el código (hay que re-invitar).
+        for u in pendientes:
+            u.invitation_attempts = (u.invitation_attempts or 0) + 1
+            if u.invitation_attempts >= 5:
+                u.invitation_token = None
+                u.invitation_expires_at = None
         await db.commit()
         raise HTTPException(status_code=400, detail="Código inválido o vencido")
 
+    # Primera activación (nunca entró) vs. reset (last_login_at ya no es NULL):
+    # la puerta de vinculación solo aplica a la primera.
+    es_primera_activacion = user.last_login_at is None
+
     loop = asyncio.get_event_loop()
+
+    # VINCULACIÓN POR PRUEBA (opción 2, ver app/accounts.py y players.activate):
+    # si el teléfono ya tiene otra cuenta activada y es la 1ra activación de
+    # ésta, hay que probar la clave de la cuenta existente (misma persona).
+    otras = await accounts.other_activated_accounts(db, phone, exclude_id=user.id)
+    hermanas = await accounts.accounts_opening(otras, data.password, loop)
+    if es_primera_activacion and otras and not hermanas:
+        raise HTTPException(status_code=400, detail=accounts.LINK_REQUIRED_MSG)
+
     user.hashed_password = await loop.run_in_executor(None, auth_utils.get_password_hash, data.password)
     if data.name:
         user.name = data.name
@@ -942,12 +957,8 @@ async def activate_dealer(
     )
     await db.commit()
 
-    access_token = auth_utils.create_access_token(data={
-        "sub": user.phone,
-        "club_id": user.club_id,
-        "user_id": user.id,
-        "role": user.role.value if hasattr(user.role, "value") else str(user.role),
-    })
+    uids = [user.id] + [u.id for u in hermanas]
+    access_token = accounts.token_for(user, club, uids)
     return {
         "access_token": access_token,
         "token_type": "bearer",
