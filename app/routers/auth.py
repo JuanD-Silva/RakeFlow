@@ -11,6 +11,7 @@ from sqlalchemy import delete, or_
 from pydantic import BaseModel
 from .. import models, schemas, auth_utils
 from ..phone_utils import normalize_phone
+from .. import accounts
 from ..dependencies import get_db, get_current_club, get_current_user, require_role
 from ..email_service import send_password_reset_email, send_verification_email
 from ..rate_limit import limiter
@@ -85,7 +86,9 @@ async def register_club(request: Request, club_data: schemas.ClubCreate, db: Asy
 # ---------------------------------------------------------
 # 2. LOGIN (OBTENER TOKEN) — Acepta form-urlencoded y JSON
 # ---------------------------------------------------------
-@router.post("/auth/login", response_model=schemas.Token)
+# Sin response_model: la respuesta es el access_token de siempre O —si la
+# persona tiene varias cuentas— la lista para elegir (multi_account=True).
+@router.post("/auth/login")
 @limiter.limit("10/minute")
 async def login(request: Request, db: AsyncSession = Depends(get_db)):
     """
@@ -146,14 +149,33 @@ async def login(request: Request, db: AsyncSession = Depends(get_db)):
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    access_token = auth_utils.create_access_token(
-        data={
-            "sub": user.email or user.phone,
-            "club_id": club.id,
-            "user_id": user.id,
-            "role": user.role.value if hasattr(user.role, "value") else str(user.role),
-        }
-    )
+    # MULTI-CUENTA: una persona (un teléfono) puede ser jugador y dealer, o
+    # jugador en dos clubes. Si la clave abre más de una cuenta, el login no
+    # decide por ella: devuelve la lista y un token efímero para que elija.
+    # (El staff entra por email → una sola cuenta → flujo intacto.)
+    if user.phone:
+        mine = await accounts.accounts_for_phone(db, user.phone)
+        # Verificar la clave contra cada una: las cuentas del mismo teléfono
+        # comparten hash (sync_password), pero una divergencia histórica no debe
+        # ofrecer una cuenta cuya clave NO es la que acaba de escribir.
+        matches = [u for u in mine if u.id == user.id or await loop.run_in_executor(
+            None, auth_utils.verify_password, password, u.hashed_password)]
+        if len(matches) > 1:
+            await log_action(
+                db, request=request, club=club,
+                action=AuditAction.LOGIN_SUCCESS,
+                meta={"user_id": user.id, "multi_account": True,
+                      "accounts": len(matches)},
+            )
+            await db.commit()
+            return {
+                "multi_account": True,
+                "accounts": await accounts.account_views(db, matches),
+                "select_token": accounts.create_select_token(
+                    user.phone, [u.id for u in matches]),
+            }
+
+    access_token = accounts.token_for(user, club)
 
     user.last_login_at = datetime.utcnow()
     await log_action(
@@ -172,6 +194,82 @@ async def login(request: Request, db: AsyncSession = Depends(get_db)):
         "role": user.role.value if hasattr(user.role, "value") else str(user.role),
         "user_name": user.name,
     }
+
+class SelectAccountIn(BaseModel):
+    select_token: str
+    user_id: int
+
+
+class SwitchAccountIn(BaseModel):
+    user_id: int
+
+
+async def _issue_for_account(db: AsyncSession, user_id: int, allowed_ids: list[int],
+                             phone: str) -> dict:
+    """Emite el access_token de la cuenta elegida. La cuenta DEBE estar en la
+    lista autorizada (las que abrió la clave / las del teléfono autenticado):
+    nadie canjea un token por una cuenta ajena."""
+    if user_id not in allowed_ids:
+        raise HTTPException(status_code=403, detail="Esa cuenta no es tuya")
+    user = (await db.execute(
+        select(models.User).where(models.User.id == user_id)
+    )).scalars().first()
+    if (not user or not user.is_active or user.hashed_password is None
+            or user.phone != phone):
+        raise HTTPException(status_code=401, detail="Cuenta no disponible")
+    club = (await db.execute(
+        select(models.Club).where(models.Club.id == user.club_id)
+    )).scalars().first()
+    if not club:
+        raise HTTPException(status_code=401, detail="Club no encontrado")
+    user.last_login_at = datetime.utcnow()
+    await db.commit()
+    return {"access_token": accounts.token_for(user, club), "token_type": "bearer"}
+
+
+@router.post("/auth/select-account")
+@limiter.limit("20/hour")
+async def select_account(
+    data: SelectAccountIn,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Paso 2 del login multi-cuenta: la persona ya probó su clave y ahora dice
+    con cuál de SUS cuentas entra. Público, pero el select_token (10 min) es la
+    prueba: lleva el teléfono y los ids permitidos."""
+    payload = accounts.decode_select_token(data.select_token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Sesión de selección vencida; volvé a entrar")
+    return await _issue_for_account(db, data.user_id, payload["uids"], payload["phone"])
+
+
+@router.get("/auth/my-accounts")
+async def my_accounts(
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Las cuentas de la persona logueada (para el switcher de la app). El staff
+    por email ve solo la suya."""
+    mine = await accounts.accounts_for_phone(db, current_user.phone)
+    if not mine:
+        mine = [current_user]
+    return {"accounts": await accounts.account_views(db, mine, current_id=current_user.id)}
+
+
+@router.post("/auth/switch-account")
+async def switch_account(
+    data: SwitchAccountIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Cambiar de cuenta SIN volver a escribir la clave: ya está autenticado como
+    esa persona (mismo teléfono). Sin teléfono (staff por email) no hay a dónde
+    cambiar."""
+    if not current_user.phone:
+        raise HTTPException(status_code=403, detail="Tu cuenta no tiene otras vinculadas")
+    mine = await accounts.accounts_for_phone(db, current_user.phone)
+    return await _issue_for_account(db, data.user_id, [u.id for u in mine], current_user.phone)
+
 
 @router.get("/auth/me")
 async def get_current_club_info(

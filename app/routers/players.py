@@ -11,7 +11,7 @@ from sqlalchemy.future import select
 from typing import List, Optional
 from datetime import datetime, timedelta
 
-from .. import models, schemas, auth_utils, player_stats
+from .. import models, schemas, accounts, auth_utils, player_stats
 from ..dependencies import get_db, get_current_club, require_role
 from ..audit import log_action, AuditAction
 from ..phone_utils import normalize_phone
@@ -360,13 +360,13 @@ async def invite_player(
     if not phone:
         raise HTTPException(status_code=400, detail="Teléfono inválido")
 
-    # El teléfono es la identidad de login: no puede pertenecer a OTRA cuenta
-    # (ni de otro club, ni a un dealer). Regla idéntica a dealers.
-    taken = (await db.execute(
-        select(models.User).where(models.User.phone == phone)
-    )).scalars().first()
-    if taken and not (player.user_id and taken.id == player.user_id):
-        raise HTTPException(status_code=409, detail="Ese teléfono ya está registrado en otra cuenta de RakeFlow")
+    # MULTI-CUENTA: una persona puede ser jugador acá y dealer acá, o jugador en
+    # otro club. El único choque es la MISMA membresía: ya hay cuenta de jugador
+    # con ese teléfono en ESTE club (y no es la de esta ficha).
+    if await accounts.phone_taken_by_other(db, phone, current_club.id,
+                                           models.UserRole.PLAYER, player.user_id):
+        raise HTTPException(status_code=409,
+                            detail="Ese teléfono ya tiene cuenta de jugador en este club")
 
     code = f"{secrets.randbelow(1000000):06d}"  # OTP 6 dígitos
     expires = datetime.utcnow() + timedelta(hours=24)
@@ -515,26 +515,33 @@ async def activate_player(
     if not phone:
         raise HTTPException(status_code=400, detail="Teléfono inválido")
 
-    user = (await db.execute(
-        select(models.User).where(
-            models.User.phone == phone,
-            models.User.role == models.UserRole.PLAYER,
-        )
-    )).scalars().first()
-
+    # MULTI-CUENTA: un teléfono puede tener varias cuentas de jugador (una por
+    # club). La que se activa es la que tiene invitación PENDIENTE con ESTE
+    # código — no la primera que aparezca (antes: .first() elegía la ya activada
+    # de otro club y devolvía "código inválido").
+    pendientes = [
+        u for u in (await db.execute(
+            select(models.User).where(
+                models.User.phone == phone,
+                models.User.role == models.UserRole.PLAYER,
+            )
+        )).scalars().all()
+        if u.hashed_password is None and u.invitation_token
+        and u.invitation_expires_at and u.invitation_expires_at >= datetime.utcnow()
+    ]
     # Mensaje genérico: no filtra si el número existe.
-    if (not user or user.hashed_password is not None
-            or not user.invitation_token
-            or not user.invitation_expires_at
-            or user.invitation_expires_at < datetime.utcnow()):
+    if not pendientes:
         raise HTTPException(status_code=400, detail="Código inválido o vencido")
 
-    # Lockout anti-fuerza-bruta POR TELÉFONO (además del rate limit por IP).
-    if user.invitation_token != data.code.strip():
-        user.invitation_attempts = (user.invitation_attempts or 0) + 1
-        if user.invitation_attempts >= 5:
-            user.invitation_token = None
-            user.invitation_expires_at = None
+    user = next((u for u in pendientes if u.invitation_token == data.code.strip()), None)
+    if user is None:
+        # Lockout anti-fuerza-bruta POR TELÉFONO (además del rate limit por IP):
+        # el intento fallido cuenta para TODAS sus invitaciones pendientes.
+        for u in pendientes:
+            u.invitation_attempts = (u.invitation_attempts or 0) + 1
+            if u.invitation_attempts >= 5:
+                u.invitation_token = None
+                u.invitation_expires_at = None
         await db.commit()
         raise HTTPException(status_code=400, detail="Código inválido o vencido")
 
@@ -544,6 +551,10 @@ async def activate_player(
 
     loop = asyncio.get_event_loop()
     user.hashed_password = await loop.run_in_executor(None, auth_utils.get_password_hash, data.password)
+    # Una persona, una clave: si ya tenía otras cuentas (dealer acá, jugador en
+    # otro club), quedan con esta misma clave. El OTP verificado prueba que es
+    # ella, así que equivale a un reset de su identidad.
+    await accounts.sync_password(db, phone, user.hashed_password, keep_id=user.id)
     user.phone_verified = True
     user.invitation_token = None
     user.invitation_expires_at = None
