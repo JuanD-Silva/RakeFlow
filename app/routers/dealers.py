@@ -12,7 +12,6 @@ El cierre es SOLO INFORMATIVO: no toca la distribución financiera ni
 registra gastos.
 """
 import os
-import secrets
 import asyncio
 from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -927,11 +926,17 @@ async def activate_dealer(
     if not pendientes:
         raise HTTPException(status_code=400, detail="Código inválido o vencido")
 
-    # Valida según el canal: Twilio Verify o código local (plan B).
-    user = await phone_verify.match_pending(pendientes, phone, data.code)
+    loop = asyncio.get_event_loop()
+    # Mismo orden seguro que players.activate: candidato → puerta de vinculación
+    # (sin consumir Twilio) → validación del código al final (ver accounts.py).
+    user, reason, hermanas = await accounts.resolve_pending_activation(
+        db, pendientes, phone, data.code, data.password, loop)
     if user is None:
-        # Lockout anti-fuerza-bruta POR TELÉFONO (además del rate limit por IP):
-        # tras 5 intentos fallidos invalidamos el código (hay que re-invitar).
+        if reason == "twilio_unavailable":
+            raise HTTPException(status_code=503,
+                detail="No pudimos verificar el código ahora mismo. Intenta de nuevo en un momento.")
+        if reason == "link_required":
+            raise HTTPException(status_code=400, detail=accounts.LINK_REQUIRED_MSG)
         for u in pendientes:
             u.invitation_attempts = (u.invitation_attempts or 0) + 1
             if u.invitation_attempts >= 5:
@@ -939,20 +944,6 @@ async def activate_dealer(
                 u.invitation_expires_at = None
         await db.commit()
         raise HTTPException(status_code=400, detail="Código inválido o vencido")
-
-    # Primera activación (nunca entró) vs. reset (last_login_at ya no es NULL):
-    # la puerta de vinculación solo aplica a la primera.
-    es_primera_activacion = user.last_login_at is None
-
-    loop = asyncio.get_event_loop()
-
-    # VINCULACIÓN POR PRUEBA (opción 2, ver app/accounts.py y players.activate):
-    # si el teléfono ya tiene otra cuenta activada y es la 1ra activación de
-    # ésta, hay que probar la clave de la cuenta existente (misma persona).
-    otras = await accounts.other_activated_accounts(db, phone, exclude_id=user.id)
-    hermanas = await accounts.accounts_opening(otras, data.password, loop)
-    if es_primera_activacion and otras and not hermanas:
-        raise HTTPException(status_code=400, detail=accounts.LINK_REQUIRED_MSG)
 
     user.hashed_password = await loop.run_in_executor(None, auth_utils.get_password_hash, data.password)
     if data.name:

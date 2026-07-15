@@ -95,33 +95,24 @@ check("start_invite si Twilio falla → plan B manual", ch == "manual" and code 
 with_client(boom=True)
 check("send_code excepción de red → False (no rompe)", run(pv.send_code("+573001234567")) is False)
 
+# --- check_code / check_code_status (approved | denied | unavailable) ---
 with_client(FakeResp(200, {"status": "approved"}))
 check("check_code approved → True", run(pv.check_code("+573001234567", "123456")) is True)
+check("status approved", run(pv.check_code_status("+573001234567", "123456")) == "approved")
 with_client(FakeResp(200, {"status": "pending"}))
-check("check_code no-approved → False", run(pv.check_code("+573001234567", "000000")) is False)
-
-# --- match_pending ---
-def u(channel, token, sent="2026-07-15"):
-    from datetime import datetime
-    return SimpleNamespace(verification_channel=channel, invitation_token=token,
-                           invitation_sent_at=datetime.fromisoformat(sent))
-
-# manual: compara token local, sin tocar Twilio
-with_client(FakeResp(200, {"status": "denied"}))
-m = run(pv.match_pending([u("manual", "482913"), u("manual", "111111")], "573001234567", "482913"))
-check("match_pending manual: elige por token", m is not None and m.invitation_token == "482913")
-m = run(pv.match_pending([u("manual", "482913")], "573001234567", "999999"))
-check("match_pending manual código malo → None", m is None)
-
-# twilio: valida con Twilio y toma la invitación más reciente
-with_client(FakeResp(200, {"status": "approved"}))
-m = run(pv.match_pending([u("twilio", None, "2026-07-10"), u("twilio", None, "2026-07-15")],
-                         "573001234567", "654321"))
-check("match_pending twilio approved → toma la más reciente",
-      m is not None and m.invitation_sent_at.day == 15)
-with_client(FakeResp(200, {"status": "pending"}))
-m = run(pv.match_pending([u("twilio", None)], "573001234567", "000000"))
-check("match_pending twilio código malo → None", m is None)
+check("status código malo → denied", run(pv.check_code_status("+573001234567", "000000")) == "denied")
+with_client(FakeResp(404, {"code": 20404}))
+check("status 404 (vencido/consumido) → denied", run(pv.check_code_status("+573001234567", "1")) == "denied")
+with_client(FakeResp(503, {"m": "down"}))
+check("status 503 → unavailable (no quema el intento)",
+      run(pv.check_code_status("+573001234567", "1")) == "unavailable")
+with_client(boom=True)
+check("status excepción de red → unavailable",
+      run(pv.check_code_status("+573001234567", "1")) == "unavailable")
+# Sin credenciales: unavailable (no 'denied' — no es culpa del código)
+pv.TWILIO_VERIFY_SERVICE_SID = None
+check("status sin creds → unavailable",
+      run(pv.check_code_status("+573001234567", "1")) == "unavailable")
 
 print(f"\ntest phone_verify: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

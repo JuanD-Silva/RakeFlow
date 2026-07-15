@@ -24,7 +24,6 @@ import logging
 import os
 import re
 import secrets
-from datetime import datetime
 
 import httpx
 
@@ -80,11 +79,20 @@ async def send_code(phone_e164: str) -> bool:
         return False
 
 
-async def check_code(phone_e164: str, code: str) -> bool:
-    """True si el código es correcto (status 'approved'). Una verificación
-    aprobada se consume: NO llamar dos veces para el mismo intento."""
-    if not verify_enabled() or not phone_e164 or not code:
-        return False
+async def check_code_status(phone_e164: str, code: str) -> str:
+    """Estado de la verificación: 'approved' | 'denied' | 'unavailable'.
+
+    - 'approved': código correcto (se CONSUME: no llamar dos veces).
+    - 'denied':   código incorrecto o vencido (Twilio respondió). Cuenta para
+                  el lockout.
+    - 'unavailable': Twilio no configurado o inalcanzable (5xx/timeout/red).
+                  NO es culpa del usuario → el caller no debe quemar la
+                  invitación ni contar el intento; que reintente en un momento.
+    """
+    if not verify_enabled():
+        return "unavailable"
+    if not phone_e164 or not code:
+        return "denied"
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
             r = await client.post(
@@ -92,10 +100,22 @@ async def check_code(phone_e164: str, code: str) -> bool:
                 auth=(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN),
                 data={"To": phone_e164, "Code": code.strip()},
             )
-        return r.status_code in (200, 201) and r.json().get("status") == "approved"
+        if r.status_code in (200, 201):
+            return "approved" if r.json().get("status") == "approved" else "denied"
+        # 404 = no hay verificación activa (vencida/ya consumida): denegado.
+        if r.status_code == 404:
+            return "denied"
+        # 429/5xx: problema del servicio, no del código → no quemar el intento.
+        logger.warning("twilio_verify_check_unavailable status=%s", r.status_code)
+        return "unavailable"
     except Exception:
         logger.exception("twilio_verify_check_error")
-        return False
+        return "unavailable"
+
+
+async def check_code(phone_e164: str, code: str) -> bool:
+    """True si el código es correcto. Envoltorio de check_code_status."""
+    return (await check_code_status(phone_e164, code)) == "approved"
 
 
 async def start_invite(phone_normalized: str) -> tuple[str, str | None]:
@@ -107,21 +127,3 @@ async def start_invite(phone_normalized: str) -> tuple[str, str | None]:
         if await send_code(to_e164(phone_normalized)):
             return "twilio", None
     return "manual", new_code()
-
-
-async def match_pending(pendientes: list, phone_normalized: str, code: str):
-    """De una lista de cuentas PENDIENTES del mismo teléfono, la que corresponde
-    a este código — o None. Combina los dos canales:
-      - manual: compara el código local guardado.
-      - twilio: valida con Twilio Verify UNA sola vez (es por teléfono, no por
-        cuenta) y toma la invitación twilio más reciente (por si hay varias en
-        el mismo número — el caso 2ª-cuenta lo re-gatea la clave de todos modos).
-    verification_channel NULL = 'manual' (cuentas previas a esta feature)."""
-    code = (code or "").strip()
-    for u in pendientes:
-        if (u.verification_channel or "manual") == "manual" and u.invitation_token == code:
-            return u
-    twilio_pend = [u for u in pendientes if u.verification_channel == "twilio"]
-    if twilio_pend and await check_code(to_e164(phone_normalized), code):
-        return max(twilio_pend, key=lambda u: u.invitation_sent_at or datetime.min)
-    return None

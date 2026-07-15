@@ -28,12 +28,26 @@ def check(name, cond):
         print(f"  FAIL: {name}")
 
 
-# --- Mock de Twilio: send configurable; check aprueba SOLO "000000" ---
+# --- Mock de Twilio: send configurable; check con consumo REAL (approved se
+# gasta, como Twilio) para poder probar el orden puerta-vs-consumo ---
 _send_ok = {"v": True}
+_check = {"mode": "normal", "consumed": set()}   # mode: normal | unavailable
 pv.verify_enabled = lambda: True
-async def _send(_e164): return _send_ok["v"]
-async def _checkcode(_e164, code): return code.strip() == "000000"
+async def _send(e164):
+    _check["consumed"].discard(e164)   # cada envío nuevo = verificación fresca
+    return _send_ok["v"]
 pv.send_code = _send
+async def _status(e164, code):
+    if _check["mode"] == "unavailable":
+        return "unavailable"
+    if e164 in _check["consumed"]:
+        return "denied"                     # ya consumido (aprobado antes)
+    if code.strip() == "000000":
+        _check["consumed"].add(e164)         # aprobar CONSUME
+        return "approved"
+    return "denied"
+pv.check_code_status = _status
+async def _checkcode(e164, code): return (await _status(e164, code)) == "approved"
 pv.check_code = _checkcode
 
 
@@ -98,6 +112,43 @@ async def main():
         r = await c.post("/players/activate", json={"phone": "3007770003", "code": "123456",
                                                     "password": "Jugador123"})
         check("activate verificado con código MALO → 400", r.status_code == 400)
+
+        # ===== FINDING 1: Twilio caído al activar → 503, sin quemar la invitación =====
+        _send_ok["v"] = True
+        p4 = (await c.post("/players/", json={"name": "Twilio Down", "phone": "3007770004",
+                                              "club_id": 1}, headers=h)).json()
+        await c.post(f"/players/{p4['id']}/invite", json={"phone": "3007770004"}, headers=h)
+        _check["mode"] = "unavailable"
+        r = await c.post("/players/activate", json={"phone": "3007770004", "code": "000000",
+                                                    "password": "Jugador123"})
+        check("Twilio no disponible → 503 (no 400)", r.status_code == 503)
+        # La invitación NO se quemó: cuando Twilio vuelve, activa normal.
+        _check["mode"] = "normal"
+        r = await c.post("/players/activate", json={"phone": "3007770004", "code": "000000",
+                                                    "password": "Jugador123"})
+        check("Twilio vuelve → activa (invitación intacta, sin lockout)", r.status_code == 200)
+
+        # ===== FINDING 2: puerta de vinculación ANTES de consumir el código =====
+        # Persona con cuenta en club A (clave ClaveA). Club B (este) la invita.
+        # Activar con clave hermana MALA no debe gastar el código de Twilio.
+        r = await c.post("/auth/register", json={"name": "Club B", "email": f"b_{suf}@t.local",
+                                                 "password": "ClubB12345", "accept_terms": True})
+        hb = {"Authorization": f"Bearer {(await c.post('/auth/login', data={'username': f'b_{suf}@t.local', 'password': 'ClubB12345'})).json()['access_token']}"}
+        # cuenta 1 (club A = h): activa con ClaveA
+        pa = (await c.post("/players/", json={"name": "Multi", "phone": "3007770005", "club_id": 1}, headers=h)).json()
+        await c.post(f"/players/{pa['id']}/invite", json={"phone": "3007770005"}, headers=h)
+        r = await c.post("/players/activate", json={"phone": "3007770005", "code": "000000", "password": "ClaveA1234"})
+        check("cuenta 1 (club A) activa", r.status_code == 200)
+        # cuenta 2 (club B): invita por twilio (nuevo código para el mismo número)
+        pb = (await c.post("/players/", json={"name": "Multi", "phone": "3007770005", "club_id": 1}, headers=hb)).json()
+        await c.post(f"/players/{pb['id']}/invite", json={"phone": "3007770005"}, headers=hb)
+        # intento con clave hermana EQUIVOCADA → LINK_REQUIRED (400), NO consume el código
+        r = await c.post("/players/activate", json={"phone": "3007770005", "code": "000000", "password": "ClaveMala9"})
+        check("2ª cuenta, clave hermana mala → 400 (vinculación)", r.status_code == 400)
+        # reintento con la clave hermana CORRECTA → el código NO se gastó → 200
+        r = await c.post("/players/activate", json={"phone": "3007770005", "code": "000000", "password": "ClaveA1234"})
+        check("reintento con clave correcta → 200 (el código no se había consumido)",
+              r.status_code == 200)
 
     await engine.dispose()
 

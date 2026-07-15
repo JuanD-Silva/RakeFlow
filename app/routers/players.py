@@ -1,6 +1,5 @@
 # app/routers/players.py
 import os
-import secrets
 import asyncio
 from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -552,11 +551,20 @@ async def activate_player(
     if not pendientes:
         raise HTTPException(status_code=400, detail="Código inválido o vencido")
 
-    # Valida el código según el canal: Twilio Verify o el código local (plan B).
-    user = await phone_verify.match_pending(pendientes, phone, data.code)
+    loop = asyncio.get_event_loop()
+    # Resuelve en el orden correcto: candidato → puerta de vinculación (opción 2,
+    # sin consumir Twilio) → validación del código como ÚLTIMO paso. Así una
+    # clave hermana equivocada NO gasta el código de Twilio, y una caída de
+    # Twilio no quema la invitación (503, sin lockout). Ver accounts.py.
+    user, reason, hermanas = await accounts.resolve_pending_activation(
+        db, pendientes, phone, data.code, data.password, loop)
     if user is None:
-        # Lockout anti-fuerza-bruta POR TELÉFONO (además del rate limit por IP):
-        # el intento fallido cuenta para TODAS sus invitaciones pendientes.
+        if reason == "twilio_unavailable":
+            raise HTTPException(status_code=503,
+                detail="No pudimos verificar el código ahora mismo. Intenta de nuevo en un momento.")
+        if reason == "link_required":
+            raise HTTPException(status_code=400, detail=accounts.LINK_REQUIRED_MSG)
+        # Código incorrecto/vencido: lockout POR TELÉFONO (+ rate limit por IP).
         for u in pendientes:
             u.invitation_attempts = (u.invitation_attempts or 0) + 1
             if u.invitation_attempts >= 5:
@@ -568,22 +576,6 @@ async def activate_player(
     # Capturar ANTES de mutar: la primera activación se detecta porque
     # last_login_at todavía es NULL (nunca entró).
     es_primera_activacion = user.last_login_at is None
-
-    loop = asyncio.get_event_loop()
-
-    # VINCULACIÓN POR PRUEBA (opción 2): si este teléfono YA tiene otra cuenta
-    # activada (jugador o dealer, cualquier club) y esta es la PRIMERA
-    # activación de ESTA cuenta, hay que probar que sos la misma persona con la
-    # contraseña de tu cuenta existente. Así "compartir teléfono" ⟹ misma
-    # persona probada — y como el OTP lo ve el club que invita (no prueba
-    # posesión del número), esta es la barrera real: cierra la toma de cuentas
-    # (el club ajeno no conoce esa clave) y la colisión de dos personas con la
-    # misma clave (la 2da no puede activar). El reset NO pasa por acá
-    # (last_login_at ya no es NULL): solo cambia la clave de una cuenta suya.
-    otras = await accounts.other_activated_accounts(db, phone, exclude_id=user.id)
-    hermanas = await accounts.accounts_opening(otras, data.password, loop)
-    if es_primera_activacion and otras and not hermanas:
-        raise HTTPException(status_code=400, detail=accounts.LINK_REQUIRED_MSG)
 
     user.hashed_password = await loop.run_in_executor(None, auth_utils.get_password_hash, data.password)
     # phone_verified solo si RakeFlow mandó el código (twilio prueba posesión);
