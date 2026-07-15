@@ -37,6 +37,7 @@ import PlayerWorkspace from './pages/PlayerWorkspace';
 import AlertWatcher from './components/AlertWatcher';
 import TeamPanel from './components/TeamPanel';
 import PlayersDirectory from './components/PlayersDirectory';
+import GrowthPanel from './components/GrowthPanel';
 
 // --- COMPONENTE PRINCIPAL (Dashboard Protegido) ---
 function PokerManagerApp() {
@@ -182,6 +183,7 @@ function PokerManagerApp() {
           {currentView === 'finance' && <WeeklyReport />}
           {currentView === 'ranking' && <PlayerLeaderboard />}
           {currentView === 'players' && (isOwner || role === 'manager') && <PlayersDirectory />}
+          {currentView === 'crecimiento' && (isOwner || role === 'manager') && <GrowthPanel />}
           {currentView === 'team' && <TeamPanel />}
           {currentView === 'config' && <ConfigPanel />}
         </ErrorBoundary>

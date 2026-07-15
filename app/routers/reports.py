@@ -120,3 +120,59 @@ async def retention(
     result["generated_at"] = now.isoformat() + "Z"
     return result
 
+
+@router.get("/adoption")
+async def adoption(
+    current_club: models.Club = Depends(get_current_club),
+    _: models.User = Depends(require_role([models.UserRole.OWNER, models.UserRole.MANAGER])),
+    db: AsyncSession = Depends(get_db),
+):
+    """Embudo de adopción del panel del jugador (solo este club).
+
+    Mide el paso del universo del club al panel: del CRM (todos los jugadores
+    registrados), a los que juegan hoy (base activa real, vía transacciones de
+    sesiones cash del club), a los que tienen cuenta de panel y lo abren.
+
+    La conversión que importa es `activos_30d → activos_30d_con_panel`: ahí está
+    la fuga (jul-2026 en Mambo eran 4 de 71 = 6%). La actividad del panel se mide
+    por jugadores (players con user_id) cuyo `last_seen_at` cae en la ventana —
+    no por usuarios sueltos, para no contar staff que abre el panel de gestión.
+    """
+    row = (await db.execute(text("""
+        SELECT
+          (SELECT COUNT(*) FROM players WHERE club_id = :cid) AS crm_total,
+          (SELECT COUNT(*) FROM players WHERE club_id = :cid AND user_id IS NOT NULL) AS con_panel,
+          (SELECT COUNT(DISTINCT t.player_id)
+             FROM transactions t JOIN sessions s ON s.id = t.session_id
+             WHERE s.club_id = :cid AND s.start_time >= now() - interval '7 days') AS activos_7d,
+          (SELECT COUNT(DISTINCT t.player_id)
+             FROM transactions t JOIN sessions s ON s.id = t.session_id
+             WHERE s.club_id = :cid AND s.start_time >= now() - interval '30 days') AS activos_30d,
+          (SELECT COUNT(DISTINCT t.player_id)
+             FROM transactions t
+             JOIN sessions s ON s.id = t.session_id
+             JOIN players p ON p.id = t.player_id
+             WHERE s.club_id = :cid AND s.start_time >= now() - interval '30 days'
+               AND p.club_id = :cid AND p.user_id IS NOT NULL) AS activos_30d_con_panel,
+          (SELECT COUNT(*) FROM players p JOIN users u ON u.id = p.user_id
+             WHERE p.club_id = :cid AND u.last_seen_at IS NOT NULL) AS panel_abrieron,
+          (SELECT COUNT(*) FROM players p JOIN users u ON u.id = p.user_id
+             WHERE p.club_id = :cid AND u.last_seen_at >= now() - interval '7 days') AS panel_activos_7d,
+          (SELECT COUNT(*) FROM players p JOIN users u ON u.id = p.user_id
+             WHERE p.club_id = :cid AND u.last_seen_at >= now() - interval '30 days') AS panel_activos_30d
+    """), {"cid": current_club.id})).one()
+
+    now = datetime.utcnow()
+    return {
+        "crm_total": row.crm_total,
+        "activos_7d": row.activos_7d,
+        "activos_30d": row.activos_30d,
+        "con_panel": row.con_panel,
+        "activos_30d_con_panel": row.activos_30d_con_panel,
+        "panel_abrieron": row.panel_abrieron,
+        "panel_activos_7d": row.panel_activos_7d,
+        "panel_activos_30d": row.panel_activos_30d,
+        "club_id": current_club.id,
+        "generated_at": now.isoformat() + "Z",
+    }
+
