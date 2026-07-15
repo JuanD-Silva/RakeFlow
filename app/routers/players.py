@@ -630,7 +630,20 @@ class PlayerSelfRegisterIn(BaseModel):
     club_token: str = Field(..., min_length=8, max_length=100)
     phone: str = Field(..., min_length=7, max_length=20)
     name: str = Field(..., min_length=2, max_length=80)
-    password: str = Field(..., min_length=8, max_length=100)
+    password: str = Field(..., min_length=8, max_length=128)
+
+    # Misma exigencia que PlayerActivateIn: el endpoint es público, el frontend
+    # no es la frontera de seguridad.
+    @field_validator("password")
+    @classmethod
+    def password_strength(cls, v):
+        if not any(c.isupper() for c in v):
+            raise ValueError("La contraseña debe tener al menos una mayúscula")
+        if not any(c.islower() for c in v):
+            raise ValueError("La contraseña debe tener al menos una minúscula")
+        if not any(c.isdigit() for c in v):
+            raise ValueError("La contraseña debe tener al menos un número")
+        return v
 
 
 async def _find_ficha_by_phone(db: AsyncSession, club_id: int, phone_normalized: str):
@@ -671,63 +684,57 @@ async def self_register_player(
     if not name:
         raise HTTPException(status_code=400, detail="Nombre inválido")
 
-    # ¿Ya hay cuenta de jugador con este teléfono en ESTE club?
+    # ¿Ya hay cuenta de jugador con este teléfono en ESTE club? El self-register
+    # NUNCA toca una cuenta pre-existente. Cada caso va a su flujo:
+    #  - activada → que inicie sesión.
+    #  - pendiente (invitación del staff o reset de acceso) → que la active con
+    #    SU código. Si self-register la completara, cualquiera con el public_token
+    #    (semi-público, va en el QR) podría fijarle la clave sin el código y tomar
+    #    la cuenta — y re-bloquear un histórico ya comprado. Se cierra acá.
     existing = (await db.execute(select(models.User).where(
         models.User.phone == phone,
         models.User.role == models.UserRole.PLAYER,
         models.User.club_id == club.id,
     ))).scalars().first()
-    if existing and existing.hashed_password is not None:
-        # Ya activó: no re-crear ni pisar la clave. Que inicie sesión.
+    if existing is not None:
+        if existing.hashed_password is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="Ya tienes una cuenta en este club. Inicia sesión con tu teléfono.")
         raise HTTPException(
             status_code=409,
-            detail="Ya tienes una cuenta en este club. Inicia sesión con tu teléfono.")
+            detail="Ya tienes una invitación de este club. Actívala desde el enlace que te enviaron.")
 
     loop = asyncio.get_event_loop()
     hashed = await loop.run_in_executor(None, auth_utils.get_password_hash, data.password)
     now = datetime.utcnow()
 
-    if existing:
-        # Invitación del staff pendiente sin activar → la completamos acá. No es
-        # auto-registro (nació de un invite), así que NO marcamos self_registered.
-        user = existing
-        user.hashed_password = hashed
-        user.phone_verified = False
-        user.invitation_token = None
-        user.invitation_expires_at = None
-        user.invitation_attempts = 0
-        user.last_login_at = now
-        player = (await db.execute(select(models.Player).where(
-            models.Player.user_id == user.id,
-            models.Player.club_id == club.id,
-        ))).scalars().first()
-        if player and player.stats_since is None:
-            player.stats_since = now
-        via = "pending-claim"
+    # Sin cuenta: vincular a la ficha del CRM por teléfono (reclama su historia/
+    # ranking) o crear una nueva. stats_since = now esconde el histórico hasta que
+    # lo compre en caja (unlock-history) — así reclamar una ficha ajena tampoco
+    # expondría su plata.
+    player = await _find_ficha_by_phone(db, club.id, phone)
+    user = models.User(
+        club_id=club.id, email=None, phone=phone, phone_verified=False,
+        name=name, role=models.UserRole.PLAYER, is_active=True,
+        hashed_password=hashed, last_login_at=now,
+    )
+    db.add(user)
+    await db.flush()
+    if player is None:
+        player = models.Player(
+            club_id=club.id, name=name, phone=phone, user_id=user.id,
+            self_registered_at=now, stats_since=now)
+        db.add(player)
+        via = "new-ficha"
     else:
-        # Sin cuenta: vincular a ficha del CRM por teléfono, o crear una nueva.
-        player = await _find_ficha_by_phone(db, club.id, phone)
-        user = models.User(
-            club_id=club.id, email=None, phone=phone, phone_verified=False,
-            name=name, role=models.UserRole.PLAYER, is_active=True,
-            hashed_password=hashed, last_login_at=now,
-        )
-        db.add(user)
-        await db.flush()
-        if player is None:
-            player = models.Player(
-                club_id=club.id, name=name, phone=phone, user_id=user.id,
-                self_registered_at=now, stats_since=now)
-            db.add(player)
-            via = "new-ficha"
-        else:
-            player.user_id = user.id
-            player.phone = phone
-            player.self_registered_at = now
-            if player.stats_since is None:
-                player.stats_since = now
-            via = "claim-ficha"
-        await db.flush()
+        player.user_id = user.id
+        player.phone = phone
+        player.self_registered_at = now
+        if player.stats_since is None:
+            player.stats_since = now
+        via = "claim-ficha"
+    await db.flush()
 
     await log_action(
         db, request=request, club=club,

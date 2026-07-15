@@ -168,18 +168,16 @@ def main():
             r = reg(c, f"{NAME_TAG}Nuevo", RAW["new"])
             check(r.status_code == 409, f"→ 409 (got {r.status_code})")
 
-            step(5, "INVITACIÓN PENDIENTE: staff invitó, el self-register la completa")
-            # user pendiente (sin password) + ficha vinculada
+            step(5, "INVITACIÓN PENDIENTE: self-register NO la toma (anti-secuestro) → 409")
+            # user pendiente (sin password) + ficha vinculada — como tras un invite del staff
             psql(f"INSERT INTO users (club_id, role, is_active, hashed_password, phone, name, invitation_token, invitation_expires_at) "
                  f"VALUES ({c1}, 'PLAYER', true, NULL, '{NORM['pend']}', '{NAME_TAG}Pend', 'ABC123', now() + interval '1 day');")
             uid = int(psql(f"SELECT id FROM users WHERE club_id={c1} AND phone='{NORM['pend']}' AND role='PLAYER';"))
             psql(f"INSERT INTO players (club_id, name, phone, user_id) VALUES ({c1}, '{NAME_TAG}Pend', '{NORM['pend']}', {uid});")
-            r = reg(c, f"{NAME_TAG}Pend", RAW["pend"])
-            check(r.status_code == 200, f"completa la invitación → 200 (got {r.status_code})")
-            hp = psql(f"SELECT hashed_password IS NOT NULL FROM users WHERE id={uid};")
-            check(hp == "t", "el user pendiente quedó con contraseña")
-            sr = psql(f"SELECT self_registered_at IS NULL FROM players WHERE club_id={c1} AND phone='{NORM['pend']}';")
-            check(sr == "t", "NO se marca self_registered_at (nació de un invite del staff)")
+            r = reg(c, f"{NAME_TAG}Atacante", RAW["pend"])
+            check(r.status_code == 409, f"→ 409, manda a activar con su código (got {r.status_code})")
+            hp = psql(f"SELECT hashed_password IS NULL FROM users WHERE id={uid};")
+            check(hp == "t", "la invitación NO recibió contraseña (toma de cuenta cerrada)")
 
             step(6, "TOKEN MALO → 404")
             r = reg(c, f"{NAME_TAG}X", RAW["x"], token="token-que-no-existe")
