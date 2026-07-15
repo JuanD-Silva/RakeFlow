@@ -31,7 +31,7 @@ from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from . import auth_utils, models
+from . import auth_utils, models, phone_verify
 
 # El token de selección solo sirve para elegir cuenta tras validar la clave.
 # Vida corta: es un paso intermedio del login, no una sesión.
@@ -116,6 +116,61 @@ LINK_REQUIRED_MSG = (
     "Ya tienes una cuenta en RakeFlow con este número. Para vincular esta nueva, "
     "ingresa la contraseña de tu cuenta actual."
 )
+
+
+async def resolve_pending_activation(db, pendientes, phone_normalized, code,
+                                     password, loop):
+    """Resuelve una activación en el ORDEN correcto para no gastar el código de
+    Twilio en vano. Devuelve (user, reason, hermanas):
+
+      reason 'ok'                → user es la cuenta a activar; hermanas = las
+                                   cuentas del teléfono que esta clave abre (uids).
+      reason 'not_found'         → código incorrecto/vencido → el caller aplica
+                                   el lockout y 400.
+      reason 'link_required'     → 2ª cuenta sin probar la clave hermana (opción
+                                   2) → 400, SIN haber consumido el código Twilio.
+      reason 'twilio_unavailable'→ Twilio no disponible → 503, sin quemar la
+                                   invitación ni contar el intento.
+
+    Pasos: 1) identifica el candidato SIN tocar Twilio (manual por código local,
+    o la invitación twilio más reciente); 2) corre la puerta de vinculación
+    (clave hermana) — así una clave hermana equivocada no gasta el código;
+    3) valida el código como ÚLTIMO paso (Twilio se consume acá, ya con todo
+    lo demás en orden)."""
+    code = (code or "").strip()
+
+    manual_match = next(
+        (u for u in pendientes
+         if (u.verification_channel or "manual") == "manual" and u.invitation_token == code),
+        None,
+    )
+    twilio_pend = [u for u in pendientes if u.verification_channel == "twilio"]
+    candidate = manual_match or (
+        max(twilio_pend, key=lambda u: u.invitation_sent_at or datetime.min)
+        if twilio_pend else None
+    )
+    if candidate is None:
+        return None, "not_found", []
+
+    # Puerta de vinculación (opción 2), ANTES de consumir el código: si es la
+    # primera activación y el teléfono ya tiene otra cuenta activada, hay que
+    # probar la clave de una existente. hermanas también alimenta los uids.
+    otras = await other_activated_accounts(db, phone_normalized, exclude_id=candidate.id)
+    hermanas = await accounts_opening(otras, password, loop)
+    if candidate.last_login_at is None and otras and not hermanas:
+        return None, "link_required", []
+
+    # Validación del código como paso final (Twilio se consume aquí).
+    if candidate.verification_channel == "twilio":
+        status = await phone_verify.check_code_status(
+            phone_verify.to_e164(phone_normalized), code)
+        if status == "unavailable":
+            return None, "twilio_unavailable", []
+        if status != "approved":
+            return None, "not_found", []
+    # manual ya quedó validado por el código local al elegir el candidato.
+
+    return candidate, "ok", hermanas
 
 
 async def phone_taken_by_other(db: AsyncSession, phone: str, club_id: int,

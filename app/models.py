@@ -123,6 +123,10 @@ class User(Base):
     invitation_expires_at = Column(DateTime, nullable=True)
     invitation_sent_at = Column(DateTime, nullable=True)
     invited_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    # Canal de la invitación PENDIENTE: 'twilio' = RakeFlow mandó el código por
+    # Twilio Verify (número queda probado al activar); 'manual'/NULL = código
+    # local + wa.me (plan B, y todo lo previo a esta feature). Ver phone_verify.
+    verification_channel = Column(String, nullable=True)
 
     last_login_at = Column(DateTime, nullable=True)
     # Última apertura del panel (rol PLAYER). Se actualiza con throttle diario en

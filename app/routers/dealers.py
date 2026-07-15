@@ -12,7 +12,6 @@ El cierre es SOLO INFORMATIVO: no toca la distribución financiera ni
 registra gastos.
 """
 import os
-import secrets
 import asyncio
 from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -24,7 +23,7 @@ from sqlalchemy.future import select
 from typing import List, Optional
 from datetime import datetime, timedelta
 
-from .. import models, schemas, accounts, services, dealer_view, auth_utils
+from .. import models, schemas, accounts, services, dealer_view, auth_utils, phone_verify
 from ..dependencies import get_db, get_current_club, require_role
 from ..audit import log_action, AuditAction
 from ..phone_utils import normalize_phone
@@ -684,9 +683,16 @@ class DealerInviteIn(BaseModel):
 
 
 def _build_invite_response(dealer: models.Dealer, club_name: Optional[str], phone: str,
-                           code: str, user_id: int, reset: bool = False) -> dict:
-    """Arma el link wa.me + mensaje de WhatsApp para invitar/resetear un dealer.
-    RakeFlow NO envía nada: el front abre WhatsApp con esto."""
+                           code: str, user_id: int, reset: bool = False,
+                           channel: str = "manual") -> dict:
+    """Respuesta del invite/reset del dealer. Canal 'twilio' = RakeFlow ya mandó
+    el código (verified: true, sin código ni wa.me); 'manual' = plan B con wa.me."""
+    if channel == "twilio":
+        return {
+            "status": "reset" if reset else "invited",
+            "dealer_id": dealer.id, "user_id": user_id, "phone": phone,
+            "verified": True, "sent_channel": phone_verify.TWILIO_VERIFY_CHANNEL,
+        }
     frontend = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
     activate_url = f"{frontend}/activar-dealer"
     if reset:
@@ -710,6 +716,7 @@ def _build_invite_response(dealer: models.Dealer, club_name: Optional[str], phon
         "code": code,
         "wa_url": wa_url,
         "message": message,
+        "verified": False,
     }
 
 
@@ -744,7 +751,7 @@ async def invite_dealer(
         raise HTTPException(status_code=409,
                             detail="Ese teléfono ya tiene cuenta de dealer en este club")
 
-    code = f"{secrets.randbelow(1000000):06d}"  # OTP 6 dígitos, fácil de tipear
+    channel, code = await phone_verify.start_invite(phone)   # Twilio Verify o plan B
     expires = datetime.utcnow() + timedelta(hours=24)
 
     if dealer.user_id:
@@ -763,6 +770,7 @@ async def invite_dealer(
         user.invitation_expires_at = expires
         user.invitation_sent_at = datetime.utcnow()
         user.invitation_attempts = 0  # reset del lockout en cada re-invitación
+        user.verification_channel = channel
     else:
         user = models.User(
             club_id=current_club.id,
@@ -777,6 +785,7 @@ async def invite_dealer(
             invitation_expires_at=expires,
             invitation_sent_at=datetime.utcnow(),
             invited_by_user_id=current_user.id,
+            verification_channel=channel,
         )
         db.add(user)
         await db.flush()
@@ -791,7 +800,7 @@ async def invite_dealer(
     )
     await db.commit()
 
-    return _build_invite_response(dealer, current_club.name, phone, code, user.id)
+    return _build_invite_response(dealer, current_club.name, phone, code, user.id, channel=channel)
 
 
 class DealerResetIn(BaseModel):
@@ -830,7 +839,7 @@ async def reset_dealer_access(
         raise HTTPException(status_code=409, detail="La cuenta vinculada no existe; desactiva y recrea el dealer")
     if user.hashed_password is None:
         # Aún pendiente: no hay nada que resetear, es una re-invitación.
-        raise HTTPException(status_code=409, detail="La cuenta aún no se activó; usá 'Re-invitar' para reenviar el código")
+        raise HTTPException(status_code=409, detail="La cuenta aún no se activó; usa 'Re-invitar' para reenviar el código")
 
     phone = normalize_phone(data.phone) if data.phone else user.phone
     if not phone:
@@ -842,7 +851,7 @@ async def reset_dealer_access(
             raise HTTPException(status_code=409,
                                 detail="Ese teléfono ya tiene cuenta de dealer en este club")
 
-    code = f"{secrets.randbelow(1000000):06d}"  # OTP 6 dígitos
+    channel, code = await phone_verify.start_invite(phone)
     user.phone = phone
     user.phone_verified = False
     user.hashed_password = None      # vuelve a 'pendiente' y corta el login con la clave vieja
@@ -850,6 +859,7 @@ async def reset_dealer_access(
     user.invitation_expires_at = datetime.utcnow() + timedelta(hours=24)
     user.invitation_sent_at = datetime.utcnow()
     user.invitation_attempts = 0     # reset del lockout OTP
+    user.verification_channel = channel
     user.is_active = True
     dealer.phone = phone
 
@@ -860,7 +870,7 @@ async def reset_dealer_access(
     )
     await db.commit()
 
-    return _build_invite_response(dealer, current_club.name, phone, code, user.id, reset=True)
+    return _build_invite_response(dealer, current_club.name, phone, code, user.id, reset=True, channel=channel)
 
 
 # ---------------------------------------------------------
@@ -906,7 +916,9 @@ async def activate_dealer(
                 models.User.role == models.UserRole.DEALER,
             )
         )).scalars().all()
-        if u.hashed_password is None and u.invitation_token
+        # Sin exigir invitation_token: las invitaciones por Twilio no guardan
+        # código local (su token es NULL).
+        if u.hashed_password is None
         and u.invitation_expires_at and u.invitation_expires_at >= datetime.utcnow()
     ]
     # Cuenta inexistente / ya activada / sin código vigente => mensaje genérico
@@ -914,10 +926,17 @@ async def activate_dealer(
     if not pendientes:
         raise HTTPException(status_code=400, detail="Código inválido o vencido")
 
-    user = next((u for u in pendientes if u.invitation_token == data.code.strip()), None)
+    loop = asyncio.get_event_loop()
+    # Mismo orden seguro que players.activate: candidato → puerta de vinculación
+    # (sin consumir Twilio) → validación del código al final (ver accounts.py).
+    user, reason, hermanas = await accounts.resolve_pending_activation(
+        db, pendientes, phone, data.code, data.password, loop)
     if user is None:
-        # Lockout anti-fuerza-bruta POR TELÉFONO (además del rate limit por IP):
-        # tras 5 intentos fallidos invalidamos el código (hay que re-invitar).
+        if reason == "twilio_unavailable":
+            raise HTTPException(status_code=503,
+                detail="No pudimos verificar el código ahora mismo. Intenta de nuevo en un momento.")
+        if reason == "link_required":
+            raise HTTPException(status_code=400, detail=accounts.LINK_REQUIRED_MSG)
         for u in pendientes:
             u.invitation_attempts = (u.invitation_attempts or 0) + 1
             if u.invitation_attempts >= 5:
@@ -926,24 +945,11 @@ async def activate_dealer(
         await db.commit()
         raise HTTPException(status_code=400, detail="Código inválido o vencido")
 
-    # Primera activación (nunca entró) vs. reset (last_login_at ya no es NULL):
-    # la puerta de vinculación solo aplica a la primera.
-    es_primera_activacion = user.last_login_at is None
-
-    loop = asyncio.get_event_loop()
-
-    # VINCULACIÓN POR PRUEBA (opción 2, ver app/accounts.py y players.activate):
-    # si el teléfono ya tiene otra cuenta activada y es la 1ra activación de
-    # ésta, hay que probar la clave de la cuenta existente (misma persona).
-    otras = await accounts.other_activated_accounts(db, phone, exclude_id=user.id)
-    hermanas = await accounts.accounts_opening(otras, data.password, loop)
-    if es_primera_activacion and otras and not hermanas:
-        raise HTTPException(status_code=400, detail=accounts.LINK_REQUIRED_MSG)
-
     user.hashed_password = await loop.run_in_executor(None, auth_utils.get_password_hash, data.password)
     if data.name:
         user.name = data.name
-    user.phone_verified = True
+    # Solo verificado si RakeFlow mandó el código (twilio); el plan B no prueba.
+    user.phone_verified = (user.verification_channel == "twilio")
     user.invitation_token = None
     user.invitation_expires_at = None
     user.invitation_attempts = 0

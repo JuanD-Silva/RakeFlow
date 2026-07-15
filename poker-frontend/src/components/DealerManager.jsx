@@ -107,8 +107,9 @@ export default function DealerManager() {
       const res = resetMode
         ? await dealerService.resetAccess(dealer.id, phone)
         : await dealerService.invite(dealer.id, phone);
-      setInviteResult(res);            // guardamos wa_url para abrir/reenviar
-      if (res.wa_url) window.open(res.wa_url, '_blank'); // abre WhatsApp con el código listo
+      setInviteResult(res);            // {verified} o {wa_url} para reenviar
+      // Verificado: RakeFlow ya mandó el código. Plan B: abrir WhatsApp.
+      if (!res.verified && res.wa_url) window.open(res.wa_url, '_blank');
       load();
     } catch (err) {
       setInviteError(err.response?.data?.detail || (resetMode ? "Error reseteando el acceso." : "Error generando la invitación."));
@@ -360,13 +361,20 @@ export default function DealerManager() {
                     />
                     {inviteError && <p className="text-red-400 text-xs">{inviteError}</p>}
                     {inviteResult ? (
+                      inviteResult.verified ? (
+                        <div className="space-y-2">
+                          <p className="text-emerald-400 text-xs font-bold">✓ {resetMode ? "Acceso reseteado. " : ""}Le enviamos el código {inviteResult.sent_channel === 'sms' ? 'por SMS' : 'por WhatsApp'} al dealer.</p>
+                          <button onClick={() => { setInvitingId(null); setInviteResult(null); }} className="w-full bg-gray-700 hover:bg-gray-600 text-gray-300 font-bold py-2 rounded-lg text-xs uppercase">Listo</button>
+                        </div>
+                      ) : (
                       <div className="space-y-2">
-                        <p className="text-emerald-400 text-xs font-bold">✓ {resetMode ? "Acceso reseteado. " : ""}Código generado. Si WhatsApp no abrió, tocá el botón:</p>
+                        <p className="text-emerald-400 text-xs font-bold">✓ {resetMode ? "Acceso reseteado. " : ""}Código generado. Si WhatsApp no abrió, toca el botón:</p>
                         <div className="flex gap-2">
                           <a href={inviteResult.wa_url} target="_blank" rel="noreferrer" className="flex-1 text-center bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 rounded-lg text-xs uppercase">Abrir WhatsApp</a>
                           <button onClick={() => { setInvitingId(null); setInviteResult(null); }} className="flex-1 bg-gray-700 hover:bg-gray-600 text-gray-300 font-bold py-2 rounded-lg text-xs uppercase">Listo</button>
                         </div>
                       </div>
+                      )
                     ) : (
                       <div className="flex gap-2">
                         <button onClick={() => doInvite(d)} disabled={inviteBusy} className={`flex-1 disabled:opacity-50 text-white font-bold py-2 rounded-lg text-xs uppercase ${resetMode ? 'bg-amber-600 hover:bg-amber-500' : 'bg-emerald-600 hover:bg-emerald-500'}`}>
