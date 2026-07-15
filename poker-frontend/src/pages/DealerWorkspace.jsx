@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { dealerSelfService } from '../api/services';
 import InstallAppBanner from '../components/InstallAppBanner';
+import AccountSwitcher from '../components/AccountSwitcher';
 import { useAuth } from '../context/AuthContext';
 
 const ALERTS = [
@@ -44,7 +45,10 @@ export default function DealerWorkspace() {
       <div className="max-w-md mx-auto px-4 pt-[calc(1.5rem+env(safe-area-inset-top))] pb-[calc(7rem+env(safe-area-inset-bottom))] min-h-full">
         <div className="flex items-center justify-between mb-5">
           <p className="text-emerald-500 text-[11px] font-black tracking-[0.3em] uppercase">RakeFlow · Dealer</p>
-          <button onClick={logout} className="text-xs text-gray-400 hover:text-white font-bold">Salir</button>
+          <div className="flex items-center gap-2 shrink-0">
+            <AccountSwitcher />
+            <button onClick={logout} className="text-xs text-gray-400 hover:text-white font-bold">Salir</button>
+          </div>
         </div>
 
         <InstallAppBanner />

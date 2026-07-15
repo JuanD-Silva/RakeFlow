@@ -313,11 +313,11 @@ def _build_invite_response(player: models.Player, club_name: Optional[str], phon
     activate_url = f"{frontend}/activar-jugador"
     if reset:
         intro = f"Hola {player.name}! 🔐 Restablecimos tu acceso a tus estadísticas."
-        action_line = f"Volvé a activar tu cuenta acá: {activate_url}"
+        action_line = f"Vuelve a activar tu cuenta aquí: {activate_url}"
     else:
         intro = (f"Hola {player.name}! 🃏 {club_name or 'Tu club'} te invita a ver "
                  f"tus estadísticas de juego: sesiones, resultados, logros y ranking.")
-        action_line = f"Activá tu cuenta acá: {activate_url}"
+        action_line = f"Activa tu cuenta aquí: {activate_url}"
     message = (
         f"{intro}\n\n"
         f"{action_line}\n"

@@ -6,6 +6,7 @@ import ProfitSparkline from '../components/ProfitSparkline';
 import PlayerShareCard from '../components/PlayerShareCard';
 import AchievementShareCard from '../components/AchievementShareCard';
 import InstallAppBanner from '../components/InstallAppBanner';
+import AccountSwitcher from '../components/AccountSwitcher';
 import PushToggle from '../components/PushToggle';
 import { cop, signCop, fmtDate, monthName } from '../utils/formatters';
 
@@ -157,7 +158,10 @@ export default function PlayerWorkspace() {
                 : <div className="rf-skel h-5 w-28" />}
             <p className="text-emerald-500/80 text-[9px] font-black tracking-[0.28em] uppercase mt-1">Panel del jugador</p>
           </div>
-          <button onClick={logout} className="rf-tap shrink-0 text-xs text-gray-400 hover:text-white font-bold px-2 py-1">Salir</button>
+          <div className="flex items-center gap-2 shrink-0">
+            <AccountSwitcher />
+            <button onClick={logout} className="rf-tap text-xs text-gray-400 hover:text-white font-bold px-2 py-1">Salir</button>
+          </div>
         </header>
 
         <InstallAppBanner />

@@ -247,7 +247,7 @@ async def select_account(
     puede canjear por una cuenta que la clave no haya abierto."""
     payload = accounts.decode_select_token(data.select_token)
     if not payload:
-        raise HTTPException(status_code=401, detail="Sesión de selección vencida; volvé a entrar")
+        raise HTTPException(status_code=401, detail="Sesión de selección vencida; vuelve a entrar")
     return await _issue_for_account(db, data.user_id, [int(u) for u in payload["uids"]])
 
 

@@ -303,7 +303,16 @@ login: async (email, password) => {
     getCurrentUser: async () => {
         const response = await api.get('/users/me');
         return response.data;
-    }
+    },
+
+    // Multi-cuenta: si el login devuelve {multi_account, accounts, select_token},
+    // la persona elige con cuál entrar. selectAccount lo canjea por el token.
+    selectAccount: async (selectToken, userId) =>
+        (await api.post('/auth/select-account', { select_token: selectToken, user_id: userId })).data,
+    // Switcher dentro de la app (ya autenticado, sin volver a escribir la clave).
+    myAccounts: async () => (await api.get('/auth/my-accounts')).data,
+    switchAccount: async (userId) =>
+        (await api.post('/auth/switch-account', { user_id: userId })).data,
 };
 
 export const tournamentService = {
