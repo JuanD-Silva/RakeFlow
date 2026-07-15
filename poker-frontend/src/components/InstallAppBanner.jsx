@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 // Banner "Instalar la app": el banner automático de Chrome es heurístico y
 // muchas veces no aparece, así que ofrecemos el nuestro. Tres modos:
@@ -44,19 +44,24 @@ export default function InstallAppBanner({
   const eligible = !isStandalone() && !dismissedRecently();
   const [promptEvt, setPromptEvt] = useState(() => window.__rfDeferredInstall || null);
   const [visible, setVisible] = useState(() => eligible && (ios || !!window.__rfDeferredInstall));
+  // "Ya resuelto": el usuario descartó o instaló. Evita que el timer de gracia
+  // vuelva a mostrar el banner tras ocultarlo — window.__rfDeferredInstall no
+  // sirve de guardia porque install() lo pone en null al consumir el prompt.
+  const settledRef = useRef(false);
 
   // El effect suscribe eventos (prompt tardío, instalación) y arma la espera
   // de gracia que cae al modo manual si el navegador nunca entrega el prompt.
   useEffect(() => {
     if (!eligible || ios) return undefined;
     const onReady = () => { setPromptEvt(window.__rfDeferredInstall); setVisible(true); };
-    const onInstalled = () => { setVisible(false); setPromptEvt(null); };
+    const onInstalled = () => { settledRef.current = true; setVisible(false); setPromptEvt(null); };
     window.addEventListener('rf-install-ready', onReady);
     window.addEventListener('appinstalled', onInstalled);
-    // Si tras la gracia no hay prompt, ofrecer el camino manual (menú ⋮): se
-    // muestra el banner y, sin promptEvt, el render cae al modo 'manual'.
+    // Si tras la gracia no hay prompt (ni fue ya resuelto), ofrecer el camino
+    // manual (menú ⋮): se muestra el banner y, sin promptEvt, el render cae al
+    // modo 'manual'.
     const t = setTimeout(() => {
-      if (!window.__rfDeferredInstall) setVisible(true);
+      if (!window.__rfDeferredInstall && !settledRef.current) setVisible(true);
     }, PROMPT_GRACE_MS);
     return () => {
       clearTimeout(t);
@@ -68,12 +73,14 @@ export default function InstallAppBanner({
   if (!visible) return null;
 
   const dismiss = () => {
+    settledRef.current = true;
     try { localStorage.setItem(DISMISS_KEY, String(Date.now())); } catch { /* sin storage, se re-ofrece */ }
     setVisible(false);
   };
 
   const install = async () => {
     if (!promptEvt) return;
+    settledRef.current = true;
     // Nulear ANTES del await: prompt() solo acepta una llamada — un doble-tap
     // rápido no debe re-invocarlo (review #77).
     setPromptEvt(null);
