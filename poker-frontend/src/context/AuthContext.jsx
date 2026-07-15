@@ -35,6 +35,9 @@ export function AuthProvider({ children }) {
   const userId = payload?.user_id ?? null;
   const clubId = payload?.club_id ?? null;
   const email = payload?.sub ?? null;
+  // Cuentas que la clave de esta sesión abrió (multi-cuenta). El switcher solo
+  // aparece si hay más de una, así una sola cuenta ni consulta la API.
+  const uids = Array.isArray(payload?.uids) ? payload.uids : (userId != null ? [userId] : []);
 
   // Sincronizar token entre pestanas
   useEffect(() => {
@@ -70,7 +73,7 @@ export function AuthProvider({ children }) {
   return (
     <AuthContext.Provider value={{
       token, login, logout,
-      role, userId, clubId, email,
+      role, userId, clubId, email, uids,
       isOwner, isManager, isCashier, isDealer, isPlayer,
       canManageUsers, canSeeReports,
     }}>

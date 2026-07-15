@@ -19,8 +19,8 @@ export default function PlayerActivate() {
   const submit = async (e) => {
     e.preventDefault();
     setError(null);
-    if (phone.replace(/\D/g, '').length < 7) { setError('Ingresá tu número.'); return; }
-    if (code.trim().length < 4) { setError('Ingresá el código que recibiste.'); return; }
+    if (phone.replace(/\D/g, '').length < 7) { setError('Ingresa tu número.'); return; }
+    if (code.trim().length < 4) { setError('Ingresa el código que recibiste.'); return; }
     if (password.length < 8 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/\d/.test(password)) {
       setError('La contraseña debe tener mínimo 8 caracteres, una mayúscula, una minúscula y un número.');
       return;

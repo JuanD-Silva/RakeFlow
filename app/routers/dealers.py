@@ -691,10 +691,10 @@ def _build_invite_response(dealer: models.Dealer, club_name: Optional[str], phon
     activate_url = f"{frontend}/activar-dealer"
     if reset:
         intro = f"Hola {dealer.name}! 🔐 Restablecimos tu acceso a RakeFlow."
-        action_line = f"Volvé a activar tu cuenta acá: {activate_url}"
+        action_line = f"Vuelve a activar tu cuenta aquí: {activate_url}"
     else:
         intro = f"Hola {dealer.name}! 🃏 {club_name or 'Tu club'} te invita a RakeFlow como dealer."
-        action_line = f"Activá tu cuenta acá: {activate_url}"
+        action_line = f"Activa tu cuenta aquí: {activate_url}"
     message = (
         f"{intro}\n\n"
         f"{action_line}\n"
@@ -754,7 +754,7 @@ async def invite_dealer(
             select(models.User).where(models.User.id == dealer.user_id)
         )).scalars().first()
         if user is None:
-            raise HTTPException(status_code=409, detail="La cuenta vinculada no existe; desactivá y recreá el dealer")
+            raise HTTPException(status_code=409, detail="La cuenta vinculada no existe; desactiva y recrea el dealer")
         if user.hashed_password is not None:
             raise HTTPException(status_code=409, detail="Este dealer ya activó su cuenta")
         user.phone = phone
@@ -827,7 +827,7 @@ async def reset_dealer_access(
         select(models.User).where(models.User.id == dealer.user_id)
     )).scalars().first()
     if user is None:
-        raise HTTPException(status_code=409, detail="La cuenta vinculada no existe; desactivá y recreá el dealer")
+        raise HTTPException(status_code=409, detail="La cuenta vinculada no existe; desactiva y recrea el dealer")
     if user.hashed_password is None:
         # Aún pendiente: no hay nada que resetear, es una re-invitación.
         raise HTTPException(status_code=409, detail="La cuenta aún no se activó; usá 'Re-invitar' para reenviar el código")

@@ -113,8 +113,8 @@ async def accounts_opening(users: list[models.User], password: str, loop) -> lis
 
 
 LINK_REQUIRED_MSG = (
-    "Ya tenés una cuenta en RakeFlow con este número. Para vincular esta nueva, "
-    "ingresá la contraseña de tu cuenta actual."
+    "Ya tienes una cuenta en RakeFlow con este número. Para vincular esta nueva, "
+    "ingresa la contraseña de tu cuenta actual."
 )
 
 

@@ -18,8 +18,8 @@ export default function DealerActivate() {
   const submit = async (e) => {
     e.preventDefault();
     setError(null);
-    if (phone.replace(/\D/g, '').length < 7) { setError('Ingresá tu número.'); return; }
-    if (code.trim().length < 4) { setError('Ingresá el código que recibiste.'); return; }
+    if (phone.replace(/\D/g, '').length < 7) { setError('Ingresa tu número.'); return; }
+    if (code.trim().length < 4) { setError('Ingresa el código que recibiste.'); return; }
     if (password.length < 8 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/\d/.test(password)) {
       setError('La contraseña debe tener mínimo 8 caracteres, una mayúscula, una minúscula y un número.');
       return;
@@ -41,7 +41,7 @@ export default function DealerActivate() {
       <div className="w-full max-w-sm space-y-6">
         <div className="text-center">
           <p className="text-emerald-500 text-xs font-black tracking-[0.3em] uppercase">RakeFlow · Dealer</p>
-          <h1 className="text-2xl font-black text-white mt-2">Activá tu cuenta</h1>
+          <h1 className="text-2xl font-black text-white mt-2">Activa tu cuenta</h1>
           <p className="text-gray-400 text-sm mt-1">Verificá tu número con el código que te llegó por WhatsApp.</p>
         </div>
 
