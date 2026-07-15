@@ -7,6 +7,7 @@ import {
   Cog6ToothIcon,
   UsersIcon,
   IdentificationIcon,
+  ArrowTrendingUpIcon,
   Bars3Icon,
 } from '@heroicons/react/24/solid';
 import { useAuth } from '../context/AuthContext';
@@ -21,6 +22,7 @@ export default function Navigation({ currentView, setView, clubName }) {
     { id: 'finance', label: 'Caja Semanal', icon: <ChartBarIcon className="w-5 h-5" />, show: canSeeReports },
     { id: 'ranking', label: 'Ranking', icon: <TrophyIcon className="w-5 h-5" />, show: canSeeReports },
     { id: 'players', label: 'Jugadores', icon: <IdentificationIcon className="w-5 h-5" />, show: isOwner || isManager },
+    { id: 'crecimiento', label: 'Crecimiento', icon: <ArrowTrendingUpIcon className="w-5 h-5" />, show: isOwner || isManager },
     { id: 'team', label: 'Equipo', icon: <UsersIcon className="w-5 h-5" />, show: isOwner || isManager },
     { id: 'config', label: 'Reglas', icon: <Cog6ToothIcon className="w-5 h-5" />, show: isOwner },
   ].filter(item => item.show);

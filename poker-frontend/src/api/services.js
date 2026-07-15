@@ -277,6 +277,13 @@ export const statsService = {
     
 };
 
+// Reportes de producto para el staff (OWNER/MANAGER): embudo de adopción del
+// panel + retención D7/D30. El backend gatea ambos endpoints por rol y club.
+export const reportsService = {
+    getAdoption: async () => (await api.get('/reports/adoption')).data,
+    getRetention: async () => (await api.get('/reports/retention')).data,
+};
+
 export const authService = {
 login: async (email, password) => {
     const formData = new URLSearchParams();
