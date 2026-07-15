@@ -11,7 +11,7 @@ from sqlalchemy.future import select
 from typing import List, Optional
 from datetime import datetime, timedelta
 
-from .. import models, schemas, accounts, auth_utils, player_stats
+from .. import models, schemas, accounts, auth_utils, player_stats, phone_verify
 from ..dependencies import get_db, get_current_club, require_role
 from ..audit import log_action, AuditAction
 from ..phone_utils import normalize_phone
@@ -307,8 +307,17 @@ class PlayerInviteIn(BaseModel):
 
 
 def _build_invite_response(player: models.Player, club_name: Optional[str], phone: str,
-                           code: str, user_id: int, reset: bool = False) -> dict:
-    """Link wa.me + mensaje para invitar/resetear. RakeFlow NO envía nada."""
+                           code: str, user_id: int, reset: bool = False,
+                           channel: str = "manual") -> dict:
+    """Respuesta del invite/reset. Canal 'twilio' = RakeFlow ya mandó el código
+    al teléfono (verified: true, sin código ni wa.me); 'manual' = plan B con el
+    link wa.me y el código para que el club lo reenvíe (como hoy)."""
+    if channel == "twilio":
+        return {
+            "status": "reset" if reset else "invited",
+            "player_id": player.id, "user_id": user_id, "phone": phone,
+            "verified": True, "sent_channel": phone_verify.TWILIO_VERIFY_CHANNEL,
+        }
     frontend = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
     activate_url = f"{frontend}/activar-jugador"
     if reset:
@@ -333,6 +342,7 @@ def _build_invite_response(player: models.Player, club_name: Optional[str], phon
         "code": code,
         "wa_url": wa_url,
         "message": message,
+        "verified": False,
     }
 
 
@@ -368,7 +378,9 @@ async def invite_player(
         raise HTTPException(status_code=409,
                             detail="Ese teléfono ya tiene cuenta de jugador en este club")
 
-    code = f"{secrets.randbelow(1000000):06d}"  # OTP 6 dígitos
+    # RakeFlow manda el código por Twilio Verify (número queda probado). Si
+    # Twilio no está configurado o falla, cae a código local + wa.me (plan B).
+    channel, code = await phone_verify.start_invite(phone)
     expires = datetime.utcnow() + timedelta(hours=24)
 
     if player.user_id:
@@ -387,6 +399,7 @@ async def invite_player(
         user.invitation_expires_at = expires
         user.invitation_sent_at = datetime.utcnow()
         user.invitation_attempts = 0
+        user.verification_channel = channel
     else:
         user = models.User(
             club_id=current_club.id,
@@ -401,6 +414,7 @@ async def invite_player(
             invitation_expires_at=expires,
             invitation_sent_at=datetime.utcnow(),
             invited_by_user_id=current_user.id,
+            verification_channel=channel,
         )
         db.add(user)
         await db.flush()
@@ -415,7 +429,7 @@ async def invite_player(
     )
     await db.commit()
 
-    return _build_invite_response(player, current_club.name, phone, code, user.id)
+    return _build_invite_response(player, current_club.name, phone, code, user.id, channel=channel)
 
 
 class PlayerResetIn(BaseModel):
@@ -451,7 +465,7 @@ async def reset_player_access(
     if user is None:
         raise HTTPException(status_code=409, detail="La cuenta vinculada no existe")
     if user.hashed_password is None:
-        raise HTTPException(status_code=409, detail="La cuenta aún no se activó; usá 'Re-invitar'")
+        raise HTTPException(status_code=409, detail="La cuenta aún no se activó; usa 'Re-invitar'")
 
     phone = normalize_phone(data.phone) if data.phone else user.phone
     if not phone:
@@ -465,7 +479,7 @@ async def reset_player_access(
             raise HTTPException(status_code=409,
                                 detail="Ese teléfono ya tiene cuenta de jugador en este club")
 
-    code = f"{secrets.randbelow(1000000):06d}"
+    channel, code = await phone_verify.start_invite(phone)
     user.phone = phone
     user.phone_verified = False
     user.hashed_password = None
@@ -473,6 +487,7 @@ async def reset_player_access(
     user.invitation_expires_at = datetime.utcnow() + timedelta(hours=24)
     user.invitation_sent_at = datetime.utcnow()
     user.invitation_attempts = 0
+    user.verification_channel = channel
     user.is_active = True
     player.phone = phone
 
@@ -483,7 +498,7 @@ async def reset_player_access(
     )
     await db.commit()
 
-    return _build_invite_response(player, current_club.name, phone, code, user.id, reset=True)
+    return _build_invite_response(player, current_club.name, phone, code, user.id, reset=True, channel=channel)
 
 
 class PlayerActivateIn(BaseModel):
@@ -528,14 +543,17 @@ async def activate_player(
                 models.User.role == models.UserRole.PLAYER,
             )
         )).scalars().all()
-        if u.hashed_password is None and u.invitation_token
+        # Sin exigir invitation_token: las invitaciones por Twilio no guardan
+        # código local (lo maneja Twilio) — su token es NULL.
+        if u.hashed_password is None
         and u.invitation_expires_at and u.invitation_expires_at >= datetime.utcnow()
     ]
     # Mensaje genérico: no filtra si el número existe.
     if not pendientes:
         raise HTTPException(status_code=400, detail="Código inválido o vencido")
 
-    user = next((u for u in pendientes if u.invitation_token == data.code.strip()), None)
+    # Valida el código según el canal: Twilio Verify o el código local (plan B).
+    user = await phone_verify.match_pending(pendientes, phone, data.code)
     if user is None:
         # Lockout anti-fuerza-bruta POR TELÉFONO (además del rate limit por IP):
         # el intento fallido cuenta para TODAS sus invitaciones pendientes.
@@ -568,7 +586,9 @@ async def activate_player(
         raise HTTPException(status_code=400, detail=accounts.LINK_REQUIRED_MSG)
 
     user.hashed_password = await loop.run_in_executor(None, auth_utils.get_password_hash, data.password)
-    user.phone_verified = True
+    # phone_verified solo si RakeFlow mandó el código (twilio prueba posesión);
+    # el plan B manual va por el club, no prueba el número.
+    user.phone_verified = (user.verification_channel == "twilio")
     user.invitation_token = None
     user.invitation_expires_at = None
     user.invitation_attempts = 0

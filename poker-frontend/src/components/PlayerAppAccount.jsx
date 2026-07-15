@@ -13,19 +13,26 @@ export default function PlayerAppAccount({ playerId, account, canManage, onChang
   const [phone, setPhone] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
+  const [sentMsg, setSentMsg] = useState(null);   // confirmación del camino verificado
   const [confirmUnlock, setConfirmUnlock] = useState(false);
 
   if (!canManage || !account) return null;
 
   const doInvite = async () => {
-    setErr(null);
+    setErr(null); setSentMsg(null);
     if (phone.replace(/\D/g, '').length < 7) { setErr('Teléfono inválido.'); return; }
     setBusy(true);
     try {
       const res = resetMode
         ? await playerService.resetAccess(playerId, phone.trim())
         : await playerService.invite(playerId, phone.trim());
-      if (res.wa_url) window.open(res.wa_url, '_blank'); // abre WhatsApp con el código listo
+      // Verificado: RakeFlow ya mandó el código al teléfono, no hay wa.me.
+      // Plan B (verified === false): abrir WhatsApp con el código, como antes.
+      if (res.verified) {
+        setSentMsg(`Código enviado por ${res.sent_channel === 'sms' ? 'SMS' : 'WhatsApp'} al jugador.`);
+      } else if (res.wa_url) {
+        window.open(res.wa_url, '_blank');
+      }
       setInviting(false);
       onChanged();
     } catch (e) {
@@ -103,6 +110,7 @@ export default function PlayerAppAccount({ playerId, account, canManage, onChang
         </span>
       )}
       {err && <span className="text-[10px] text-red-400 font-bold">{err}</span>}
+      {sentMsg && <span className="text-[10px] text-emerald-400 font-bold">✓ {sentMsg}</span>}
     </div>
   );
 }
