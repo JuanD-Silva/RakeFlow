@@ -116,17 +116,34 @@ export default function GrowthPanel() {
       {/* HERO: tasa de adopción */}
       <div className="bg-gradient-to-br from-emerald-950/60 to-gray-900 border border-emerald-500/20 rounded-2xl p-6">
         <p className="text-xs font-bold uppercase tracking-widest text-emerald-400/80">Adopción del panel</p>
-        <div className="flex flex-wrap items-end gap-x-4 gap-y-1 mt-2">
-          <span className="text-6xl font-black text-white tabular-nums leading-none">{adoptionRate}%</span>
-          <span className="text-sm text-gray-300 mb-1">
-            de tus <b className="text-white">{data.activos_30d}</b> jugadores activos (últimos 30 días) usan el panel
-          </span>
-        </div>
-        <p className="text-[13px] text-gray-400 mt-3 leading-snug">
-          {sinPanel > 0
-            ? <>Te faltan <b className="text-emerald-300">{sinPanel}</b> jugadores que ya vienen al club pero aún no están en el panel. Ese es tu terreno más fácil: invítalos desde la mesa o desde <b>Jugadores</b>.</>
-            : <>Todos tus jugadores activos ya están en el panel. Ahora el foco es que vuelvan (mira la retención abajo).</>}
-        </p>
+        {data.activos_30d === 0 ? (
+          // Sin base activa este mes: mostrar % adopción sería engañoso (0/0).
+          <>
+            <div className="flex flex-wrap items-end gap-x-4 gap-y-1 mt-2">
+              <span className="text-4xl font-black text-white leading-none">Sin actividad este mes</span>
+            </div>
+            <p className="text-[13px] text-gray-400 mt-3 leading-snug">
+              Ningún jugador jugó en los últimos 30 días, así que aún no hay adopción que medir.
+              {data.crm_total > 0
+                ? <> Tienes <b className="text-emerald-300">{data.crm_total}</b> jugadores en tu CRM: reactívalos desde <b>Jugadores</b>.</>
+                : <> Registra jugadores en la mesa para empezar.</>}
+            </p>
+          </>
+        ) : (
+          <>
+            <div className="flex flex-wrap items-end gap-x-4 gap-y-1 mt-2">
+              <span className="text-6xl font-black text-white tabular-nums leading-none">{adoptionRate}%</span>
+              <span className="text-sm text-gray-300 mb-1">
+                de tus <b className="text-white">{data.activos_30d}</b> jugadores activos (últimos 30 días) usan el panel
+              </span>
+            </div>
+            <p className="text-[13px] text-gray-400 mt-3 leading-snug">
+              {sinPanel > 0
+                ? <>Te faltan <b className="text-emerald-300">{sinPanel}</b> jugadores que ya vienen al club pero aún no están en el panel. Ese es tu terreno más fácil: invítalos desde la mesa o desde <b>Jugadores</b>.</>
+                : <>Todos tus jugadores activos ya están en el panel. Ahora el foco es que vuelvan (mira la retención abajo).</>}
+            </p>
+          </>
+        )}
       </div>
 
       {/* EMBUDO */}

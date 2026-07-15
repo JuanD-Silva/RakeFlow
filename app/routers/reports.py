@@ -153,7 +153,7 @@ async def adoption(
              JOIN sessions s ON s.id = t.session_id
              JOIN players p ON p.id = t.player_id
              WHERE s.club_id = :cid AND s.start_time >= now() - interval '30 days'
-               AND p.user_id IS NOT NULL) AS activos_30d_con_panel,
+               AND p.club_id = :cid AND p.user_id IS NOT NULL) AS activos_30d_con_panel,
           (SELECT COUNT(*) FROM players p JOIN users u ON u.id = p.user_id
              WHERE p.club_id = :cid AND u.last_seen_at IS NOT NULL) AS panel_abrieron,
           (SELECT COUNT(*) FROM players p JOIN users u ON u.id = p.user_id
