@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { publicService } from '../api/services';
 
 // ---------------------------------------------------------------------------
@@ -167,6 +167,17 @@ export default function PublicClub() {
                 </p>
               )}
             </header>
+
+            {/* CTA: entra a tu panel (auto-registro por QR). El gancho es el
+                ego del jugador — su ranking/logros/estatus — no "gestión". */}
+            <Link to={`/c/${token}/entrar`}
+              className="pc-in block text-center bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-black uppercase tracking-wide rounded-2xl px-5 py-4 shadow-lg shadow-emerald-900/40 ring-1 ring-emerald-300/30"
+              style={{ animationDelay: '60ms' }}>
+              <span className="text-lg">📲 Entra a tu panel</span>
+              <span className="block text-[11px] font-semibold text-emerald-100/90 tracking-normal normal-case mt-0.5">
+                Mira tu ranking, tus logros y tu estatus en el club
+              </span>
+            </Link>
 
             {/* Anuncio del club — el gancho de la noche */}
             {data.announcement && (

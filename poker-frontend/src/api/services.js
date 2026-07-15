@@ -15,6 +15,10 @@ export const publicService = {
     // Activación de cuenta de JUGADOR (panel del jugador; mismo flujo OTP)
     activatePlayer: async ({ phone, code, password }) =>
         (await publicApi.post('/players/activate', { phone, code, password })).data,
+    // Auto-registro por QR (self-service, sin OTP): el club se identifica por su
+    // public_token. Devuelve JWT (auto-login), igual que activatePlayer.
+    selfRegisterPlayer: async ({ club_token, name, phone, password }) =>
+        (await publicApi.post('/players/self-register', { club_token, name, phone, password })).data,
     // Vista TV pública del torneo (reloj + blinds + conteos, sin login)
     getTournamentTV: async (token) => (await publicApi.get(`/public/tournaments/${token}/tv`)).data,
 };

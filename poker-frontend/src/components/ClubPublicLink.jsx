@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { QRCodeCanvas } from 'qrcode.react';
 import { clubPublicService } from '../api/services';
 
 /**
@@ -11,7 +12,9 @@ export default function ClubPublicLink() {
   const [showJackpot, setShowJackpot] = useState(true);
   const [savedMsg, setSavedMsg] = useState('');
   const [copied, setCopied] = useState(false);
+  const [copiedReg, setCopiedReg] = useState(false);
   const [loading, setLoading] = useState(true);
+  const qrRef = useRef(null);
 
   useEffect(() => {
     (async () => {
@@ -26,10 +29,27 @@ export default function ClubPublicLink() {
   }, []);
 
   const url = token ? `${window.location.origin}/c/${token}` : '';
+  // Link de auto-registro (self-service): el jugador escanea el QR → crea su
+  // panel al toque. Distinto del link público (que es solo actividad en vivo).
+  const registerUrl = token ? `${window.location.origin}/c/${token}/entrar` : '';
 
   const copy = async () => {
     try { await navigator.clipboard.writeText(url); } catch { /* ignora */ }
     setCopied(true); setTimeout(() => setCopied(false), 2000);
+  };
+
+  const copyRegister = async () => {
+    try { await navigator.clipboard.writeText(registerUrl); } catch { /* ignora */ }
+    setCopiedReg(true); setTimeout(() => setCopiedReg(false), 2000);
+  };
+
+  const downloadQR = () => {
+    const canvas = qrRef.current?.querySelector('canvas');
+    if (!canvas) return;
+    const a = document.createElement('a');
+    a.href = canvas.toDataURL('image/png');
+    a.download = 'rakeflow-qr-panel.png';
+    a.click();
   };
 
   const shareWhatsApp = () => {
@@ -79,6 +99,28 @@ export default function ClubPublicLink() {
             </button>
           </div>
         </>
+      )}
+
+      {/* QR de auto-registro: el canal de adquisición de jugadores al panel.
+          El staff lo pone en la mesa / la TV; el jugador escanea y entra solo. */}
+      {registerUrl && (
+        <div className="pt-3 border-t border-gray-700/50">
+          <h3 className="text-white font-bold flex items-center gap-2">📲 QR: que entren a su panel</h3>
+          <p className="text-gray-500 text-xs mt-0.5 mb-3">
+            Ponlo en la mesa o en la TV. El jugador lo escanea, entra su teléfono y ve su panel al toque — sin que invites uno por uno.
+          </p>
+          <div ref={qrRef} className="bg-white rounded-xl p-4 w-fit mx-auto">
+            <QRCodeCanvas value={registerUrl} size={180} level="M" marginSize={2} />
+          </div>
+          <div className="flex gap-2 mt-3">
+            <button onClick={copyRegister} className="flex-1 bg-gray-700 hover:bg-gray-600 text-white text-xs font-bold py-2 rounded-lg transition-colors">
+              {copiedReg ? 'Copiado ✓' : 'Copiar link'}
+            </button>
+            <button onClick={downloadQR} className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-2 rounded-lg transition-colors">
+              Descargar QR
+            </button>
+          </div>
+        </div>
       )}
 
       <div className="pt-2 border-t border-gray-700/50">
