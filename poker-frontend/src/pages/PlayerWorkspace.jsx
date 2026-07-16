@@ -298,7 +298,39 @@ function HomeTab({ club, data, loaded, error }) {
 
   return (
     <div className="space-y-4">
-      {/* Distinción VIP (pilar del club). Es lo PRIMERO que ve: se siente importante.
+      {/* Archivo bloqueado: EL GANCHO DE LA VENTA. Va PRIMERO y resaltado — es lo
+          primero que ve el jugador recién activado (su panel arranca de cero, así
+          que esto es lo que da sentido a entrar). Solo conteos, jamás montos. */}
+      {data.archive?.locked && (
+        <div className="rf-in relative overflow-hidden rounded-2xl border-2 border-violet-500/60 bg-gradient-to-br from-violet-800/40 via-violet-900/45 to-gray-900/50 p-5 text-center shadow-xl shadow-violet-900/40">
+          <p className="text-4xl leading-none">🗄️</p>
+          <p className="text-white font-black text-lg mt-2">Tu historia completa te espera</p>
+          <div className="mt-3 flex items-center justify-center gap-2 flex-wrap">
+            {/* Solo se muestra lo que HAY: un chip "0 torneos" mataría el pitch. */}
+            {data.archive.sessions > 0 && (
+              <span className="bg-black/25 border border-violet-400/40 rounded-xl px-4 py-1.5">
+                <b className="block text-2xl font-black text-white leading-none nums">{data.archive.sessions}</b>
+                <span className="text-[10px] uppercase tracking-wide text-violet-200/80 font-bold">{data.archive.sessions !== 1 ? 'sesiones' : 'sesión'}</span>
+              </span>
+            )}
+            {data.archive.tournaments > 0 && (
+              <span className="bg-black/25 border border-violet-400/40 rounded-xl px-4 py-1.5">
+                <b className="block text-2xl font-black text-white leading-none nums">{data.archive.tournaments}</b>
+                <span className="text-[10px] uppercase tracking-wide text-violet-200/80 font-bold">torneo{data.archive.tournaments !== 1 ? 's' : ''}</span>
+              </span>
+            )}
+          </div>
+          {data.archive.oldest && (
+            <p className="text-xs text-violet-200/90 mt-3">en el archivo desde <b>{fmtDate(data.archive.oldest)}</b></p>
+          )}
+          <div className="mt-4 inline-flex items-center gap-2 rounded-xl bg-gradient-to-b from-violet-500 to-violet-700 px-5 py-2.5 text-white font-black text-xs uppercase tracking-wide shadow-lg shadow-violet-900/50">
+            🔓 Pregunta en caja para desbloquearla
+          </div>
+        </div>
+      )}
+
+      {/* Distinción VIP (pilar del club): se siente importante. Solo la ve un VIP,
+          que nunca está bloqueado, así que no compite con la tarjeta de archivo.
           Reconocimiento, no plata — jamás muestra el volumen (no premiamos el gasto
           a la vista). Solo aparece si el backend lo marca (top del club por volumen). */}
       {data.is_vip && (
@@ -404,28 +436,6 @@ function HomeTab({ club, data, loaded, error }) {
       {/* Aviso sesión en curso */}
       {data.open_session && (
         <p className="text-center text-[11px] text-emerald-300/80 font-bold">🎲 Tenés una sesión abierta — se suma a tus números al cerrar la mesa</p>
-      )}
-
-      {/* Archivo bloqueado: el gancho de la venta. Va ARRIBA de los números:
-          el jugador recién activado tiene que verlo sin scrollear. */}
-      {data.archive?.locked && (
-        <div className="bg-gradient-to-br from-violet-900/40 to-gray-900/40 border border-violet-500/40 rounded-2xl p-4 text-center">
-          <p className="text-3xl mb-1">🗄️</p>
-          <p className="text-white font-black">Tu historia completa te espera</p>
-          <p className="text-sm text-violet-200 mt-1">
-            {/* Solo se menciona lo que HAY: "y 0 torneos" mata el pitch */}
-            Tenés{' '}
-            {data.archive.sessions > 0 && (
-              <b>{data.archive.sessions} {data.archive.sessions !== 1 ? 'sesiones' : 'sesión'}</b>
-            )}
-            {data.archive.sessions > 0 && data.archive.tournaments > 0 && ' y '}
-            {data.archive.tournaments > 0 && (
-              <b>{data.archive.tournaments} torneo{data.archive.tournaments !== 1 ? 's' : ''}</b>
-            )}
-            {' '}en el archivo{data.archive.oldest ? ` desde ${fmtDate(data.archive.oldest)}` : ''}.
-          </p>
-          <p className="text-[11px] text-violet-300/80 font-bold uppercase tracking-wide mt-2">Preguntá en caja para desbloquearla</p>
-        </div>
       )}
 
       {/* El mes en curso. Peak-end rule + finding on-domain: mostrar la pérdida

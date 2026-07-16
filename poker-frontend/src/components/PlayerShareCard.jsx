@@ -104,7 +104,7 @@ export default function PlayerShareCard({ onClose }) {
           <div className="w-[320px] bg-gray-900 border border-violet-500/40 rounded-2xl p-6 text-center">
             <p className="text-4xl mb-2">🔒</p>
             <p className="text-white font-black">Este mes está en el archivo</p>
-            <p className="text-sm text-violet-200 mt-1">Preguntá en caja para desbloquear tu historia completa.</p>
+            <p className="text-sm text-violet-200 mt-1">Pregunta en caja para desbloquear tu historia completa.</p>
           </div>
         )}
 
