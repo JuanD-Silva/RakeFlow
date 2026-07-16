@@ -14,29 +14,30 @@ import Modal from './Modal';
  */
 export default function SessionDealerPayments({ sessionId, refreshTrigger }) {
   const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
   const [paying, setPaying] = useState(null);
 
+  // NO usamos un flag "loading" para gatear el render: el padre re-dispara el
+  // refetch cada 15s, y ocultar la tarjeta en cada poll la haría parpadear y —
+  // peor — desmontaría el modal de pago abierto, borrando lo que se escribía.
+  // Mostramos los datos previos mientras se refetchea; solo el primer fetch
+  // (data === null) no muestra nada.
   useEffect(() => {
     if (!sessionId) return undefined;
     let cancelled = false;
     (async () => {
-      setLoading(true);
       try {
         const res = await dealerService.getSessionDealerPayments(sessionId);
         if (!cancelled) setData(res);
       } catch {
         if (!cancelled) setData(null); // 403 (cajero) o error → no mostramos nada
-      } finally {
-        if (!cancelled) setLoading(false);
       }
     })();
     return () => { cancelled = true; };
   }, [sessionId, refreshTrigger, reloadKey]);
 
   const dealers = data?.dealers || [];
-  if (loading || dealers.length === 0) return null;
+  if (!data || dealers.length === 0) return null;
 
   const s = data.summary || {};
   const anyOpen = dealers.some((d) => d.has_open_shift);

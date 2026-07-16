@@ -1134,6 +1134,7 @@ async def session_dealer_payments(
         .where(
             models.DealerShift.session_id == session_id,
             models.DealerShift.club_id == current_club.id,
+            models.Dealer.club_id == current_club.id,  # cinturón y tirantes
         )
         .order_by(models.DealerShift.start_time)
     )).all()
