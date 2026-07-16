@@ -230,6 +230,8 @@ class DealerPayoutCreate(BaseModel):
     note: Optional[str] = Field(None, max_length=200)
     period_start: Optional[datetime] = None
     period_end: Optional[datetime] = None
+    # Opcional: mesa donde se le pagó (control por-mesa en la mesa activa).
+    session_id: Optional[int] = None
 
 class DealerPayoutResponse(BaseSchema):
     id: int

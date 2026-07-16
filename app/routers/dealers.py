@@ -1031,9 +1031,24 @@ async def create_payout(
     if not dealer:
         raise HTTPException(status_code=404, detail="Dealer no encontrado")
 
+    # Si viene session_id, validar que la mesa sea de este club (no confiar en
+    # el payload). NULL = pago general por rango, como hasta ahora.
+    session_id = None
+    if data.session_id is not None:
+        sess = (await db.execute(
+            select(models.Session).where(
+                models.Session.id == data.session_id,
+                models.Session.club_id == current_club.id,
+            )
+        )).scalars().first()
+        if not sess:
+            raise HTTPException(status_code=404, detail="Mesa no encontrada")
+        session_id = sess.id
+
     payout = models.DealerPayout(
         club_id=current_club.id,
         dealer_id=dealer.id,
+        session_id=session_id,
         amount=float(data.amount),
         method=data.method,
         note=data.note,
@@ -1089,6 +1104,97 @@ async def list_shifts(
     )
     now = datetime.utcnow()
     return [_shift_to_dict(s, n, now=now) for s, n in result.all()]
+
+
+@shifts_router.get("/{session_id}/dealer-payments")
+async def session_dealer_payments(
+    session_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+    _: models.User = Depends(require_role([models.UserRole.OWNER, models.UserRole.MANAGER])),
+):
+    """Pago por-dealer de UNA mesa (control en la mesa activa). Por cada dealer
+    que pasó por la mesa: devengado (Σ turnos: horas × tarifa + % del rake),
+    pagado (Σ payouts ligados a ESTA mesa) y pendiente. El turno ABIERTO se
+    estima con horas exactas + %rake 0 (el rake del turno se cuenta al cerrar) —
+    igual que la barra en vivo del DealerPanel. OWNER/MANAGER."""
+    session = (await db.execute(
+        select(models.Session).where(
+            models.Session.id == session_id,
+            models.Session.club_id == current_club.id,
+        )
+    )).scalars().first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Mesa no encontrada")
+
+    now = datetime.utcnow()
+    shift_rows = (await db.execute(
+        select(models.DealerShift, models.Dealer.name)
+        .join(models.Dealer, models.Dealer.id == models.DealerShift.dealer_id)
+        .where(
+            models.DealerShift.session_id == session_id,
+            models.DealerShift.club_id == current_club.id,
+            models.Dealer.club_id == current_club.id,  # cinturón y tirantes
+        )
+        .order_by(models.DealerShift.start_time)
+    )).all()
+
+    # Agregado por dealer. Reusa la fuente única services.shift_payment_breakdown
+    # (misma plata que verá el cierre y el reporte por rango).
+    per: dict = {}
+    for shift, name in shift_rows:
+        end = shift.end_time or now
+        hours = dealer_view.shift_hours(shift.start_time, end)
+        bd = services.shift_payment_breakdown(
+            hours, shift.hourly_rate_cop, shift.rake_pct, shift.declared_rake)
+        d = per.setdefault(shift.dealer_id, {
+            "dealer_id": shift.dealer_id, "name": name,
+            "hours": 0.0, "hour_payment": 0, "rake_commission": 0,
+            "club_payment": 0, "has_open_shift": False, "rake_pct_open": 0,
+        })
+        d["hours"] += hours
+        d["hour_payment"] += bd["hour_payment"]
+        d["rake_commission"] += bd["rake_commission"]
+        d["club_payment"] += bd["club_payment"]
+        if shift.end_time is None:
+            d["has_open_shift"] = True
+            d["rake_pct_open"] = shift.rake_pct
+
+    # Pagos ligados a ESTA mesa (session_id) — no los del rango general.
+    pay_rows = (await db.execute(
+        select(models.DealerPayout.dealer_id,
+               func.coalesce(func.sum(models.DealerPayout.amount), 0.0))
+        .where(
+            models.DealerPayout.club_id == current_club.id,
+            models.DealerPayout.session_id == session_id,
+        )
+        .group_by(models.DealerPayout.dealer_id)
+    )).all()
+    paid_map = {did: float(total or 0) for did, total in pay_rows}
+
+    dealers = []
+    for did, d in per.items():
+        paid = paid_map.get(did, 0.0)
+        dealers.append({
+            **d,
+            "hours": round(d["hours"], 2),
+            "paid": round(paid),
+            "pending": max(0, round(d["club_payment"] - paid)),
+        })
+    dealers.sort(key=lambda x: (x["name"] or "").lower())
+
+    summary = {
+        "club_payment": sum(x["club_payment"] for x in dealers),
+        "paid": sum(x["paid"] for x in dealers),
+        "pending": sum(x["pending"] for x in dealers),
+        "total_hours": round(sum(x["hours"] for x in dealers), 2),
+    }
+    return {
+        "session_id": session_id,
+        "session_open": session.status == models.SessionStatus.OPEN,
+        "dealers": dealers,
+        "summary": summary,
+    }
 
 
 @shifts_router.post("/{session_id}/dealer-shifts/start")
