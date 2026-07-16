@@ -98,7 +98,7 @@ export default function Landing() {
             </span>
           </div>
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-            <Link to="/login" className="whitespace-nowrap text-gray-400 hover:text-white text-sm font-bold px-3 sm:px-4 py-2 transition-colors relative after:absolute after:bottom-0 after:left-1/2 after:-translate-x-1/2 after:w-0 hover:after:w-full after:h-px after:bg-emerald-500 after:transition-all">
+            <Link to="/login" className="whitespace-nowrap text-white/90 hover:text-white text-sm font-bold px-4 sm:px-5 py-2 rounded-lg border border-white/25 bg-white/5 hover:bg-white/10 hover:border-emerald-500/60 transition-all">
               <span className="sm:hidden">Entrar</span>
               <span className="hidden sm:inline">Iniciar Sesion</span>
             </Link>
