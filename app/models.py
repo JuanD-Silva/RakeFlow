@@ -168,6 +168,9 @@ class Player(Base):
     # para medir el retorno post-mensaje contra el grupo de control.
     reengagement_group = Column(String, nullable=True)
     reengagement_qualified_at = Column(DateTime, nullable=True)
+    # Marca que la cuenta de panel de esta ficha nació de un auto-registro por QR
+    # (self-service), no de una invitación del staff. NULL = flujo normal.
+    self_registered_at = Column(DateTime, nullable=True)
 
     # Relaciones
     club = relationship("Club", back_populates="players")

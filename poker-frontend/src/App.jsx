@@ -33,6 +33,7 @@ import TournamentTV from './pages/TournamentTV';
 import DealerWorkspace from './pages/DealerWorkspace';
 import DealerActivate from './pages/DealerActivate';
 import PlayerActivate from './pages/PlayerActivate';
+import PlayerSelfRegister from './pages/PlayerSelfRegister';
 import PlayerWorkspace from './pages/PlayerWorkspace';
 import AlertWatcher from './components/AlertWatcher';
 import TeamPanel from './components/TeamPanel';
@@ -229,6 +230,7 @@ function AppRoutes() {
 
       {/* Capa publica (sin auth): link del club + vista dealer + TV de torneo */}
       <Route path="/c/:token" element={<PublicClub />} />
+      <Route path="/c/:token/entrar" element={<PlayerSelfRegister />} />
       <Route path="/mesa/:token/dealer" element={<DealerView />} />
       <Route path="/torneo/:token/tv" element={<TournamentTV />} />
 
