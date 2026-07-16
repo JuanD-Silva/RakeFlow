@@ -329,7 +329,8 @@ function HomeTab({ club, data, loaded, error }) {
         </div>
       )}
 
-      {/* Distinción VIP (pilar del club). Es lo PRIMERO que ve: se siente importante.
+      {/* Distinción VIP (pilar del club): se siente importante. Solo la ve un VIP,
+          que nunca está bloqueado, así que no compite con la tarjeta de archivo.
           Reconocimiento, no plata — jamás muestra el volumen (no premiamos el gasto
           a la vista). Solo aparece si el backend lo marca (top del club por volumen). */}
       {data.is_vip && (
