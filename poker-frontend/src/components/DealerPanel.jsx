@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { dealerService } from '../api/services';
+import { useAuth } from '../context/AuthContext';
 import Modal from './Modal';
 import DealerShiftForm from './DealerShiftForm';
+import SessionDealerPayments from './SessionDealerPayments';
 import { ClockIcon, ArrowsRightLeftIcon, PauseIcon, LinkIcon, CheckIcon, ClipboardDocumentIcon } from '@heroicons/react/24/outline';
 
 function formatElapsed(minutes) {
@@ -18,6 +20,7 @@ function formatElapsed(minutes) {
  * datetimes naive en el front) y tickea localmente cada 30s.
  */
 export default function DealerPanel({ sessionId, publicToken, refreshTrigger }) {
+  const { isOwner, isManager } = useAuth();
   const [openShift, setOpenShift] = useState(null);
   const [localMinutes, setLocalMinutes] = useState(0);
   const [modalMode, setModalMode] = useState(null); // "start" | "change" | "end" | null
@@ -156,6 +159,12 @@ export default function DealerPanel({ sessionId, publicToken, refreshTrigger }) 
             </span>
           )}
         </button>
+      )}
+
+      {/* Control de pago por-dealer de esta mesa (solo staff que liquida). Se
+          refresca al cambiar/terminar turnos (reloadKey) y con el padre. */}
+      {(isOwner || isManager) && (
+        <SessionDealerPayments sessionId={sessionId} refreshTrigger={`${refreshTrigger}:${reloadKey}`} />
       )}
 
       <Modal

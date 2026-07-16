@@ -511,8 +511,14 @@ export const dealerService = {
         return res.data;
     },
     // Liquidación: registrar un pago a un dealer (ledger de caja, no toca finanzas)
-    createPayout: async (dealerId, { amount, method = null, note = null, period_start = null, period_end = null }) => {
-        const res = await api.post(`/dealers/${dealerId}/payouts`, { amount, method, note, period_start, period_end });
+    createPayout: async (dealerId, { amount, method = null, note = null, period_start = null, period_end = null, session_id = null }) => {
+        const res = await api.post(`/dealers/${dealerId}/payouts`, { amount, method, note, period_start, period_end, session_id });
+        return res.data;
+    },
+    // Pago por-dealer de UNA mesa (control en la mesa activa): devengado / pagado
+    // / pendiente por cada dealer que pasó por la mesa. OWNER/MANAGER.
+    getSessionDealerPayments: async (sessionId) => {
+        const res = await api.get(`/sessions/${sessionId}/dealer-payments`);
         return res.data;
     },
     getPayouts: async (startDate = null, endDate = null, dealerId = null) => {

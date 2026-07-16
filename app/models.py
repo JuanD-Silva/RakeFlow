@@ -244,6 +244,10 @@ class DealerPayout(Base):
     id = Column(Integer, primary_key=True, index=True)
     club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False, index=True)
     dealer_id = Column(Integer, ForeignKey("dealers.id"), nullable=False, index=True)
+    # Mesa donde se le pagó (control por-mesa en la mesa activa). NULL = pago
+    # general por rango (liquidación de Reportes). No cambia la contabilidad:
+    # el costo del dealer ya se reconoció en el cierre; esto es solo ledger.
+    session_id = Column(Integer, ForeignKey("sessions.id"), nullable=True, index=True)
 
     amount = Column(Float, nullable=False, default=0.0)
     method = Column(String, nullable=True)   # 'cash' | 'transfer' | ...
