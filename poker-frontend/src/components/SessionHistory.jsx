@@ -264,9 +264,10 @@ export default function SessionHistory() {
                                                     {p.balance >= 0 ? '+' : ''}{formatMoney(p.balance)}
                                                 </span>
                                             </div>
-                                            <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+                                            <div className="grid grid-cols-3 gap-2 text-xs font-mono">
                                                 <div className="min-w-0"><div className="text-[9px] text-gray-500 uppercase tracking-wider">Compras</div><div className="text-gray-300 truncate">{formatMoney(p.buyin)}</div></div>
                                                 <div className="min-w-0"><div className="text-[9px] text-gray-500 uppercase tracking-wider">Retiro</div><div className="text-gray-300 truncate">{formatMoney(p.cashout + (p.jackpot||0))}</div></div>
+                                                <div className="min-w-0"><div className="text-[9px] text-gray-500 uppercase tracking-wider">Consumo</div><div className={`truncate ${(p.spend||0) > 0 ? 'text-gray-300' : 'text-gray-600'}`}>{formatMoney(p.spend||0)}</div></div>
                                             </div>
                                         </div>
                                     ))}
@@ -275,7 +276,7 @@ export default function SessionHistory() {
                                 <div className="hidden md:block overflow-x-auto">
                                     <table className="w-full text-left text-sm">
                                         <thead className="bg-gray-900/50 text-gray-500 uppercase text-[10px] font-black tracking-widest">
-                                            <tr><th className="px-6 py-4">Jugador</th><th className="px-6 py-4 text-right">Compras</th><th className="px-6 py-4 text-right">Retiro</th><th className="px-6 py-4 text-right">Balance</th></tr>
+                                            <tr><th className="px-6 py-4">Jugador</th><th className="px-6 py-4 text-right">Compras</th><th className="px-6 py-4 text-right">Retiro</th><th className="px-6 py-4 text-right">Consumo</th><th className="px-6 py-4 text-right">Balance</th></tr>
                                         </thead>
                                         <tbody className="divide-y divide-gray-800 font-mono">
                                             {detailData.players?.map((p, i) => (
@@ -283,6 +284,9 @@ export default function SessionHistory() {
                                                     <td className="px-6 py-4 font-bold text-white uppercase">{p.name}</td>
                                                     <td className="px-6 py-4 text-right text-gray-400">{formatMoney(p.buyin)}</td>
                                                     <td className="px-6 py-4 text-right text-gray-400">{formatMoney(p.cashout + (p.jackpot||0))}</td>
+                                                    {/* Consumo (SPEND+TIP): sin esta columna el balance no cuadra a ojo
+                                                        con compras−retiro y el staff cree que hay un error. */}
+                                                    <td className={`px-6 py-4 text-right ${(p.spend||0) > 0 ? 'text-gray-400' : 'text-gray-600'}`}>{formatMoney(p.spend||0)}</td>
                                                     <td className={`px-6 py-4 text-right font-black ${p.balance >= 0 ? 'text-green-400' : 'text-red-400'}`}>{p.balance >= 0 ? '+' : ''}{formatMoney(p.balance)}</td>
                                                 </tr>
                                             ))}
