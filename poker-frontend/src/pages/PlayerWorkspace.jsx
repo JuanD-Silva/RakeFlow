@@ -808,7 +808,9 @@ function HistoryTab() {
             <div key={`${s.type}-${s.date}-${i}`} className="rf-in bg-gray-800/60 border border-gray-700/60 rounded-xl px-4 py-3 flex items-center justify-between gap-3" style={{ animationDelay: `${Math.min(i, 10) * 35}ms` }}>
               <div className="min-w-0">
                 <p className="text-white font-bold truncate flex items-center gap-1.5">
-                  <TypeIcon type={s.type} className="w-4 h-4 shrink-0 text-gray-400" />{s.name}
+                  {/* Sin el nombre interno de la mesa/torneo (lo pone el admin para
+                      su operación, al jugador no le dice nada): solo tipo + fecha. */}
+                  <TypeIcon type={s.type} className="w-4 h-4 shrink-0 text-gray-400" />{s.type === 'tournament' ? 'Torneo' : 'Cash'}
                   {s.rank === 1 && <span className="shrink-0 text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-yellow-500/15 text-yellow-300">Campeón</span>}
                   {s.rank > 1 && s.rank <= 3 && <span className="shrink-0 text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-gray-600/40 text-gray-300">#{s.rank}</span>}
                 </p>
