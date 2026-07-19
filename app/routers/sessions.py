@@ -752,24 +752,29 @@ async def get_session_details(session_id: int, db: AsyncSession = Depends(get_db
             func.sum(case((models.Transaction.type == models.TransactionType.CASHOUT, models.Transaction.amount), else_=0)).label("total_cashout"),
             func.sum(case((models.Transaction.type.in_([models.TransactionType.SPEND, models.TransactionType.TIP]), models.Transaction.amount), else_=0)).label("total_spend"),
             func.sum(case((models.Transaction.type == models.TransactionType.JACKPOT_PAYOUT, models.Transaction.amount), else_=0)).label("total_jackpot"),
+            # Solo bonos individuales: el bono de mesa (bonus-all) tiene
+            # player_id NULL y el JOIN lo excluye — no toca saldos de jugador.
+            func.sum(case((models.Transaction.type == models.TransactionType.BONUS, models.Transaction.amount), else_=0)).label("total_bonus"),
         )
         .join(models.Transaction, models.Transaction.player_id == models.Player.id)
         .where(models.Transaction.session_id == session_id)
         .group_by(models.Player.id, models.Player.name)
     )
     players_data = (await db.execute(stmt)).all()
-    
+
     players_list = []
     for row in players_data:
-        # Calcular balance final del jugador
-        balance = (row.total_cashout + row.total_jackpot) - row.total_buyin - row.total_spend
-        
+        # Balance final del jugador — misma fórmula que la mesa en vivo
+        # (active-summary): el bono individual es plata que se le da al jugador.
+        balance = (row.total_cashout + row.total_jackpot + row.total_bonus) - row.total_buyin - row.total_spend
+
         players_list.append({
             "name": row.name,
             "buyin": row.total_buyin,
             "cashout": row.total_cashout,
             "spend": row.total_spend,
             "jackpot": row.total_jackpot,
+            "bonus": row.total_bonus,
             "balance": balance
         })
 
