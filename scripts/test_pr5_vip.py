@@ -2,7 +2,8 @@
 (función pura). Correr: python scripts/test_pr5_vip.py
 
 2026-07-21: VIP exclusivo — cupo (min(max_vips=10, top 10%)) + recencia (sin
-visita en 45 días se pierde el título y se libera el cupo)."""
+visita en 45 días se pierde el título y se libera el cupo) + frecuencia
+(mínimo 4 días de actividad en los últimos 90)."""
 import sys
 import os
 from datetime import datetime, timedelta
@@ -14,15 +15,18 @@ RECENT = datetime.utcnow() - timedelta(days=1)
 OLD = datetime.utcnow() - timedelta(days=73)   # el caso Orlando
 
 
-def _standings(volumes, visits=None, last_seen=None):
+def _standings(volumes, visits=None, last_seen=None, recent_visits=None):
     """Standings mínimas para is_vip. visits por defecto = 10 (pasa el piso);
-    last_seen por defecto = ayer (pasa la recencia)."""
+    last_seen por defecto = ayer (pasa la recencia); recent_visits por defecto
+    = 10 (pasa la frecuencia)."""
     if visits is None:
         visits = {pid: 10 for pid in volumes}
     if last_seen is None:
         last_seen = {pid: RECENT for pid in volumes}
+    if recent_visits is None:
+        recent_visits = {pid: 10 for pid in volumes}
     return {"volume": dict(volumes), "visits": dict(visits),
-            "last_seen": dict(last_seen)}
+            "last_seen": dict(last_seen), "recent_visits": dict(recent_visits)}
 
 
 passed = failed = 0
@@ -107,6 +111,21 @@ st200_aus = _standings(
                        **{i: OLD for i in range(196, 201)}})
 check("5 ausentes arriba → el cupo corre (el #15 entra)", player_stats.is_vip(st200_aus, 186) is True)
 check("5 ausentes arriba → el #16 sigue fuera", player_stats.is_vip(st200_aus, 185) is False)
+
+# ---------------------------------------------------------
+# FRECUENCIA (caso Deivi vs Sergio): última visita IGUAL de fresca, pero el que
+# casi nunca viene (3 días/90d < 4) pierde el VIP; el frecuente (12) lo conserva.
+# ---------------------------------------------------------
+st_freq = _standings(
+    vol20, recent_visits={**{i: 10 for i in range(1, 21)}, 20: 3, 19: 12})
+check("infrecuente (3 días/90d, aunque #1 en volumen) NO es VIP", player_stats.is_vip(st_freq, 20) is False)
+check("frecuente (12 días/90d) SÍ conserva", player_stats.is_vip(st_freq, 19) is True)
+check("4 días/90d justo SÍ pasa la frecuencia", player_stats.is_vip(
+    _standings(vol20, recent_visits={**{i: 10 for i in range(1, 21)}, 20: 4}), 20) is True)
+# El infrecuente también libera su cupo: con el #20 en 3 días/90d, el #18 entra.
+check("el infrecuente libera su cupo (el #3 hereda)", player_stats.is_vip(st_freq, 18) is True)
+check("sin recent_visits (mapa vacío) NO es VIP", player_stats.is_vip(
+    _standings(vol20, recent_visits={i: 10 for i in range(1, 20)}), 20) is False)
 
 print(f"\nPR5 is_vip: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

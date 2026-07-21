@@ -412,25 +412,60 @@ async def compute_club_standings(db: AsyncSession, club_id: int) -> dict:
         if r.ts and (r.pid not in last_seen_map or r.ts > last_seen_map[r.pid]):
             last_seen_map[r.pid] = r.ts
 
+    # Frecuencia reciente (segunda pata de la caducidad del VIP): días distintos
+    # (hora Colombia) con actividad en los últimos VIP_RECENT_WINDOW_DAYS días.
+    # Distingue al pilar que paró 6 semanas (Sergio: 12 días/90d) del que "casi
+    # nunca viene" aunque su última visita sea igual de fresca (Deivi: 3).
+    recent_map: dict[int, int] = {}
+    cutoff = datetime.utcnow() - timedelta(days=VIP_RECENT_WINDOW_DAYS)
+    rec = (await db.execute(text("""
+        SELECT pid, COUNT(DISTINCT dia) AS dias FROM (
+          SELECT t.player_id AS pid,
+                 DATE((t.timestamp AT TIME ZONE 'UTC') AT TIME ZONE 'America/Bogota') AS dia
+          FROM transactions t JOIN sessions s ON t.session_id = s.id
+          WHERE s.club_id = :cid AND CAST(t.type AS TEXT) IN ('BUYIN','REBUY')
+                AND t.player_id IS NOT NULL AND t.timestamp >= :cutoff
+          UNION
+          SELECT tp.player_id,
+                 DATE((COALESCE(tr.start_time, tr.scheduled_start) AT TIME ZONE 'UTC') AT TIME ZONE 'America/Bogota')
+          FROM tournament_players tp JOIN tournaments tr ON tr.id = tp.tournament_id
+          WHERE tr.club_id = :cid AND tp.player_id IS NOT NULL
+                AND COALESCE(tr.start_time, tr.scheduled_start) >= :cutoff
+        ) x GROUP BY pid
+    """), {"cid": club_id, "cutoff": cutoff})).all()
+    for r in rec:
+        recent_map[r.pid] = int(r.dias or 0)
+
     result = {"hours": hours_map, "visits": visits_map,
               "constancy": constancy_map, "volume": volume_map,
-              "last_seen": last_seen_map}
+              "last_seen": last_seen_map, "recent_visits": recent_map}
     _STANDINGS_CACHE[club_id] = (time.monotonic(), result)
     return result
 
 
+# Ventana (días) sobre la que compute_club_standings cuenta la frecuencia
+# reciente que exige is_vip (min_recent_visits). Compartida para que la query
+# y el filtro no se desalineen.
+VIP_RECENT_WINDOW_DAYS = 90
+
+
 def is_vip(standings: dict, player_id: int, top_pct: int = 10,
            min_visits: int = 5, min_players: int = 10,
-           max_vips: int = 10, recency_days: int = 45) -> bool:
-    """VIP = 'pilar' ACTIVO del club. Tres condiciones para que la exclusividad
-    sea real (decisión de Juan 2026-07-21):
+           max_vips: int = 10, recency_days: int = 45,
+           min_recent_visits: int = 4) -> bool:
+    """VIP = 'pilar' ACTIVO del club. Condiciones para que la exclusividad sea
+    real (decisión de Juan 2026-07-21):
     - CUPO: hay `min(max_vips, top_pct% de los jugadores con volumen)` puestos —
       en Mambo hoy: 10. Un club chico no regala 10 auras (sigue siendo top %).
     - RECENCIA: sin visita en los últimos `recency_days` días se PIERDE el título
-      (el ausente además libera su cupo para el siguiente); vuelve a competir con
-      una sola visita.
-    - FIDELIDAD: piso de `min_visits` para no coronar a un turista de un buy-in
-      grande, y `min_players` con volumen para que el estatus tenga sentido.
+      (el ausente además libera su cupo para el siguiente).
+    - FRECUENCIA: además hay que VENIR — al menos `min_recent_visits` días
+      distintos de actividad en los últimos VIP_RECENT_WINDOW_DAYS días. Separa
+      al pilar que paró unas semanas del que casi nunca viene aunque su última
+      visita sea fresca.
+    - FIDELIDAD: piso de `min_visits` históricas para no coronar a un turista de
+      un buy-in grande, y `min_players` con volumen para que el estatus tenga
+      sentido.
     El ranking es por VOLUMEN histórico (cuánto mueve) SOLO entre elegibles.
     Relativo al club (multi-tenant). El valor del volumen jamás sale de acá:
     solo el booleano (no se premia el gasto a la vista)."""
@@ -445,15 +480,19 @@ def is_vip(standings: dict, player_id: int, top_pct: int = 10,
     if total < min_players:
         return False
     last_map = standings.get("last_seen", {})
+    recent_map = standings.get("recent_visits", {})
     cutoff = datetime.utcnow() - timedelta(days=recency_days)
-    last = last_map.get(player_id)
-    if last is None or last < cutoff:
+
+    def _eligible(pid):
+        last = last_map.get(pid)
+        return (last is not None and last >= cutoff
+                and visits_map.get(pid, 0) >= min_visits
+                and recent_map.get(pid, 0) >= min_recent_visits)
+
+    if not _eligible(player_id):
         return False
     slots = min(max_vips, -(-total * top_pct // 100))   # techo, ceil(total*pct/100)
-    rivals = [v for pid, v in vol_map.items()
-              if v and v > 0
-              and visits_map.get(pid, 0) >= min_visits
-              and last_map.get(pid) is not None and last_map[pid] >= cutoff]
+    rivals = [v for pid, v in vol_map.items() if v and v > 0 and _eligible(pid)]
     rank = 1 + sum(1 for v in rivals if v > vol)   # competition ranking
     return rank <= slots
 
