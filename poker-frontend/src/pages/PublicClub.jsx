@@ -68,12 +68,17 @@ function TournamentSeating({ token, tournamentId }) {
   if (error) return <p className="text-[#e8a29a] text-xs mt-3">No se pudo cargar el sorteo. Reintentando…</p>;
   if (!seating) return <p className="text-[#9fb3a4] text-xs mt-3">Cargando sorteo…</p>;
 
-  const query = q.trim().toLowerCase();
-  const matches = (name) => query && name.toLowerCase().includes(query);
+  // Búsqueda insensible a tildes: "jose" encuentra a "José" (el jugador se
+  // busca a sí mismo — no puede fallar por un acento).
+  const norm = (s) => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const query = norm(q.trim());
+  const matches = (name) => query && norm(name).includes(query);
   const total = seating.tables.reduce((n, t) => n + t.seats.length, 0) + seating.waiting.length;
-  const anyMatch = !query
-    || seating.tables.some((t) => t.seats.some((s) => matches(s.name)))
-    || seating.waiting.some(matches);
+  // Al buscar, solo las mesas con match (sin encabezados vacíos apilados).
+  const visibleTables = query
+    ? seating.tables.filter((t) => t.seats.some((s) => matches(s.name)))
+    : seating.tables;
+  const anyMatch = !query || visibleTables.length > 0 || seating.waiting.some(matches);
 
   if (total === 0) return <p className="text-[#9fb3a4] text-xs mt-3">Todavía no hay jugadores sentados.</p>;
 
@@ -87,7 +92,7 @@ function TournamentSeating({ token, tournamentId }) {
       {!anyMatch && (
         <p className="text-[#e8cd85] text-xs">No apareces todavía — pregunta en caja para inscribirte.</p>
       )}
-      {seating.tables.map((t) => (
+      {visibleTables.map((t) => (
         <div key={t.table_number}>
           <p className="text-[10px] font-bold uppercase tracking-widest text-[#e8cd85] mb-1.5">Mesa {t.table_number}</p>
           <div className="space-y-1">

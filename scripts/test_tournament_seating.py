@@ -167,12 +167,28 @@ def main():
             check(d["waiting"] == [f"{TAG}Dani"], f"espera = solo Dani (got {d['waiting']})")
             todos = [s["name"] for t in d["tables"] for s in t["seats"]] + d["waiting"]
             check(f"{TAG}Eli" not in todos, "ELIMINATED excluido")
+            # El payload NO trae plata: exactamente estas claves y ninguna más.
+            check(set(d.keys()) == {"tournament_name", "tables", "waiting"},
+                  f"payload sin plata (claves exactas) (got {sorted(d.keys())})")
+            check(all(set(s.keys()) == {"seat", "name"} for t in d["tables"] for s in t["seats"]),
+                  "cada silla solo trae seat+name")
 
-            step(4, "COMPLETED → 404")
+            step(4, "Terminados → 404 (los DOS estados terminales)")
             psql(f"INSERT INTO tournaments (club_id, name, status, buyin_amount) VALUES ({c1}, '{TAG}Viejo', 'COMPLETED', 0);")
             tid_done = int(psql(f"SELECT id FROM tournaments WHERE club_id={c1} AND name='{TAG}Viejo';"))
             r = c.get(f"{BASE}/public/clubs/{tok1}/tournaments/{tid_done}/seating")
             check(r.status_code == 404, f"torneo COMPLETED → 404 (got {r.status_code})")
+            # FINISHED es el estado que deja 'Terminar torneo' (END): el grueso
+            # de los torneos viejos de prod. También debe ser 404.
+            psql(f"INSERT INTO tournaments (club_id, name, status, buyin_amount, end_time) VALUES ({c1}, '{TAG}Finished', 'FINISHED', 0, now());")
+            tid_fin = int(psql(f"SELECT id FROM tournaments WHERE club_id={c1} AND name='{TAG}Finished';"))
+            r = c.get(f"{BASE}/public/clubs/{tok1}/tournaments/{tid_fin}/seating")
+            check(r.status_code == 404, f"torneo FINISHED → 404 (got {r.status_code})")
+            # Y un RUNNING con end_time seteado (cerrado a medias) tampoco se expone.
+            psql(f"INSERT INTO tournaments (club_id, name, status, buyin_amount, end_time) VALUES ({c1}, '{TAG}EndTime', 'RUNNING', 0, now());")
+            tid_et = int(psql(f"SELECT id FROM tournaments WHERE club_id={c1} AND name='{TAG}EndTime';"))
+            r = c.get(f"{BASE}/public/clubs/{tok1}/tournaments/{tid_et}/seating")
+            check(r.status_code == 404, f"torneo con end_time → 404 (got {r.status_code})")
 
             step(5, "Tenant: torneo de otro club → 404; token falso → 404")
             psql(f"INSERT INTO tournaments (club_id, name, status, buyin_amount) VALUES ({c2}, '{TAG}Ajeno', 'REGISTERING', 0);")

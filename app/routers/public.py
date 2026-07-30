@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 
 from .. import models, tournament_clock, tournament_chips, services
 from ..dependencies import get_db
+from .tournaments import TERMINAL_STATUSES
 from ..audit import log_action, AuditAction
 
 router = APIRouter(prefix="/public", tags=["Public"])
@@ -196,11 +197,16 @@ async def get_tournament_seating(public_token: str, tournament_id: int,
     Es la misma info que el staff pega en la TV: SOLO nombres y asientos —
     jamás plata (buyins/rebuys/premios se quedan adentro)."""
     club = await _get_club_by_token(db, public_token)
+    # Solo torneos VIVOS — mismo criterio que live_tournaments: hay DOS estados
+    # terminales (END deja FINISHED, FINALIZE deja COMPLETED); con solo
+    # 'COMPLETED' el roster de los torneos terminados con END quedaría público
+    # para siempre.
     t = (await db.execute(
         select(models.Tournament).where(
             models.Tournament.id == tournament_id,
             models.Tournament.club_id == club.id,
-            models.Tournament.status != "COMPLETED",
+            models.Tournament.status.notin_(TERMINAL_STATUSES),
+            models.Tournament.end_time.is_(None),
         )
     )).scalars().first()
     if not t:
@@ -224,6 +230,7 @@ async def get_tournament_seating(public_token: str, tournament_id: int,
     tables: dict[int, list] = {}
     waiting: list[str] = []
     for name, seat, table_number in rows:
+        name = name or "—"   # Player.name es nullable: jamás tronar por un nombre vacío
         if table_number is not None and seat is not None:
             tables.setdefault(int(table_number), []).append({"seat": int(seat), "name": name})
         else:
