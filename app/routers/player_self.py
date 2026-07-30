@@ -303,7 +303,9 @@ async def club_info(
                    models.TournamentPlayer.seat_number,
                    models.TournamentTable.table_number)
             .outerjoin(models.TournamentTable,
-                       models.TournamentTable.id == models.TournamentPlayer.table_id)
+                       (models.TournamentTable.id == models.TournamentPlayer.table_id)
+                       & (models.TournamentTable.tournament_id
+                          == models.TournamentPlayer.tournament_id))
             .where(models.TournamentPlayer.tournament_id.in_([t["id"] for t in live]),
                    models.TournamentPlayer.player_id == player.id,
                    models.TournamentPlayer.status == "ACTIVE")

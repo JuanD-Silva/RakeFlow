@@ -5,8 +5,11 @@ alertas al staff. Patrón sin auth como el webhook de Wompi (solo Depends(get_db
 identificando el recurso por un token imposible de adivinar en la URL.
 
 Reglas de seguridad: estos endpoints exponen SOLO datos no sensibles (nombre del
-club, mesas/torneos con conteos y estado). NUNCA plata, rake, socios ni jugadores
-nominales.
+club, mesas/torneos con conteos y estado). NUNCA plata, rake ni socios.
+Excepción deliberada (2026-07-23, decisión de Juan): el sorteo de sillas del
+torneo expone NOMBRES de jugadores con su mesa/silla tras el token del club —
+es la misma info que el staff pega en la TV el día del torneo. Solo nombres:
+la plata sigue prohibida en toda la capa pública.
 """
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -208,7 +211,12 @@ async def get_tournament_seating(public_token: str, tournament_id: int,
                models.TournamentPlayer.seat_number,
                models.TournamentTable.table_number)
         .join(models.TournamentPlayer, models.TournamentPlayer.player_id == models.Player.id)
-        .outerjoin(models.TournamentTable, models.TournamentTable.id == models.TournamentPlayer.table_id)
+        # El join a la mesa también exige tournament_id: cinturón y tirantes por
+        # si un write path futuro asignara una mesa ajena (hoy _get_owned_table
+        # lo impide) — acá jamás se mostraría un table_number de otro torneo.
+        .outerjoin(models.TournamentTable,
+                   (models.TournamentTable.id == models.TournamentPlayer.table_id)
+                   & (models.TournamentTable.tournament_id == t.id))
         .where(models.TournamentPlayer.tournament_id == t.id,
                models.TournamentPlayer.status == "ACTIVE")
     )).all()
