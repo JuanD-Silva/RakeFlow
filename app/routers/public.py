@@ -5,8 +5,11 @@ alertas al staff. Patrón sin auth como el webhook de Wompi (solo Depends(get_db
 identificando el recurso por un token imposible de adivinar en la URL.
 
 Reglas de seguridad: estos endpoints exponen SOLO datos no sensibles (nombre del
-club, mesas/torneos con conteos y estado). NUNCA plata, rake, socios ni jugadores
-nominales.
+club, mesas/torneos con conteos y estado). NUNCA plata, rake ni socios.
+Excepción deliberada (2026-07-23, decisión de Juan): el sorteo de sillas del
+torneo expone NOMBRES de jugadores con su mesa/silla tras el token del club —
+es la misma info que el staff pega en la TV el día del torneo. Solo nombres:
+la plata sigue prohibida en toda la capa pública.
 """
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +22,7 @@ from pydantic import BaseModel, Field
 
 from .. import models, tournament_clock, tournament_chips, services
 from ..dependencies import get_db
+from .tournaments import TERMINAL_STATUSES
 from ..audit import log_action, AuditAction
 
 router = APIRouter(prefix="/public", tags=["Public"])
@@ -135,6 +139,9 @@ async def live_tournaments(db: AsyncSession, club_id: int) -> list[dict]:
             )).scalar() or 0
             seats_available = max(0, int(total_seats) - int(seated))
         tournaments.append({
+            # id: para pedir el sorteo de sillas (/tournaments/{id}/seating).
+            # Numérico y sin valor sin el token del club — no filtra nada.
+            "id": t.id,
             "name": t.name,
             "registered": registered,
             "active": active,
@@ -179,6 +186,64 @@ async def get_club_activity(public_token: str, db: AsyncSession = Depends(get_db
         "tournaments": tournaments,
         "scheduled": scheduled,
         "updated_at": datetime.utcnow().isoformat(),
+    }
+
+
+@router.get("/clubs/{public_token}/tournaments/{tournament_id}/seating")
+async def get_tournament_seating(public_token: str, tournament_id: int,
+                                 db: AsyncSession = Depends(get_db)):
+    """Sorteo de sillas del torneo, público tras el token del club: el jugador
+    llega, abre el link del grupo y ve su mesa/silla sin preguntar en caja.
+    Es la misma info que el staff pega en la TV: SOLO nombres y asientos —
+    jamás plata (buyins/rebuys/premios se quedan adentro)."""
+    club = await _get_club_by_token(db, public_token)
+    # Solo torneos VIVOS — mismo criterio que live_tournaments: hay DOS estados
+    # terminales (END deja FINISHED, FINALIZE deja COMPLETED); con solo
+    # 'COMPLETED' el roster de los torneos terminados con END quedaría público
+    # para siempre.
+    t = (await db.execute(
+        select(models.Tournament).where(
+            models.Tournament.id == tournament_id,
+            models.Tournament.club_id == club.id,
+            models.Tournament.status.notin_(TERMINAL_STATUSES),
+            models.Tournament.end_time.is_(None),
+        )
+    )).scalars().first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Torneo no encontrado")
+
+    rows = (await db.execute(
+        select(models.Player.name,
+               models.TournamentPlayer.seat_number,
+               models.TournamentTable.table_number)
+        .join(models.TournamentPlayer, models.TournamentPlayer.player_id == models.Player.id)
+        # El join a la mesa también exige tournament_id: cinturón y tirantes por
+        # si un write path futuro asignara una mesa ajena (hoy _get_owned_table
+        # lo impide) — acá jamás se mostraría un table_number de otro torneo.
+        .outerjoin(models.TournamentTable,
+                   (models.TournamentTable.id == models.TournamentPlayer.table_id)
+                   & (models.TournamentTable.tournament_id == t.id))
+        .where(models.TournamentPlayer.tournament_id == t.id,
+               models.TournamentPlayer.status == "ACTIVE")
+    )).all()
+
+    tables: dict[int, list] = {}
+    waiting: list[str] = []
+    for name, seat, table_number in rows:
+        name = name or "—"   # Player.name es nullable: jamás tronar por un nombre vacío
+        if table_number is not None and seat is not None:
+            tables.setdefault(int(table_number), []).append({"seat": int(seat), "name": name})
+        else:
+            # ACTIVE sin mesa/silla = lista de espera (criterio del nivelado FIFO)
+            waiting.append(name)
+
+    return {
+        "tournament_name": t.name,
+        "tables": [
+            {"table_number": num, "seats": sorted(seats, key=lambda s: s["seat"])}
+            for num, seats in sorted(tables.items())
+        ],
+        "waiting": sorted(waiting, key=str.casefold),
     }
 
 
