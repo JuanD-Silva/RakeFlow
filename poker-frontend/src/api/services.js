@@ -4,6 +4,8 @@ import api, { publicApi } from './axios';
 // --- CAPA PÚBLICA (sin auth) ---
 export const publicService = {
     getClubActivity: async (token) => (await publicApi.get(`/public/clubs/${token}/activity`)).data,
+    getTournamentSeating: async (token, tournamentId) =>
+        (await publicApi.get(`/public/clubs/${token}/tournaments/${tournamentId}/seating`)).data,
     getDealerView: async (token) => (await publicApi.get(`/public/dealer/${token}`)).data,
     sendDealerAlert: async (token, alertType, message = null) =>
         (await publicApi.post(`/public/dealer/${token}/alert`, { alert_type: alertType, message })).data,

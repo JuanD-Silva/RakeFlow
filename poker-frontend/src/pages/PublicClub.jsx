@@ -42,11 +42,89 @@ const Pill = ({ children, tone = 'gold' }) => (
   }`}>{children}</span>
 );
 
+// Sorteo de sillas del torneo: el jugador llega, busca su nombre y ve su mesa y
+// silla sin preguntar en caja. Se refresca solo mientras está abierto (el staff
+// sigue sentando gente durante el registro).
+function TournamentSeating({ token, tournamentId }) {
+  const [seating, setSeating] = useState(null);
+  const [error, setError] = useState(false);
+  const [q, setQ] = useState('');
+
+  const load = useCallback(async () => {
+    try {
+      setSeating(await publicService.getTournamentSeating(token, tournamentId));
+      setError(false);
+    } catch { setError(true); }
+  }, [token, tournamentId]);
+
+  useEffect(() => {
+    // El primer load va por setTimeout(0): mismo efecto, pero sin setState
+    // síncrono dentro del cuerpo del efecto (regla react-hooks).
+    const t0 = setTimeout(load, 0);
+    const id = setInterval(load, 30000);
+    return () => { clearTimeout(t0); clearInterval(id); };
+  }, [load]);
+
+  if (error) return <p className="text-[#e8a29a] text-xs mt-3">No se pudo cargar el sorteo. Reintentando…</p>;
+  if (!seating) return <p className="text-[#9fb3a4] text-xs mt-3">Cargando sorteo…</p>;
+
+  const query = q.trim().toLowerCase();
+  const matches = (name) => query && name.toLowerCase().includes(query);
+  const total = seating.tables.reduce((n, t) => n + t.seats.length, 0) + seating.waiting.length;
+  const anyMatch = !query
+    || seating.tables.some((t) => t.seats.some((s) => matches(s.name)))
+    || seating.waiting.some(matches);
+
+  if (total === 0) return <p className="text-[#9fb3a4] text-xs mt-3">Todavía no hay jugadores sentados.</p>;
+
+  return (
+    <div className="mt-3 space-y-3">
+      <input
+        type="search" value={q} onChange={(e) => setQ(e.target.value)}
+        placeholder="Busca tu nombre…" aria-label="Buscar mi nombre en el sorteo"
+        className="w-full rounded-lg bg-black/30 border border-[#d9b45b40] px-3 py-2 text-sm text-[#f4efe4] placeholder-[#9fb3a4] focus:outline-none focus:border-[#d9b45b]"
+      />
+      {!anyMatch && (
+        <p className="text-[#e8cd85] text-xs">No apareces todavía — pregunta en caja para inscribirte.</p>
+      )}
+      {seating.tables.map((t) => (
+        <div key={t.table_number}>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-[#e8cd85] mb-1.5">Mesa {t.table_number}</p>
+          <div className="space-y-1">
+            {t.seats.filter((s) => !query || matches(s.name)).map((s) => (
+              <div key={s.seat}
+                className={`flex items-center justify-between gap-2 rounded-lg px-3 py-1.5 text-sm ${matches(s.name) ? 'bg-[#d9b45b26] ring-1 ring-[#d9b45b80] text-white font-bold' : 'bg-black/20 text-[#f4efe4]'}`}>
+                <span className="truncate">{s.name}</span>
+                <span className="shrink-0 text-[#e8cd85] font-bold whitespace-nowrap">Silla {s.seat}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+      {seating.waiting.length > 0 && (!query || seating.waiting.some(matches)) && (
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-[#9fb3a4] mb-1.5">En espera de silla</p>
+          <div className="space-y-1">
+            {seating.waiting.filter((n) => !query || matches(n)).map((n, i) => (
+              <div key={i}
+                className={`rounded-lg px-3 py-1.5 text-sm ${matches(n) ? 'bg-[#d9b45b26] ring-1 ring-[#d9b45b80] text-white font-bold' : 'bg-black/20 text-[#9fb3a4]'}`}>
+                {n}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function PublicClub() {
   const { token } = useParams();
   const [data, setData] = useState(null);
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(true);
+  // Torneo con el sorteo de sillas desplegado (id) — solo se consulta al abrir.
+  const [openSeatingId, setOpenSeatingId] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -250,18 +328,30 @@ export default function PublicClub() {
               <section className="space-y-3 pc-in" style={{ animationDelay: '200ms' }}>
                 <SectionTitle>Torneos</SectionTitle>
                 {tournaments.map((t, i) => (
-                  <div key={i} className="pc-card px-5 py-4 flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-white font-bold text-lg truncate">
-                        <span className="text-[#d9b45b] mr-1.5">🏆</span>{t.name}
-                      </p>
-                      <p className="text-[#9fb3a4] text-xs mt-1">
-                        {t.active > 0 ? `${t.active} jugando` : `${t.registered} inscrito${t.registered !== 1 ? 's' : ''}`}
-                        {t.tables != null && ` · ${t.tables} mesa${t.tables !== 1 ? 's' : ''}`}
-                        {t.seats_available != null && ` · ${t.seats_available} cupo${t.seats_available !== 1 ? 's' : ''}`}
-                      </p>
+                  <div key={t.id ?? i} className="pc-card px-5 py-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-white font-bold text-lg truncate">
+                          <span className="text-[#d9b45b] mr-1.5">🏆</span>{t.name}
+                        </p>
+                        <p className="text-[#9fb3a4] text-xs mt-1">
+                          {t.active > 0 ? `${t.active} jugando` : `${t.registered} inscrito${t.registered !== 1 ? 's' : ''}`}
+                          {t.tables != null && ` · ${t.tables} mesa${t.tables !== 1 ? 's' : ''}`}
+                          {t.seats_available != null && ` · ${t.seats_available} cupo${t.seats_available !== 1 ? 's' : ''}`}
+                        </p>
+                      </div>
+                      <Pill tone={t.status === 'En juego' ? 'live' : 'gold'}>{t.status}</Pill>
                     </div>
-                    <Pill tone={t.status === 'En juego' ? 'live' : 'gold'}>{t.status}</Pill>
+                    {t.id != null && (
+                      <div className="mt-2">
+                        <button type="button"
+                          onClick={() => setOpenSeatingId(openSeatingId === t.id ? null : t.id)}
+                          className="text-sm font-bold text-[#e8cd85] py-1">
+                          🪑 ¿Dónde me siento? {openSeatingId === t.id ? 'Ocultar el sorteo' : 'Ver el sorteo de sillas'}
+                        </button>
+                        {openSeatingId === t.id && <TournamentSeating token={token} tournamentId={t.id} />}
+                      </div>
+                    )}
                   </div>
                 ))}
               </section>

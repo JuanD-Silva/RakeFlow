@@ -561,15 +561,26 @@ function HomeTab({ club, data, loaded, error }) {
               </div>
             </div>
           )}
-          {(club.live_tournaments || []).map((t, i) => (
-            <div key={`lt${i}`} className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3">
-              <p className="text-white font-bold truncate">🏆 {t.name} · <span className="text-amber-300">{t.status}</span></p>
-              <p className="text-xs text-amber-200/80 mt-1">
-                {t.active} en juego de {t.registered} inscritos
-                {t.seats_available != null && t.seats_available > 0 && ` · ${t.seats_available} cupo${t.seats_available !== 1 ? 's' : ''}`}
-              </p>
-            </div>
-          ))}
+          {(club.live_tournaments || []).map((t, i) => {
+            // Mi silla en ESTE torneo (si estoy inscrito): mesa/silla o espera.
+            const seat = (club.my_seats || []).find((s) => s.tournament_id === t.id);
+            return (
+              <div key={`lt${i}`} className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3">
+                <p className="text-white font-bold truncate">🏆 {t.name} · <span className="text-amber-300">{t.status}</span></p>
+                <p className="text-xs text-amber-200/80 mt-1">
+                  {t.active} en juego de {t.registered} inscritos
+                  {t.seats_available != null && t.seats_available > 0 && ` · ${t.seats_available} cupo${t.seats_available !== 1 ? 's' : ''}`}
+                </p>
+                {seat && (
+                  <p className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-amber-400/15 border border-amber-400/40 px-2.5 py-1 text-sm font-black text-amber-200">
+                    🪑 {seat.table_number != null && seat.seat_number != null
+                      ? `Tu puesto: Mesa ${seat.table_number} · Silla ${seat.seat_number}`
+                      : 'Estás en lista de espera de silla'}
+                  </p>
+                )}
+              </div>
+            );
+          })}
           {club.announcement && (
             <div className="bg-gray-800/50 border border-gray-700/60 rounded-xl px-4 py-3 text-sm text-gray-200">📣 {club.announcement}</div>
           )}

@@ -135,6 +135,9 @@ async def live_tournaments(db: AsyncSession, club_id: int) -> list[dict]:
             )).scalar() or 0
             seats_available = max(0, int(total_seats) - int(seated))
         tournaments.append({
+            # id: para pedir el sorteo de sillas (/tournaments/{id}/seating).
+            # Numérico y sin valor sin el token del club — no filtra nada.
+            "id": t.id,
             "name": t.name,
             "registered": registered,
             "active": active,
@@ -179,6 +182,53 @@ async def get_club_activity(public_token: str, db: AsyncSession = Depends(get_db
         "tournaments": tournaments,
         "scheduled": scheduled,
         "updated_at": datetime.utcnow().isoformat(),
+    }
+
+
+@router.get("/clubs/{public_token}/tournaments/{tournament_id}/seating")
+async def get_tournament_seating(public_token: str, tournament_id: int,
+                                 db: AsyncSession = Depends(get_db)):
+    """Sorteo de sillas del torneo, público tras el token del club: el jugador
+    llega, abre el link del grupo y ve su mesa/silla sin preguntar en caja.
+    Es la misma info que el staff pega en la TV: SOLO nombres y asientos —
+    jamás plata (buyins/rebuys/premios se quedan adentro)."""
+    club = await _get_club_by_token(db, public_token)
+    t = (await db.execute(
+        select(models.Tournament).where(
+            models.Tournament.id == tournament_id,
+            models.Tournament.club_id == club.id,
+            models.Tournament.status != "COMPLETED",
+        )
+    )).scalars().first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Torneo no encontrado")
+
+    rows = (await db.execute(
+        select(models.Player.name,
+               models.TournamentPlayer.seat_number,
+               models.TournamentTable.table_number)
+        .join(models.TournamentPlayer, models.TournamentPlayer.player_id == models.Player.id)
+        .outerjoin(models.TournamentTable, models.TournamentTable.id == models.TournamentPlayer.table_id)
+        .where(models.TournamentPlayer.tournament_id == t.id,
+               models.TournamentPlayer.status == "ACTIVE")
+    )).all()
+
+    tables: dict[int, list] = {}
+    waiting: list[str] = []
+    for name, seat, table_number in rows:
+        if table_number is not None and seat is not None:
+            tables.setdefault(int(table_number), []).append({"seat": int(seat), "name": name})
+        else:
+            # ACTIVE sin mesa/silla = lista de espera (criterio del nivelado FIFO)
+            waiting.append(name)
+
+    return {
+        "tournament_name": t.name,
+        "tables": [
+            {"table_number": num, "seats": sorted(seats, key=lambda s: s["seat"])}
+            for num, seats in sorted(tables.items())
+        ],
+        "waiting": sorted(waiting, key=str.casefold),
     }
 
 

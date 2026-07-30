@@ -280,7 +280,7 @@ async def club_info(
 ):
     """Razones de volver: anuncio del club + próximos torneos programados.
     Misma información que ya es pública en /c/{token} (incluido el buy-in)."""
-    await _my_player(db, user)
+    player = await _my_player(db, user)
     club = (await db.execute(
         select(models.Club).where(models.Club.id == user.club_id)
     )).scalars().first()
@@ -293,6 +293,28 @@ async def club_info(
         .order_by(models.Tournament.scheduled_start.asc())
         .limit(10)
     )).scalars().all()
+    # Mi silla en los torneos vivos: el jugador llega al club y su panel le dice
+    # dónde sentarse (mesa/silla) o que está en lista de espera. Solo LO SUYO.
+    live = await live_tournaments(db, user.club_id)
+    my_seats = []
+    if live:
+        seat_rows = (await db.execute(
+            select(models.TournamentPlayer.tournament_id,
+                   models.TournamentPlayer.seat_number,
+                   models.TournamentTable.table_number)
+            .outerjoin(models.TournamentTable,
+                       models.TournamentTable.id == models.TournamentPlayer.table_id)
+            .where(models.TournamentPlayer.tournament_id.in_([t["id"] for t in live]),
+                   models.TournamentPlayer.player_id == player.id,
+                   models.TournamentPlayer.status == "ACTIVE")
+        )).all()
+        my_seats = [
+            {"tournament_id": tid,
+             "table_number": int(tnum) if tnum is not None else None,
+             "seat_number": int(seat) if seat is not None else None}
+            for tid, seat, tnum in seat_rows
+        ]
+
     # La razón #1 para abrir el panel: ¿hay mesa AHORA? Misma info (y misma
     # función) que el link público /c/{token} — nada que no sea ya público.
     return {
@@ -300,7 +322,8 @@ async def club_info(
         "announcement": club.public_announcement,
         "jackpot": await services.club_jackpot_public(db, club),
         "open_tables": await open_cash_tables(db, user.club_id),
-        "live_tournaments": await live_tournaments(db, user.club_id),
+        "live_tournaments": live,
+        "my_seats": my_seats,
         "scheduled": [
             {"name": t.name,
              "scheduled_start": t.scheduled_start.isoformat() if t.scheduled_start else None,
