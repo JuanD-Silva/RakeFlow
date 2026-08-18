@@ -6,8 +6,9 @@ import Modal from './Modal';
 /**
  * Control de pago a dealers de UNA mesa (en la mesa activa). Por cada dealer que
  * pasó por la mesa: cuánto se le debe (horas + % del rake), cuánto se le pagó y
- * lo pendiente, con "Marcar pagado" ligado a esta mesa. El turno en curso se
- * estima con las horas (el % del rake se suma al cerrarlo).
+ * lo pendiente, con "Registrar pago" ligado a esta mesa (anota un pago hecho a
+ * mano — no paga nada solo). El turno en curso se estima con las horas + el
+ * rake declarado hasta ahora (botón Rake).
  *
  * Solo staff OWNER/MANAGER (el backend lo gatea; si un cajero lo llama, 403 y el
  * panel simplemente no aparece).
@@ -68,9 +69,11 @@ export default function SessionDealerPayments({ sessionId, refreshTrigger }) {
               </p>
             </div>
             {d.pending > 0 ? (
+              /* "Registrar pago" y no "Marcar pagado": el botón NO paga nada
+                 solo — abre el modal para anotar un pago que se hizo a mano. */
               <button onClick={() => setPaying(d)}
                 className="shrink-0 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold px-3 py-1.5 rounded-lg transition-colors active:scale-[0.98]">
-                Marcar pagado
+                Registrar pago
               </button>
             ) : d.overpaid > 0 ? (
               /* Se pagó contra el estimado y el cierre ajustó a la baja: que el
@@ -125,12 +128,20 @@ function PayModal({ dealer, sessionId, onClose, onDone }) {
   };
 
   return (
-    <Modal isOpen={true} onClose={onClose} title={`Pagar a ${dealer.name}`}>
+    <Modal isOpen={true} onClose={onClose} title={`Registrar pago a ${dealer.name}`}>
       <form onSubmit={submit} className="space-y-4">
+        {/* Desglose del pago: de dónde sale el número, no solo el total. */}
         <div className="bg-gray-900/50 border border-gray-700 rounded-lg p-3 text-xs text-gray-400 space-y-1">
-          <div className="flex justify-between"><span>A pagar en esta mesa:</span><span className="font-mono text-white">{formatMoney(dealer.club_payment)}</span></div>
+          <div className="flex justify-between"><span>Por horas ({dealer.hours}h):</span><span className="font-mono text-gray-200">{formatMoney(dealer.hour_payment)}</span></div>
+          <div className="flex justify-between"><span>% del rake:</span><span className="font-mono text-gray-200">{formatMoney(dealer.rake_commission)}</span></div>
+          <div className="flex justify-between font-bold border-t border-gray-700 pt-1 mt-1"><span>A pagar en esta mesa:</span><span className="font-mono text-white">{formatMoney(dealer.club_payment)}</span></div>
           <div className="flex justify-between"><span>Ya pagado:</span><span className="font-mono text-green-400">{formatMoney(dealer.paid)}</span></div>
           <div className="flex justify-between font-bold"><span>Pendiente:</span><span className="font-mono text-orange-400">{formatMoney(dealer.pending)}</span></div>
+          {dealer.tips > 0 && (
+            <p className="text-[10px] text-gray-500 pt-1">
+              Propinas de esta mesa: <span className="font-mono text-gray-300">{formatMoney(dealer.tips)}</span> — van aparte (salen de la caja al registrarlas), no suman acá.
+            </p>
+          )}
           {dealer.has_open_shift && (
             <p className="text-[10px] text-amber-400/80 pt-1">Turno en curso: el monto puede subir con el % del rake al cerrarlo.</p>
           )}
