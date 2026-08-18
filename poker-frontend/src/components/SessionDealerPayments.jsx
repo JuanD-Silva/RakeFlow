@@ -72,6 +72,10 @@ export default function SessionDealerPayments({ sessionId, refreshTrigger }) {
                 className="shrink-0 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold px-3 py-1.5 rounded-lg transition-colors active:scale-[0.98]">
                 Marcar pagado
               </button>
+            ) : d.overpaid > 0 ? (
+              /* Se pagó contra el estimado y el cierre ajustó a la baja: que el
+                 descuadre se VEA para cuadrar caja, no que desaparezca en un ✓. */
+              <span className="shrink-0 text-[10px] text-red-400 font-bold">⚠ Sobre-pagado {formatMoney(d.overpaid)}</span>
             ) : (
               <span className="shrink-0 text-[10px] text-green-500 font-bold">✓ Pagado</span>
             )}

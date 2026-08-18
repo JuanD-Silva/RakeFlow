@@ -17,9 +17,11 @@ function formatElapsed(minutes) {
 
 /**
  * Formulario de turnos de dealer (va dentro del Modal genérico).
- * mode: "start"  → solo selector de dealer (asignar a mesa sin dealer)
- *       "change" → rake contado del turno saliente + selector del entrante
- *       "end"    → solo rake contado (termina turno, mesa queda sin dealer)
+ * mode: "start"   → solo selector de dealer (asignar a mesa sin dealer)
+ *       "change"  → rake contado del turno saliente + selector del entrante
+ *       "end"     → solo rake contado (termina turno, mesa queda sin dealer)
+ *       "declare" → rake contado HASTA AHORA (total acumulado, NO cierra el
+ *                   turno) — mantiene el pago estimado del dealer al día
  */
 export default function DealerShiftForm({ mode, sessionId, currentShift, onSuccess }) {
   const [dealers, setDealers] = useState([]);
@@ -44,7 +46,16 @@ export default function DealerShiftForm({ mode, sessionId, currentShift, onSucce
 
   const wrapperRef = useRef(null);
   const needsDealer = mode === 'start' || mode === 'change';
-  const needsRake = mode === 'change' || mode === 'end';
+  const needsRake = mode === 'change' || mode === 'end' || mode === 'declare';
+
+  // El input de rake arranca desde lo YA declarado del turno (declare-rake):
+  // en "declare" es el total acumulado que se pisa; en change/end es el piso
+  // conocido del total final. Si nunca declararon, queda vacío como siempre.
+  useEffect(() => {
+    if (needsRake && currentShift?.declared_rake > 0) {
+      setDeclaredRake(String(Math.round(currentShift.declared_rake)));
+    }
+  }, [mode, currentShift]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (needsDealer) loadDealers();
@@ -138,6 +149,8 @@ export default function DealerShiftForm({ mode, sessionId, currentShift, onSucce
         await dealerService.startShift(sessionId, finalDealerId, force);
       } else if (mode === 'change') {
         await dealerService.changeShift(sessionId, finalDealerId, rake, force);
+      } else if (mode === 'declare') {
+        await dealerService.declareShiftRake(sessionId, rake);
       } else {
         await dealerService.endShift(sessionId, rake);
       }
@@ -159,6 +172,7 @@ export default function DealerShiftForm({ mode, sessionId, currentShift, onSucce
     start: { btn: "Iniciar Turno", color: "bg-amber-600 hover:bg-amber-500" },
     change: { btn: "Cambiar Dealer", color: "bg-amber-600 hover:bg-amber-500" },
     end: { btn: "Terminar Turno", color: "bg-gray-600 hover:bg-gray-500" },
+    declare: { btn: "Guardar rake", color: "bg-emerald-600 hover:bg-emerald-500" },
   };
 
   return (
@@ -201,9 +215,14 @@ export default function DealerShiftForm({ mode, sessionId, currentShift, onSucce
       {needsRake && currentShift && (
         <div className="space-y-2">
           <label className="text-gray-400 text-xs font-bold uppercase tracking-wider px-1">
-            Rake contado del turno de {currentShift.dealer_name}
+            {mode === 'declare' ? 'Rake contado hasta ahora — turno de ' : 'Rake contado del turno de '}{currentShift.dealer_name}
             <span className="text-gray-600 normal-case font-normal"> · {formatElapsed(currentShift.elapsed_minutes)} en mesa</span>
           </label>
+          {mode === 'declare' && (
+            <p className="text-[11px] text-gray-500 px-1">
+              Es el total del turno hasta este momento (pisa lo declarado antes). Con esto el pago estimado del dealer incluye su % del rake al instante.
+            </p>
+          )}
           <div className="relative">
             <CurrencyDollarIcon className="absolute left-4 top-4 w-5 h-5 text-gray-500" />
             <input

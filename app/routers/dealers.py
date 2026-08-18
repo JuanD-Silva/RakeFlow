@@ -1116,8 +1116,9 @@ async def session_dealer_payments(
     """Pago por-dealer de UNA mesa (control en la mesa activa). Por cada dealer
     que pasó por la mesa: devengado (Σ turnos: horas × tarifa + % del rake),
     pagado (Σ payouts ligados a ESTA mesa) y pendiente. El turno ABIERTO se
-    estima con horas exactas + %rake 0 (el rake del turno se cuenta al cerrar) —
-    igual que la barra en vivo del DealerPanel. OWNER/MANAGER."""
+    estima con horas exactas + el rake declarado HASTA AHORA vía declare-rake
+    (si no han declarado nada, rake 0 hasta el cierre) — igual que la barra en
+    vivo del DealerPanel. OWNER/MANAGER."""
     session = (await db.execute(
         select(models.Session).where(
             models.Session.id == session_id,
@@ -1180,6 +1181,10 @@ async def session_dealer_payments(
             "hours": round(d["hours"], 2),
             "paid": round(paid),
             "pending": max(0, round(d["club_payment"] - paid)),
+            # Sobre-pago visible (no clampearlo en silencio): pagar contra el
+            # estimado en vivo y que el cierre ajuste el rake a la baja deja
+            # paid > club_payment — el staff debe verlo para cuadrar caja.
+            "overpaid": max(0, round(paid - d["club_payment"])),
         })
     dealers.sort(key=lambda x: (x["name"] or "").lower())
 
@@ -1329,6 +1334,51 @@ async def end_shift(
     await db.commit()
 
     # Nombre del dealer para el response
+    result = await db.execute(
+        select(models.Dealer.name).where(
+            models.Dealer.id == current_shift.dealer_id,
+            models.Dealer.club_id == current_club.id,
+        )
+    )
+    dealer_name = result.scalar() or ""
+    return _shift_to_dict(current_shift, dealer_name)
+
+
+@shifts_router.post("/{session_id}/dealer-shifts/declare-rake")
+async def declare_shift_rake(
+    session_id: int,
+    data: schemas.DealerShiftDeclareRake,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+):
+    """Actualiza el rake declarado HASTA AHORA del turno ABIERTO, sin cerrarlo.
+    Es el TOTAL acumulado del turno (no un incremento): cada declaración PISA la
+    anterior — el registro de cada corte queda en la auditoría. Con esto el pago
+    estimado del dealer (barra en vivo, control por-dealer y su propia vista)
+    incluye su % del rake en todo momento, no solo al cerrar. El cierre del
+    turno (change/end) o de la sesión declara el total definitivo y lo pisa."""
+    await _get_open_session(db, session_id, current_club.id)
+
+    current_shift = await _get_open_shift(db, session_id, current_club.id, for_update=True)
+    if not current_shift:
+        raise HTTPException(status_code=409, detail="No hay un dealer asignado en esta mesa.")
+
+    previous = current_shift.declared_rake
+    current_shift.declared_rake = float(data.declared_rake)
+
+    await log_action(
+        db, request=request, club=current_club,
+        action=AuditAction.DEALER_SHIFT_DECLARE, entity_type="DealerShift", entity_id=current_shift.id,
+        meta={
+            "session_id": session_id,
+            "dealer_id": current_shift.dealer_id,
+            "declared_rake": float(data.declared_rake),
+            "previous_declared": previous,
+        },
+    )
+    await db.commit()
+
     result = await db.execute(
         select(models.Dealer.name).where(
             models.Dealer.id == current_shift.dealer_id,
