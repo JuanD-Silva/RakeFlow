@@ -516,6 +516,8 @@ export const dealerService = {
         const res = await api.post(`/sessions/${sessionId}/dealer-shifts/end`, { declared_rake: declaredRake });
         return res.data;
     },
+    getShiftDeclares: async (sessionId) =>
+        (await api.get(`/sessions/${sessionId}/dealer-shifts/declares`)).data,
     declareShiftRake: async (sessionId, declaredRake) => {
         // Rake declarado HASTA AHORA del turno abierto (total acumulado, no cierra)
         const res = await api.post(`/sessions/${sessionId}/dealer-shifts/declare-rake`, { declared_rake: declaredRake });

@@ -159,6 +159,21 @@ def main():
             da = {x["name"]: x for x in r.json()["dealers"]}[f"{TAG}Ana"]
             check(da["rake_commission"] == 7500, f"comisión = 5% de 150k = 7500, NO 12500 (got {da['rake_commission']})")
 
+            step("3b", "Cortes del turno: historial de declaraciones desde la auditoría")
+            r = c.get(f"{BASE}/sessions/{sess}/dealer-shifts/declares", headers=auth1)
+            check(r.status_code == 200, f"declares → 200 (got {r.status_code}: {r.text[:100]})")
+            ds = r.json()["declares"]
+            check(len(ds) == 2, f"2 cortes registrados (got {len(ds)})")
+            check(ds[0]["declared_rake"] == 100000 and ds[1]["declared_rake"] == 150000,
+                  f"orden cronológico 100k→150k (got {[d['declared_rake'] for d in ds]})")
+            check(ds[1]["previous_declared"] == 100000, f"el corte 2 recuerda el anterior (got {ds[1]['previous_declared']})")
+            check(all(d["at"] and d["at"].endswith("+00:00") for d in ds), "timestamps con offset UTC")
+            # Tenant: mesa de otro club → 404 también acá
+            psql(f"INSERT INTO sessions (club_id, name, start_time, status) VALUES ({c2}, '{TAG}ajena2', now(), 'OPEN');")
+            s2 = int(psql(f"SELECT id FROM sessions WHERE club_id={c2} AND name='{TAG}ajena2';"))
+            r = c.get(f"{BASE}/sessions/{s2}/dealer-shifts/declares", headers=auth1)
+            check(r.status_code == 404, f"declares de mesa ajena → 404 (got {r.status_code})")
+
             step(4, "Cerrar el turno con total final 200k → definitivo")
             r = c.post(f"{BASE}/sessions/{sess}/dealer-shifts/end", headers=auth1, json={"declared_rake": 200000})
             check(r.status_code == 200, f"end → 200 (got {r.status_code})")
@@ -196,6 +211,9 @@ def main():
                  f"VALUES ({c1}, {sess}, {dealer}, now(), 10000, 5);")
             r = c.post(f"{BASE}/sessions/{sess}/dealer-shifts/declare-rake", headers=auth1, json={"declared_rake": -1})
             check(r.status_code == 422, f"rake negativo → 422 (got {r.status_code})")
+
+            r = c.get(f"{BASE}/sessions/{sess}/dealer-shifts/declares", headers=auth1)
+            check(r.status_code == 200 and r.json()["declares"] == [], "turno nuevo sin cortes → []")
 
             step(6, "Tenant: mesa de otro club → 404")
             psql(f"INSERT INTO sessions (club_id, name, start_time, status) VALUES ({c2}, '{TAG}ajena', now(), 'OPEN');")
