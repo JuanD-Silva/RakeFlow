@@ -550,9 +550,11 @@ async def auto_seat_players(
     db: AsyncSession = Depends(get_db),
     current_club: models.Club = Depends(get_current_club),
 ):
-    """Sienta a los que esperan, fill-first, SOLO en mesas ya en uso (una reserva
-    vacía se abre con "Nivelar" cuando hay ≥2 esperando, no acá). Los que no caben
-    siguen en espera."""
+    """Sienta a los que esperan, fill-first. Si las mesas en uso se llenan y
+    quedan ≥2 por sentar, ABRE la siguiente reserva vacía y sigue (misma regla
+    del club que "Nivelar": una mesa nueva jamás se estrena por UN solo jugador
+    — ese queda en espera). Antes las reservas solo las abría "Nivelar" y el
+    auto-sentar del arranque llenaba UNA mesa y cortaba con 20 esperando."""
     await _get_owned_tournament(db, tournament_id, current_club.id)
     tables = (await db.execute(
         select(models.TournamentTable)
@@ -572,14 +574,21 @@ async def auto_seat_players(
     counts = await _active_counts_by_table(db, tournament_id)
     used_by_table = {t.id: await _used_seats(db, t.id) for t in tables}
     seated_n = 0
-    for tp in unseated:
+    for idx, tp in enumerate(unseated):
         in_use = [t for t in tables if counts.get(t.id, 0) > 0]
         if in_use:
             best = next((t for t in in_use if counts.get(t.id, 0) < t.max_seats), None)
         else:
             best = tables[0]  # arranque: nadie sentado aún
         if best is None:
-            break  # mesas en uso llenas: el resto queda en espera (Nivelar abre reserva)
+            # Mesas en uso llenas. Si quedan ≥2 por sentar, se abre la siguiente
+            # reserva (fill-first continúa ahí); por UN solo jugador no se abre
+            # mesa — queda en espera, igual que en el nivelado.
+            remaining = len(unseated) - idx
+            reserve = next((t for t in tables if counts.get(t.id, 0) == 0), None)
+            if reserve is None or remaining < 2:
+                break
+            best = reserve
         seat = _lowest_free_seat(used_by_table[best.id], best.max_seats)
         tp.table_id = best.id
         tp.seat_number = seat
