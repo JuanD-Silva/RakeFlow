@@ -516,6 +516,11 @@ export const dealerService = {
         const res = await api.post(`/sessions/${sessionId}/dealer-shifts/end`, { declared_rake: declaredRake });
         return res.data;
     },
+    declareShiftRake: async (sessionId, declaredRake) => {
+        // Rake declarado HASTA AHORA del turno abierto (total acumulado, no cierra)
+        const res = await api.post(`/sessions/${sessionId}/dealer-shifts/declare-rake`, { declared_rake: declaredRake });
+        return res.data;
+    },
     // Liquidación: registrar un pago a un dealer (ledger de caja, no toca finanzas)
     createPayout: async (dealerId, { amount, method = null, note = null, period_start = null, period_end = null, session_id = null }) => {
         const res = await api.post(`/dealers/${dealerId}/payouts`, { amount, method, note, period_start, period_end, session_id });

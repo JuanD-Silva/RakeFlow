@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import Modal from './Modal';
 import DealerShiftForm from './DealerShiftForm';
 import SessionDealerPayments from './SessionDealerPayments';
-import { ClockIcon, ArrowsRightLeftIcon, PauseIcon, LinkIcon, CheckIcon, ClipboardDocumentIcon } from '@heroicons/react/24/outline';
+import { ClockIcon, ArrowsRightLeftIcon, PauseIcon, LinkIcon, CheckIcon, ClipboardDocumentIcon, BanknotesIcon } from '@heroicons/react/24/outline';
 
 function formatElapsed(minutes) {
   const h = Math.floor(minutes / 60);
@@ -86,13 +86,26 @@ export default function DealerPanel({ sessionId, publicToken, refreshTrigger }) 
                 {openShift.hourly_rate_cop > 0 && (
                   <span className="text-emerald-400/90">
                     · ~${Math.round((localMinutes / 60) * openShift.hourly_rate_cop).toLocaleString('es-CO')} hrs
-                    {openShift.rake_pct > 0 && <span className="text-gray-500"> + {openShift.rake_pct}% rake</span>}
+                    {openShift.rake_pct > 0 && (openShift.declared_rake > 0
+                      ? <span className="text-emerald-400/90"> + ${Math.round(openShift.declared_rake * openShift.rake_pct / 100).toLocaleString('es-CO')} rake</span>
+                      : <span className="text-gray-500"> + {openShift.rake_pct}% rake</span>)}
                   </span>
+                )}
+                {openShift.declared_rake > 0 && (
+                  <span className="text-gray-500">· rake declarado ${Math.round(openShift.declared_rake).toLocaleString('es-CO')}</span>
                 )}
               </p>
             </div>
           </div>
           <div className="flex gap-2">
+            {/* Declarar rake del turno EN CURSO (no cierra): mantiene al día el
+                estimado de pago del dealer sin esperar al cambio de turno. */}
+            <button
+              onClick={() => setModalMode("declare")}
+              className="flex-1 md:flex-none bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2.5 rounded-lg transition-all active:scale-[0.98] flex items-center justify-center gap-1.5"
+            >
+              <BanknotesIcon className="w-4 h-4" /> Rake
+            </button>
             <button
               onClick={() => setModalMode("change")}
               className="flex-1 md:flex-none bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold px-4 py-2.5 rounded-lg transition-all active:scale-[0.98] flex items-center justify-center gap-1.5"
@@ -172,7 +185,8 @@ export default function DealerPanel({ sessionId, publicToken, refreshTrigger }) 
         onClose={() => setModalMode(null)}
         title={
           modalMode === "start" ? "Asignar Dealer" :
-          modalMode === "change" ? "Cambio de Dealer" : "Terminar Turno"
+          modalMode === "change" ? "Cambio de Dealer" :
+          modalMode === "declare" ? "Declarar rake del turno" : "Terminar Turno"
         }
       >
         {modalMode && (

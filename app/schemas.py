@@ -167,6 +167,10 @@ class DealerShiftChange(BaseModel):
 class DealerShiftEnd(BaseModel):
     declared_rake: float = Field(..., ge=0)
 
+class DealerShiftDeclareRake(BaseModel):
+    # Rake declarado HASTA AHORA del turno abierto (total acumulado, no incremento)
+    declared_rake: float = Field(..., ge=0)
+
 class DealerShiftResponse(BaseModel):
     # Construido a mano en el router (lleva joins y campos calculados)
     id: int
