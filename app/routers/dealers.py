@@ -1173,6 +1173,20 @@ async def session_dealer_payments(
     )).all()
     paid_map = {did: float(total or 0) for did, total in pay_rows}
 
+    # Propinas del dealer en ESTA mesa (informativas: NO suman al 'a pagar' —
+    # la propina sale de la caja al registrarla, igual que en el cierre).
+    tip_rows = (await db.execute(
+        select(models.Transaction.dealer_id,
+               func.coalesce(func.sum(models.Transaction.amount), 0.0))
+        .where(
+            models.Transaction.session_id == session_id,
+            models.Transaction.dealer_id.is_not(None),
+            models.Transaction.type == models.TransactionType.TIP,
+        )
+        .group_by(models.Transaction.dealer_id)
+    )).all()
+    tips_map = {did: float(t or 0) for did, t in tip_rows}
+
     dealers = []
     for did, d in per.items():
         paid = paid_map.get(did, 0.0)
@@ -1185,6 +1199,7 @@ async def session_dealer_payments(
             # estimado en vivo y que el cierre ajuste el rake a la baja deja
             # paid > club_payment — el staff debe verlo para cuadrar caja.
             "overpaid": max(0, round(paid - d["club_payment"])),
+            "tips": round(tips_map.get(did, 0.0)),
         })
     dealers.sort(key=lambda x: (x["name"] or "").lower())
 

@@ -95,6 +95,7 @@ def jwt_for(uid, club):
 
 def cleanup(*clubs):
     ids = ",".join(str(c) for c in clubs)
+    psql(f"DELETE FROM transactions WHERE dealer_id IN (SELECT id FROM dealers WHERE club_id IN ({ids}) AND name LIKE '{TAG}%');")
     psql(f"DELETE FROM dealer_payouts WHERE club_id IN ({ids});")
     psql(f"DELETE FROM dealer_shifts WHERE club_id IN ({ids});")
     psql(f"DELETE FROM dealers WHERE club_id IN ({ids}) AND name LIKE '{TAG}%';")
@@ -175,6 +176,18 @@ def main():
             da = {x["name"]: x for x in r.json()["dealers"]}[f"{TAG}Ana"]
             check(da["pending"] == 0 and da["overpaid"] == 30000,
                   f"overpaid=30000 expuesto, pending 0 (got pending={da['pending']}, overpaid={da['overpaid']})")
+
+            step("4c", "Desglose: propinas de la mesa expuestas (informativas)")
+            check("hour_payment" in da, f"hour_payment presente (got {da.get('hour_payment')})")
+            check(da["rake_commission"] == 10000, f"rake_commission presente (got {da.get('rake_commission')})")
+            check(da.get("tips") == 0, f"sin propinas aun (got {da.get('tips')})")
+            psql(f"INSERT INTO transactions (session_id, dealer_id, type, amount, timestamp) "
+                 f"VALUES ({sess}, {dealer}, 'TIP', 12000, now());")
+            r = c.get(f"{BASE}/sessions/{sess}/dealer-payments", headers=auth1)
+            da = {x["name"]: x for x in r.json()["dealers"]}[f"{TAG}Ana"]
+            check(da["tips"] == 12000, f"tips=12000 expuesto (got {da['tips']})")
+            check(da["club_payment"] == da["hour_payment"] + da["rake_commission"],
+                  f"la propina NO suma al a-pagar (got club_payment={da['club_payment']})")
 
             step(5, "Guardas: sin turno abierto 409, negativo 422")
             r = c.post(f"{BASE}/sessions/{sess}/dealer-shifts/declare-rake", headers=auth1, json={"declared_rake": 50000})
