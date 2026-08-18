@@ -26,7 +26,15 @@ function formatElapsed(minutes) {
 export default function DealerShiftForm({ mode, sessionId, currentShift, onSuccess }) {
   const [dealers, setDealers] = useState([]);
   const [dealerId, setDealerId] = useState("");
-  const [declaredRake, setDeclaredRake] = useState("");
+  // Prefill UNA sola vez al montar (initializer, no effect): el padre refresca
+  // currentShift cada 15s y un effect dependiente PISARÍA lo que el usuario está
+  // escribiendo en el modal (misma clase de bug que el parpadeo del #90). El
+  // valor inicial es lo YA declarado del turno: en "declare" el total acumulado
+  // que se pisa; en change/end el piso conocido del total final.
+  const [declaredRake, setDeclaredRake] = useState(() =>
+    (mode === 'change' || mode === 'end' || mode === 'declare') && currentShift?.declared_rake > 0
+      ? String(Math.round(currentShift.declared_rake))
+      : "");
 
   // Buscador
   const [searchTerm, setSearchTerm] = useState("");
@@ -48,14 +56,6 @@ export default function DealerShiftForm({ mode, sessionId, currentShift, onSucce
   const needsDealer = mode === 'start' || mode === 'change';
   const needsRake = mode === 'change' || mode === 'end' || mode === 'declare';
 
-  // El input de rake arranca desde lo YA declarado del turno (declare-rake):
-  // en "declare" es el total acumulado que se pisa; en change/end es el piso
-  // conocido del total final. Si nunca declararon, queda vacío como siempre.
-  useEffect(() => {
-    if (needsRake && currentShift?.declared_rake > 0) {
-      setDeclaredRake(String(Math.round(currentShift.declared_rake)));
-    }
-  }, [mode, currentShift]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (needsDealer) loadDealers();
