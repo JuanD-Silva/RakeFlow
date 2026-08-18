@@ -1181,6 +1181,10 @@ async def session_dealer_payments(
             "hours": round(d["hours"], 2),
             "paid": round(paid),
             "pending": max(0, round(d["club_payment"] - paid)),
+            # Sobre-pago visible (no clampearlo en silencio): pagar contra el
+            # estimado en vivo y que el cierre ajuste el rake a la baja deja
+            # paid > club_payment — el staff debe verlo para cuadrar caja.
+            "overpaid": max(0, round(paid - d["club_payment"])),
         })
     dealers.sort(key=lambda x: (x["name"] or "").lower())
 

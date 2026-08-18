@@ -165,6 +165,16 @@ def main():
             da = {x["name"]: x for x in r.json()["dealers"]}[f"{TAG}Ana"]
             check(da["rake_commission"] == 10000, f"comisión final = 5% de 200k (got {da['rake_commission']})")
             check(da["has_open_shift"] is False, "turno cerrado")
+            check(da["overpaid"] == 0, f"sin sobre-pago (got {da.get('overpaid')})")
+
+            step("4b", "Sobre-pago VISIBLE: pagar más que el devengado no se esconde")
+            r = c.post(f"{BASE}/dealers/{dealer}/payouts", headers=auth1,
+                       json={"amount": da["club_payment"] + 30000, "method": "cash", "session_id": sess})
+            check(r.status_code == 201, f"payout mayor al devengado → 201 (got {r.status_code})")
+            r = c.get(f"{BASE}/sessions/{sess}/dealer-payments", headers=auth1)
+            da = {x["name"]: x for x in r.json()["dealers"]}[f"{TAG}Ana"]
+            check(da["pending"] == 0 and da["overpaid"] == 30000,
+                  f"overpaid=30000 expuesto, pending 0 (got pending={da['pending']}, overpaid={da['overpaid']})")
 
             step(5, "Guardas: sin turno abierto 409, negativo 422")
             r = c.post(f"{BASE}/sessions/{sess}/dealer-shifts/declare-rake", headers=auth1, json={"declared_rake": 50000})
