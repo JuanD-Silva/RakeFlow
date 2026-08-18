@@ -51,10 +51,29 @@ export default function DealerShiftForm({ mode, sessionId, currentShift, onSucce
   const [loadingDealers, setLoadingDealers] = useState(true);
   const [error, setError] = useState(null);
   const [forceConfirm, setForceConfirm] = useState(null); // detail del 409 dealer en otra mesa
+  // Cortes de rake ya declarados en este turno (solo modo declare): el ritmo
+  // del rake por tramo, leído de la auditoría. null = cargando/no aplica.
+  const [declares, setDeclares] = useState(null);
 
   const wrapperRef = useRef(null);
   const needsDealer = mode === 'start' || mode === 'change';
   const needsRake = mode === 'change' || mode === 'end' || mode === 'declare';
+
+  // Cortes del turno (solo en declare): una carga al abrir el modal, sin poll —
+  // la lista solo cambia cuando el propio usuario guarda un corte nuevo.
+  useEffect(() => {
+    if (mode !== 'declare') return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const d = await dealerService.getShiftDeclares(sessionId);
+        if (!cancelled) setDeclares(d.declares || []);
+      } catch {
+        if (!cancelled) setDeclares([]);  // sin historial no se bloquea el modal
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [mode, sessionId]);
 
 
   useEffect(() => {
@@ -222,6 +241,28 @@ export default function DealerShiftForm({ mode, sessionId, currentShift, onSucce
             <p className="text-[11px] text-gray-500 px-1">
               Es el total del turno hasta este momento (pisa lo declarado antes). Con esto el pago estimado del dealer incluye su % del rake al instante.
             </p>
+          )}
+          {/* Ritmo del rake: cortes ya declarados en este turno (hora → total,
+              con el delta del tramo). El staff ve cuánto generó cada tramo. */}
+          {mode === 'declare' && declares && declares.length > 0 && (
+            <div className="bg-gray-800/40 border border-gray-700/60 rounded-xl px-3 py-2 space-y-1">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Cortes de este turno</p>
+              {declares.map((c, i) => {
+                const prev = Number(c.previous_declared) || 0;
+                const delta = Number(c.declared_rake) - prev;
+                return (
+                  <div key={i} className="flex items-center justify-between text-xs font-mono">
+                    <span className="text-gray-500">
+                      {c.at ? new Date(c.at).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }) : '—'}
+                    </span>
+                    <span className="text-gray-300">
+                      ${Math.round(c.declared_rake ?? 0).toLocaleString('es-CO')}
+                      {delta > 0 && prev > 0 && <span className="text-emerald-400/80"> (+{Math.round(delta).toLocaleString('es-CO')})</span>}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
           )}
           <div className="relative">
             <CurrencyDollarIcon className="absolute left-4 top-4 w-5 h-5 text-gray-500" />

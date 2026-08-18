@@ -1359,6 +1359,39 @@ async def end_shift(
     return _shift_to_dict(current_shift, dealer_name)
 
 
+@shifts_router.get("/{session_id}/dealer-shifts/declares")
+async def list_shift_declares(
+    session_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+):
+    """Cortes de rake del turno ABIERTO de esta mesa: cada declaración hecha con
+    declare-rake (hora + total declarado + valor anterior), leída de la
+    auditoría. Para que el cajero vea el ritmo del rake por tramo. [] si la
+    mesa no tiene turno abierto o aún no declararon."""
+    await _get_open_session(db, session_id, current_club.id)
+    shift = await _get_open_shift(db, session_id, current_club.id)
+    if not shift:
+        return {"declares": []}
+    rows = (await db.execute(
+        select(models.AuditLog)
+        .where(
+            models.AuditLog.club_id == current_club.id,
+            models.AuditLog.action == AuditAction.DEALER_SHIFT_DECLARE,
+            models.AuditLog.entity_type == "DealerShift",
+            models.AuditLog.entity_id == shift.id,
+        )
+        .order_by(models.AuditLog.created_at)
+    )).scalars().all()
+    return {"declares": [
+        {
+            "at": dealer_view.utc_iso(r.created_at),
+            "declared_rake": (r.meta or {}).get("declared_rake"),
+            "previous_declared": (r.meta or {}).get("previous_declared"),
+        } for r in rows
+    ]}
+
+
 @shifts_router.post("/{session_id}/dealer-shifts/declare-rake")
 async def declare_shift_rake(
     session_id: int,
