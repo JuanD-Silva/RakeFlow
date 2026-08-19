@@ -63,7 +63,15 @@ export default function GameControl() {
   const [liveTournaments, setLiveTournaments] = useState([]);
   const [currentTournamentId, setCurrentTournamentId] = useState(null);
   const currentTournamentIdRef = useRef(null);
-  const selectTournament = (id) => { currentTournamentIdRef.current = id; setCurrentTournamentId(id); };
+  // Secuencia de polls: una mutación optimista (abrir/crear torneo, mesa nueva)
+  // la incrementa para DESCARTAR respuestas de polls que ya estaban en vuelo —
+  // si no, un poll viejo borra el append optimista y rebota al menú.
+  const reqSeqRef = useRef(0);
+  const selectTournament = (id) => {
+    reqSeqRef.current++;
+    currentTournamentIdRef.current = id;
+    setCurrentTournamentId(id);
+  };
   const [scheduledTournaments, setScheduledTournaments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -99,11 +107,15 @@ export default function GameControl() {
 useEffect(() => {
     const checkSystemState = async () => {
       try {
+        const myReq = ++reqSeqRef.current;
         const [openTables, liveTs, scheduled] = await Promise.all([
             sessionService.findOpenSessions(),
             tournamentService.findLive(),
             tournamentService.getScheduled()
         ]);
+        // Respuesta vieja (hubo una mutación optimista o un poll más nuevo
+        // mientras esperábamos): descartarla entera.
+        if (myReq !== reqSeqRef.current) return;
 
         setTables(openTables);
         setLiveTournaments(liveTs);
@@ -268,8 +280,10 @@ const handleCreateTournament = async (formData) => {
     setIsModalOpen(false);
     setPendingSessionOpen(false);
     setPendingTableName(null);
-    // Si fue apertura de mesa nueva, entrar a esa mesa directamente
+    // Si fue apertura de mesa nueva, entrar a esa mesa directamente (y
+    // descartar polls en vuelo que aún no conocen la mesa recién creada)
     if (info && info.newSessionId) {
+      reqSeqRef.current++;
       setCurrentTableId(info.newSessionId);
       setViewMode("cash");
     }
@@ -322,6 +336,9 @@ const handleCreateTournament = async (formData) => {
   };
 
   const confirmEndTournament = async () => {
+    // Otro staff pudo terminar este torneo con el modal abierto (el polling
+    // sigue vivo y lo deselecciona): sin esta guarda, TypeError.
+    if (!activeTournament) { setShowEndTournamentModal(false); return; }
     setIsLoading(true);
     try {
       await tournamentService.endTournament(activeTournament.id);
