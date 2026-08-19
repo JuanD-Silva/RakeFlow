@@ -168,6 +168,10 @@ async def _build_players_stats(db: AsyncSession, session: models.Session) -> dic
         JOIN transactions t ON p.id = t.player_id
         WHERE t.session_id = :sid
         GROUP BY p.id, p.name, p.phone
+        -- Orden ESTABLE por llegada (primer buy-in): sin ORDER BY, Postgres
+        -- devolvía orden arbitrario que cambiaba con cada UPDATE y la tabla
+        -- "bailaba" en la UI tras cada cashout/recompra.
+        ORDER BY MIN(t.timestamp), p.id
     """)
     
     result = await db.execute(sql, {"sid": session.id})
