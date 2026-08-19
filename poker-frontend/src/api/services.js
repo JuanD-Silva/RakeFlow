@@ -339,6 +339,16 @@ export const tournamentService = {
       return null;
     }
   },
+  // Torneos en juego (multi-torneo: puede haber varios). Fallback al endpoint
+  // viejo si el backend aún no expone /live (carrera de deploys Vercel/Railway).
+  findLive: async () => {
+    try {
+      return (await api.get('/tournaments/live')).data || [];
+    } catch {
+      const one = await tournamentService.findActive();
+      return one ? [one] : [];
+    }
+  },
   registerPlayer: async (tournamentId, data) => {
      // data: { player_id: 1, pay_buyin: true, pay_tip: true }
      const response = await api.post(`/tournaments/${tournamentId}/register`, data);

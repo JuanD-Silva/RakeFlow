@@ -56,6 +56,10 @@ export default function GameControl() {
   const [currentTableId, setCurrentTableId] = useState(null);
   const activeSession = tables.find(t => t.id === currentTableId) || null;
 
+  // Multi-torneo: lista de torneos en juego + el seleccionado (mismo patrón
+  // que las mesas cash). activeTournament = objeto del torneo seleccionado.
+  const [liveTournaments, setLiveTournaments] = useState([]);
+  const [currentTournamentId, setCurrentTournamentId] = useState(null);
   const [activeTournament, setActiveTournament] = useState(null);
   const [scheduledTournaments, setScheduledTournaments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -92,23 +96,27 @@ export default function GameControl() {
 useEffect(() => {
     const checkSystemState = async () => {
       try {
-        const [openTables, tournament, scheduled] = await Promise.all([
+        const [openTables, liveTs, scheduled] = await Promise.all([
             sessionService.findOpenSessions(),
-            tournamentService.findActive(),
+            tournamentService.findLive(),
             tournamentService.getScheduled()
         ]);
 
         setTables(openTables);
-        setActiveTournament(tournament);
+        setLiveTournaments(liveTs);
         setScheduledTournaments(scheduled || []);
 
-        // En el primer load: decidir vista por defecto y mesa actual
+        // En el primer load: decidir vista por defecto y mesa/torneo actual
         if (isFirstLoad.current) {
             isFirstLoad.current = false;
-            if (openTables.length > 0 && tournament) {
+            if (openTables.length > 0 && liveTs.length > 0) {
                 setViewMode("menu");
-            } else if (tournament) {
+            } else if (liveTs.length === 1) {
+                setCurrentTournamentId(liveTs[0].id);
+                setActiveTournament(liveTs[0]);
                 setViewMode("tournament");
+            } else if (liveTs.length > 1) {
+                setViewMode("menu");
             } else if (openTables.length === 1) {
                 setCurrentTableId(openTables[0].id);
                 setViewMode("cash");
@@ -118,7 +126,15 @@ useEffect(() => {
                 setViewMode("menu");
             }
         } else {
-            // Refresh posterior: si la mesa actual ya no esta abierta, ir a menu
+            // Refresh posterior: refrescar el objeto del torneo seleccionado; si
+            // ya no está en juego (lo terminaron), deseleccionar y volver a menú.
+            const selected = liveTs.find(t => t.id === currentTournamentId) || null;
+            setActiveTournament(selected);
+            if (currentTournamentId && !selected) {
+                setCurrentTournamentId(null);
+                setViewMode((v) => (v === "tournament" ? "menu" : v));
+            }
+            // Si la mesa cash actual ya no esta abierta, ir a menu
             if (currentTableId && !openTables.some(t => t.id === currentTableId)) {
                 setCurrentTableId(null);
                 if (openTables.length === 0) setViewMode("menu");
@@ -184,6 +200,12 @@ useEffect(() => {
     setViewMode("cash");
   };
 
+  const handleSwitchTournament = (tournamentId) => {
+    setCurrentTournamentId(tournamentId);
+    setActiveTournament(liveTournaments.find(t => t.id === tournamentId) || null);
+    setViewMode("tournament");
+  };
+
   // 3. INICIAR TORNEO
 const handleCreateTournament = async (formData) => {
       try {
@@ -196,6 +218,8 @@ const handleCreateTournament = async (formData) => {
               setScheduledTournaments((prev) => [...prev, newTournament]);
           } else {
               // 2b. En juego: entrar directo al panel de control
+              setLiveTournaments((prev) => [...prev, newTournament]);
+              setCurrentTournamentId(newTournament.id);
               setActiveTournament(newTournament);
               setViewMode("tournament");
           }
@@ -212,6 +236,8 @@ const handleCreateTournament = async (formData) => {
       try {
           const opened = await tournamentService.openScheduled(id);
           setScheduledTournaments((prev) => prev.filter((t) => t.id !== id));
+          setLiveTournaments((prev) => [...prev, opened]);
+          setCurrentTournamentId(opened.id);
           setActiveTournament(opened);
           setViewMode("tournament");
       } catch (error) {
@@ -297,6 +323,8 @@ const handleCreateTournament = async (formData) => {
     setIsLoading(true);
     try {
       await tournamentService.endTournament(activeTournament.id);
+      setLiveTournaments((prev) => prev.filter((t) => t.id !== activeTournament.id));
+      setCurrentTournamentId(null);
       setActiveTournament(null);
       setViewMode("menu");  // volver al dashboard principal, no a la mesa cash
       setShowEndTournamentModal(false);
@@ -315,6 +343,35 @@ const handleCreateTournament = async (formData) => {
   return (
   <div className="max-w-4xl mx-auto p-4">
       {isLoading && <GlobalLoader />}
+
+      {/* STRIP DE TORNEOS (multi-torneo, solo en torneo con >= 2 en juego) */}
+      {viewMode === "tournament" && liveTournaments.length >= 2 && (
+        <div className="mb-4 flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
+          {liveTournaments.map(t => {
+            const isActive = t.id === currentTournamentId;
+            return (
+              <button
+                key={t.id}
+                onClick={() => handleSwitchTournament(t.id)}
+                className={`shrink-0 px-4 py-2 rounded-lg font-bold border transition-all text-left ${
+                  isActive
+                    ? 'bg-violet-600 text-white border-violet-500 shadow-lg shadow-violet-900/30'
+                    : 'bg-gray-800 text-gray-300 border-gray-700 hover:bg-gray-700 hover:border-gray-600'
+                }`}
+              >
+                <div className="flex items-center gap-2 text-sm uppercase tracking-wider">
+                  <TrophyIcon className="w-4 h-4 shrink-0" />
+                  <span>{t.name}</span>
+                </div>
+                <div className={`flex items-center gap-2 text-[10px] font-mono mt-1 ${isActive ? 'text-violet-100' : 'text-gray-500'}`}>
+                  <span>{t.players?.length ?? 0} jug</span>
+                  <span>· {t.status === 'RUNNING' ? 'en juego' : 'inscribiendo'}</span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* STRIP DE MESAS (multi-mesa, solo en cash con >= 2 mesas) */}
       {viewMode === "cash" && tables.length >= 2 && (
@@ -626,35 +683,42 @@ const handleCreateTournament = async (formData) => {
                  </button>
                )}
 
-               {/* Opción TORNEO */}
-{activeTournament ? (
-                   // CASO A: YA HAY TORNEO -> Botón "CONTINUAR"
+               {/* Opción TORNEO (multi-torneo: un botón "Continuar" por torneo en juego) */}
+               {liveTournaments.map((t) => (
                    <button
-                     onClick={() => setViewMode("tournament")}
+                     key={t.id}
+                     onClick={() => handleSwitchTournament(t.id)}
                      className="group relative overflow-hidden w-full bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white font-bold text-lg py-4 px-8 rounded-xl shadow-[0_0_20px_rgba(124,58,237,0.4)] border-b-4 border-violet-900 active:border-b-0 active:translate-y-1 transition-all duration-150 flex items-center justify-between gap-4 uppercase tracking-wider animate-pulse-slow"
                    >
-                     <div className="flex items-center gap-4">
+                     <div className="flex items-center gap-4 min-w-0">
                        <div className="bg-white/20 p-2 rounded-lg shrink-0"><TrophyIcon className="w-6 h-6 text-white" /></div>
-                       <div className="text-left">
-                          <span className="block text-xs text-violet-200 font-medium">{activeTournament.name}</span>
+                       <div className="text-left min-w-0">
+                          <span className="block text-xs text-violet-200 font-medium truncate">{t.name}</span>
                           <span className="block leading-none">Continuar Torneo</span>
                        </div>
                      </div>
-                     <div className="flex items-center gap-1.5 bg-white/10 px-3 py-1.5 rounded-lg border border-white/20">
+                     <div className="flex items-center gap-1.5 bg-white/10 px-3 py-1.5 rounded-lg border border-white/20 shrink-0">
                        <UserGroupIcon className="w-4 h-4 text-white shrink-0" />
-                       <span className="text-sm font-black font-mono">{activeTournament.players?.length || 0}</span>
+                       <span className="text-sm font-black font-mono">{t.players?.length || 0}</span>
                      </div>
                    </button>
-               ) : (
-                   // CASO B: NO HAY TORNEO -> Botón "CREAR" (El que tenías antes)
-                   <button 
-                     onClick={() => handleOpenModal("create-tournament", "")} 
-                     className="group relative overflow-hidden w-full bg-violet-700 hover:bg-violet-600 text-white font-bold text-lg py-4 px-8 rounded-xl shadow-[0_0_20px_rgba(124,58,237,0.3)] border-b-4 border-violet-900 active:border-b-0 active:translate-y-1 transition-all duration-150 flex items-center justify-center gap-4 uppercase tracking-wider"
-                   >
+               ))}
+               {/* Crear torneo: siempre disponible (puede haber varios a la vez) */}
+               <button
+                 onClick={() => handleOpenModal("create-tournament", "")}
+                 className={liveTournaments.length > 0
+                   ? "w-full flex items-center justify-center gap-2 text-violet-300 hover:text-white py-3 rounded-xl border border-violet-500/30 hover:bg-violet-600/20 transition-all text-sm font-bold uppercase tracking-widest"
+                   : "group relative overflow-hidden w-full bg-violet-700 hover:bg-violet-600 text-white font-bold text-lg py-4 px-8 rounded-xl shadow-[0_0_20px_rgba(124,58,237,0.3)] border-b-4 border-violet-900 active:border-b-0 active:translate-y-1 transition-all duration-150 flex items-center justify-center gap-4 uppercase tracking-wider"}
+               >
+                 {liveTournaments.length > 0 ? (
+                   <><TrophyIcon className="w-4 h-4" /> Organizar otro torneo</>
+                 ) : (
+                   <>
                      <div className="bg-violet-900/30 p-2 rounded-lg"><TrophyIcon className="w-6 h-6 text-violet-200" /></div>
                      <div className="text-left"><span className="block text-xs text-violet-300 font-medium">Evento Especial</span><span className="block leading-none">Organizar Torneo</span></div>
-                   </button>
-               )}
+                   </>
+                 )}
+               </button>
 
                {/* Torneos PROGRAMADOS (status SCHEDULED) */}
                {scheduledTournaments.length > 0 && (
