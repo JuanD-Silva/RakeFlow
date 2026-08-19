@@ -38,6 +38,11 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
 
   const createTable = () => act(() => tournamentService.createTables(tId, { max_seats: Number(newSeats) || 9, count: 1 }));
   const autoSeat = () => act(() => tournamentService.autoSeat(tId));
+  // Re-sorteo: mueve a TODOS los activos, así que siempre con confirmación.
+  const reshuffle = () => act(async () => {
+    if (!window.confirm('¿Volver a sortear todas las sillas? Todos los jugadores activos cambiarán de lugar.')) return null;
+    return tournamentService.reshuffleSeats(tId);
+  });
   const delTable = (id) => act(() => tournamentService.deleteTable(tId, id));
   const doMove = (playerId, tableId) => act(async () => {
     const v = await tournamentService.movePlayer(tId, playerId, tableId);
@@ -108,6 +113,13 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
           <TableCellsIcon className="w-4 h-4 text-violet-400" /> Mesas
         </h3>
         <div className="flex items-center gap-2 text-[11px]">
+          {total_seated >= 2 && (
+            <button type="button" onClick={reshuffle} disabled={busy}
+              className="px-2.5 py-1 rounded-lg border border-violet-500/40 text-violet-300 hover:bg-violet-500/10 disabled:opacity-50 font-bold uppercase text-[10px] flex items-center gap-1"
+              title="Volver a sortear todas las sillas (mueve a todos los activos)">
+              🎲 Re-sortear
+            </button>
+          )}
           {openTables.length >= 2 && (
             <button type="button" onClick={openPlan} disabled={busy || planLoading}
               className={`px-2.5 py-1 rounded-lg border disabled:opacity-50 font-bold uppercase text-[10px] flex items-center gap-1 ${needsBalance ? 'border-amber-500/60 bg-amber-500/15 text-amber-300 animate-pulse' : 'border-violet-500/40 text-violet-300 hover:bg-violet-500/10'}`}

@@ -273,6 +273,37 @@ def _random_free_seat(used: set, max_seats: int):
     return random.choice(libres) if libres else None
 
 
+def _sortear(tables, unseated, counts, used_by_table) -> int:
+    """Núcleo del SORTEO en dos pasos: primero se calculan los lugares (mesa +
+    silla al azar) que se van a usar — regla fill-first, y una reserva vacía solo
+    se abre si faltan ≥2 lugares — y después se reparten entre los jugadores
+    BARAJADOS. Así nadie queda sentado por orden de inscripción, pero si no caben
+    todos, quiénes entran sigue siendo FIFO (el orden de `unseated`). Muta los
+    TournamentPlayer y `counts`/`used_by_table`; devuelve cuántos sentó."""
+    slots = []
+    for idx in range(len(unseated)):
+        in_use = [t for t in tables if counts.get(t.id, 0) > 0]
+        if in_use:
+            best = next((t for t in in_use if counts.get(t.id, 0) < t.max_seats), None)
+        else:
+            best = tables[0]  # arranque: nadie sentado aún
+        if best is None:
+            remaining = len(unseated) - idx
+            reserve = next((t for t in tables if counts.get(t.id, 0) == 0), None)
+            if reserve is None or remaining < 2:
+                break
+            best = reserve
+        slots.append((best.id, _random_free_seat(used_by_table[best.id], best.max_seats)))
+        counts[best.id] = counts.get(best.id, 0) + 1
+        used_by_table[best.id].add(slots[-1][1])
+    entran = list(unseated[:len(slots)])
+    random.shuffle(entran)
+    for tp, (table_id, seat) in zip(entran, slots):
+        tp.table_id = table_id
+        tp.seat_number = seat
+    return len(slots)
+
+
 def _compute_rebalance(tables: list, waiting: list = None) -> dict:
     """Plan de NIVELADO asistido. Puro (no toca DB). Recibe las mesas OPEN como
     [{id, table_number, max_seats, player_ids:[...]}] y la lista de espera
@@ -579,35 +610,7 @@ async def auto_seat_players(
     )).scalars().all()
     counts = await _active_counts_by_table(db, tournament_id)
     used_by_table = {t.id: await _used_seats(db, t.id) for t in tables}
-    # SORTEO en dos pasos: primero se calculan los lugares (mesa + silla al azar)
-    # que se van a usar — misma regla fill-first/reserva de siempre — y después se
-    # reparten entre los jugadores BARAJADOS. Así nadie queda sentado por orden de
-    # inscripción, pero si no caben todos, quiénes entran sigue siendo FIFO.
-    slots = []
-    for idx in range(len(unseated)):
-        in_use = [t for t in tables if counts.get(t.id, 0) > 0]
-        if in_use:
-            best = next((t for t in in_use if counts.get(t.id, 0) < t.max_seats), None)
-        else:
-            best = tables[0]  # arranque: nadie sentado aún
-        if best is None:
-            # Mesas en uso llenas. Si quedan ≥2 por sentar, se abre la siguiente
-            # reserva (fill-first continúa ahí); por UN solo jugador no se abre
-            # mesa — queda en espera, igual que en el nivelado.
-            remaining = len(unseated) - idx
-            reserve = next((t for t in tables if counts.get(t.id, 0) == 0), None)
-            if reserve is None or remaining < 2:
-                break
-            best = reserve
-        slots.append((best.id, _random_free_seat(used_by_table[best.id], best.max_seats)))
-        counts[best.id] = counts.get(best.id, 0) + 1
-        used_by_table[best.id].add(slots[-1][1])
-    entran = list(unseated[:len(slots)])
-    random.shuffle(entran)
-    for tp, (table_id, seat) in zip(entran, slots):
-        tp.table_id = table_id
-        tp.seat_number = seat
-    seated_n = len(slots)
+    seated_n = _sortear(tables, unseated, counts, used_by_table)
     await log_action(
         db, request=request, club=current_club, action=AuditAction.TOURNAMENT_PLAYER_SEAT,
         entity_type="Tournament", entity_id=tournament_id, meta={"auto_seated": seated_n},
@@ -616,6 +619,59 @@ async def auto_seat_players(
         await db.commit()
     except IntegrityError:
         # Carrera con otro registro/movimiento. Reintentá (los asientos se recalculan).
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Hubo movimiento simultáneo de asientos. Reintentá.")
+    return await _tables_response(db, tournament_id)
+
+
+@router.post("/{tournament_id}/tables/reshuffle", response_model=schemas.TournamentTablesView)
+async def reshuffle_seats(
+    tournament_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+):
+    """RE-SORTEO: desienta a TODOS los ACTIVE y vuelve a correr el mismo sorteo
+    (fill-first, silla al azar, reserva solo con ≥2). Para cuando el sorteo se
+    hizo antes de tiempo o el director quiere repetirlo. Los eliminados no
+    participan; el cupo (si no caben todos) sigue siendo FIFO por inscripción."""
+    tournament = await _get_owned_tournament(db, tournament_id, current_club.id)
+    if tournament.status in TERMINAL_STATUSES:
+        raise HTTPException(status_code=400, detail="El torneo ya terminó.")
+    tables = (await db.execute(
+        select(models.TournamentTable)
+        .where(models.TournamentTable.tournament_id == tournament_id)
+        .where(models.TournamentTable.status == "OPEN")
+        .order_by(models.TournamentTable.table_number)
+    )).scalars().all()
+    if not tables:
+        raise HTTPException(status_code=400, detail="Creá al menos una mesa antes de sortear.")
+    players = (await db.execute(
+        select(models.TournamentPlayer)
+        .where(models.TournamentPlayer.tournament_id == tournament_id)
+        .where(models.TournamentPlayer.status == "ACTIVE")
+        .order_by(models.TournamentPlayer.id)  # FIFO: si no caben todos, el cupo es por orden de llegada
+    )).scalars().all()
+    if not players:
+        raise HTTPException(status_code=400, detail="No hay jugadores activos para sortear.")
+    # Primero desentar a todos Y FLUSHEAR: el índice único de (mesa, silla) no es
+    # diferible, así que sin este paso una silla podría reasignarse antes de que
+    # su dueño anterior la suelte y el commit fallaría por una carrera fantasma.
+    for tp in players:
+        tp.table_id = None
+        tp.seat_number = None
+    await db.flush()
+    counts = {t.id: 0 for t in tables}
+    used_by_table = {t.id: set() for t in tables}
+    seated_n = _sortear(tables, players, counts, used_by_table)
+    await log_action(
+        db, request=request, club=current_club, action=AuditAction.TOURNAMENT_PLAYER_SEAT,
+        entity_type="Tournament", entity_id=tournament_id,
+        meta={"reshuffle": True, "reseated": seated_n, "total_active": len(players)},
+    )
+    try:
+        await db.commit()
+    except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=409, detail="Hubo movimiento simultáneo de asientos. Reintentá.")
     return await _tables_response(db, tournament_id)

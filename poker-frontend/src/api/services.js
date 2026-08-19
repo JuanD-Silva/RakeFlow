@@ -434,6 +434,7 @@ endTournament: async (tournamentId) => {
   deleteTable: async (tournamentId, tableId) =>
     (await api.delete(`/tournaments/${tournamentId}/tables/${tableId}`)).data,
   autoSeat: async (tournamentId) => (await api.post(`/tournaments/${tournamentId}/tables/auto-seat`)).data,
+  reshuffleSeats: async (tournamentId) => (await api.post(`/tournaments/${tournamentId}/tables/reshuffle`)).data,
   movePlayer: async (tournamentId, playerId, tableId) =>
     (await api.post(`/tournaments/${tournamentId}/players/${playerId}/move`, { table_id: tableId })).data,
   // Dealer por mesa (Fase 1b)
