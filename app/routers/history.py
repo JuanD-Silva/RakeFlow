@@ -87,8 +87,8 @@ async def get_history(
         total_prizes = 0
         
         for p in t.players:
-            # Ingresos (Buyin + Rebuys + Addons)
-            invested = t.buyin_amount + \
+            # Ingresos (Buyin + Rebuys + Addons). entries_count = 1 + re-entradas.
+            invested = (p.entries_count or 1) * t.buyin_amount + \
                        ((p.rebuys_count - p.double_rebuys_count) * t.rebuy_price) + \
                        (p.double_rebuys_count * t.double_rebuy_price) + \
                        ((p.addons_count - p.double_addons_count) * t.addon_price) + \

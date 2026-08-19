@@ -1107,16 +1107,22 @@ async def register_player(
     if not player_result.scalars().first():
         raise HTTPException(status_code=404, detail="Jugador no encontrado")
 
-    # C. Verificar duplicados
+    # C. Verificar duplicados. Un ELIMINATED sí puede volver: RE-ENTRADA — paga
+    # otra entrada (cuenta en el pozo vía entries_count) y vuelve ACTIVE con sus
+    # rebuys/addons históricos intactos. El lock evita re-entrar dos veces en
+    # paralelo (se cobraría doble).
     existing = await db.execute(
         select(models.TournamentPlayer)
         .where(models.TournamentPlayer.tournament_id == tournament_id)
         .where(models.TournamentPlayer.player_id == registration.player_id)
+        .with_for_update()
     )
-    if existing.scalars().first():
+    t_player = existing.scalars().first()
+    if t_player and t_player.status != "ELIMINATED":
         raise HTTPException(status_code=400, detail="El jugador ya está en el torneo")
+    es_reentrada = t_player is not None
 
-    # C. Cobrar buy-in (Transaccion TOURNAMENT_ENTRY)
+    # C. Cobrar buy-in (Transaccion TOURNAMENT_ENTRY; misma para re-entrada)
     if registration.pay_buyin and tournament.buyin_amount > 0:
         db.add(models.Transaction(
             tournament_id=tournament.id,
@@ -1124,7 +1130,7 @@ async def register_player(
             player_id=registration.player_id,
             type=models.TransactionType.TOURNAMENT_ENTRY,
             amount=tournament.buyin_amount,
-            description=f"Inscripcion Torneo #{tournament.id}",
+            description=f"{'Re-entrada' if es_reentrada else 'Inscripcion'} Torneo #{tournament.id}",
             timestamp=datetime.utcnow(),
         ))
 
@@ -1143,20 +1149,34 @@ async def register_player(
         ))
         tips_count = 1
 
-    # E. Crear Jugador en Torneo
-    new_player = models.TournamentPlayer(
-        tournament_id=tournament.id,
-        player_id=registration.player_id,
-        status="ACTIVE",
-        rebuys_count=0,
-        addons_count=0,
-        # coherente con tips_count: un torneo sin tip (monto 0) no marca pagado
-        is_tip_paid=tips_count > 0,
-        tips_count=tips_count,
-        # false = debe la entrada; un freeroll (buyin 0) no debe nada.
-        is_buyin_paid=bool(registration.pay_buyin) or tournament.buyin_amount <= 0,
-    )
-    db.add(new_player)
+    if es_reentrada:
+        # E'. RE-ENTRADA: reactivar el registro existente.
+        t_player.status = "ACTIVE"
+        t_player.entries_count = (t_player.entries_count or 1) + 1
+        t_player.tips_count = (t_player.tips_count or 0) + tips_count
+        if tips_count:
+            t_player.is_tip_paid = True
+        # Si debía algo de antes, o no paga esta entrada (y no es freeroll),
+        # sigue debiendo. El flag es "no debe NINGUNA entrada".
+        t_player.is_buyin_paid = bool(t_player.is_buyin_paid) and (
+            bool(registration.pay_buyin) or tournament.buyin_amount <= 0
+        )
+        new_player = t_player
+    else:
+        # E. Crear Jugador en Torneo
+        new_player = models.TournamentPlayer(
+            tournament_id=tournament.id,
+            player_id=registration.player_id,
+            status="ACTIVE",
+            rebuys_count=0,
+            addons_count=0,
+            # coherente con tips_count: un torneo sin tip (monto 0) no marca pagado
+            is_tip_paid=tips_count > 0,
+            tips_count=tips_count,
+            # false = debe la entrada; un freeroll (buyin 0) no debe nada.
+            is_buyin_paid=bool(registration.pay_buyin) or tournament.buyin_amount <= 0,
+        )
+        db.add(new_player)
     await db.commit()
     await db.refresh(new_player)
 
@@ -1646,7 +1666,8 @@ async def finalize_tournament(
         raise HTTPException(status_code=404, detail="Torneo no encontrado")
 
     # 2. Calcular el Pozo Final (Backend Source of Truth)
-    total_buyins = len(tournament.players) * tournament.buyin_amount
+    # entries_count: 1 normal + 1 por cada re-entrada; cada entrada suma al pozo.
+    total_buyins = sum((p.entries_count or 1) for p in tournament.players) * tournament.buyin_amount
     total_rebuys_money = sum([
         (p.rebuys_count - p.double_rebuys_count) * tournament.rebuy_price +
         p.double_rebuys_count * tournament.double_rebuy_price
@@ -1748,10 +1769,11 @@ async def get_tournament_details(
         p_rebuys_cost = single_rebuys * t.rebuy_price + (p.double_rebuys_count or 0) * t.double_rebuy_price
         p_addons_cost = single_addons * t.addon_price + (p.double_addons_count or 0) * t.double_addon_price
         p_tips_cost = (p.tips_count or 0) * (t.dealer_tip_amount or 0)
-        p_invested = t.buyin_amount + p_rebuys_cost + p_addons_cost + p_tips_cost
+        p_buyins_cost = (p.entries_count or 1) * t.buyin_amount  # 1 + re-entradas
+        p_invested = p_buyins_cost + p_rebuys_cost + p_addons_cost + p_tips_cost
 
         # Sumar a totales del torneo
-        total_buyins += t.buyin_amount
+        total_buyins += p_buyins_cost
         total_rebuys_money += p_rebuys_cost
         total_addons_money += p_addons_cost
         total_prizes_paid += (p.prize_collected or 0)

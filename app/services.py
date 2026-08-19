@@ -112,7 +112,7 @@ async def tournament_rake_in_range(
             single_rebuys = max(0, (p.rebuys_count or 0) - (p.double_rebuys_count or 0))
             single_addons = max(0, (p.addons_count or 0) - (p.double_addons_count or 0))
             gross_pot += (
-                t.buyin_amount
+                (p.entries_count or 1) * t.buyin_amount  # 1 + re-entradas
                 + single_rebuys * t.rebuy_price
                 + (p.double_rebuys_count or 0) * t.double_rebuy_price
                 + single_addons * t.addon_price
@@ -149,7 +149,7 @@ async def tournament_gross_pot_in_range(
             single_rebuys = max(0, (p.rebuys_count or 0) - (p.double_rebuys_count or 0))
             single_addons = max(0, (p.addons_count or 0) - (p.double_addons_count or 0))
             total_gross += (
-                t.buyin_amount
+                (p.entries_count or 1) * t.buyin_amount  # 1 + re-entradas
                 + single_rebuys * t.rebuy_price
                 + (p.double_rebuys_count or 0) * t.double_rebuy_price
                 + single_addons * t.addon_price
