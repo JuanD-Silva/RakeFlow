@@ -47,19 +47,10 @@ async def create_tournament(
     db: AsyncSession = Depends(get_db),
     current_club: models.Club = Depends(get_current_club)
 ):
-    # Torneo PROGRAMADO: si viene scheduled_start, se crea como SCHEDULED y NO
-    # cuenta como activo (se pueden programar varios a futuro aunque corra uno).
+    # Torneo PROGRAMADO: si viene scheduled_start, se crea como SCHEDULED.
+    # Desde 2026-08 el club puede tener VARIOS torneos en juego a la vez
+    # (multi-torneo, como el multi-mesa de cash) — ya no hay guard de único.
     is_scheduled = tournament_data.scheduled_start is not None
-
-    if not is_scheduled:
-        # Solo un torneo en juego (REGISTERING/RUNNING) por club. Los SCHEDULED no cuentan.
-        result = await db.execute(
-            select(models.Tournament)
-            .where(models.Tournament.club_id == current_club.id)
-            .where(models.Tournament.status.in_(["REGISTERING", "RUNNING"]))
-        )
-        if result.scalars().first():
-            raise HTTPException(status_code=409, detail="Ya existe un torneo activo. Only one active tournament allowed.")
 
     # Estructura de blinds: la enviada (si vino) o la plantilla default editable.
     if tournament_data.blind_structure is not None:
@@ -115,7 +106,22 @@ async def create_tournament(
 
     return new_tournament
 
-# 2. OBTENER EL TORNEO ACTIVO
+# 2. TORNEOS EN JUEGO (REGISTERING/RUNNING) — puede haber varios (multi-torneo)
+@router.get("/live", response_model=List[schemas.TournamentResponse])
+async def list_live_tournaments(
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+):
+    result = await db.execute(
+        select(models.Tournament)
+        .where(models.Tournament.club_id == current_club.id)
+        .where(models.Tournament.status.in_(["REGISTERING", "RUNNING"]))
+        .order_by(models.Tournament.start_time.asc())
+    )
+    return result.scalars().all()
+
+
+# 2.old OBTENER "EL" TORNEO ACTIVO (compat: devuelve el más reciente; el panel usa /live)
 @router.get("/active", response_model=schemas.TournamentResponse | None)
 async def get_active_tournament(
     db: AsyncSession = Depends(get_db),
@@ -155,8 +161,8 @@ async def open_scheduled_tournament(
     db: AsyncSession = Depends(get_db),
     current_club: models.Club = Depends(get_current_club),
 ):
-    """Lanza un torneo programado: SCHEDULED -> REGISTERING. Respeta la regla de
-    un solo torneo en juego por club (409 si ya hay uno activo)."""
+    """Lanza un torneo programado: SCHEDULED -> REGISTERING. Puede haber varios
+    torneos en juego a la vez (multi-torneo)."""
     result = await db.execute(
         select(models.Tournament)
         .where(models.Tournament.id == tournament_id)
@@ -167,14 +173,6 @@ async def open_scheduled_tournament(
         raise HTTPException(status_code=404, detail="Torneo no encontrado")
     if tournament.status != "SCHEDULED":
         raise HTTPException(status_code=400, detail="Este torneo no está programado")
-
-    active = await db.execute(
-        select(models.Tournament)
-        .where(models.Tournament.club_id == current_club.id)
-        .where(models.Tournament.status.in_(["REGISTERING", "RUNNING"]))
-    )
-    if active.scalars().first():
-        raise HTTPException(status_code=409, detail="Ya hay un torneo activo. Cerralo antes de abrir el programado.")
 
     tournament.status = "REGISTERING"
     tournament.start_time = datetime.utcnow()

@@ -46,7 +46,7 @@ async def list_dealer_alerts(
     """Alertas del club (default pendientes). Cualquier usuario del club las ve
     (el cajero en la mesa es quien atiende). Trae el nombre de la mesa."""
     rows = (await db.execute(
-        select(models.DealerAlert, models.Session.name, models.TournamentTable.table_number)
+        select(models.DealerAlert, models.Session.name, models.TournamentTable.table_number, models.Tournament.name)
         .outerjoin(models.Session, and_(
             models.Session.id == models.DealerAlert.session_id,
             models.Session.club_id == models.DealerAlert.club_id,
@@ -55,6 +55,7 @@ async def list_dealer_alerts(
             models.TournamentTable.id == models.DealerAlert.tournament_table_id,
             models.TournamentTable.club_id == models.DealerAlert.club_id,
         ))
+        .outerjoin(models.Tournament, models.Tournament.id == models.TournamentTable.tournament_id)
         .where(
             models.DealerAlert.club_id == current_club.id,
             models.DealerAlert.status == status.upper(),
@@ -63,9 +64,12 @@ async def list_dealer_alerts(
         .limit(50)
     )).all()
 
-    def _table_name(a, session_name, t_number):
+    def _table_name(a, session_name, t_number, t_name):
         if a.tournament_table_id is not None:
-            return f"Mesa {t_number} (torneo)" if t_number is not None else "Mesa (torneo)"
+            # Con multi-torneo, "Mesa 2 (torneo)" es ambiguo: cada torneo numera
+            # sus mesas desde 1. El nombre del torneo desambigua.
+            base = f"Mesa {t_number}" if t_number is not None else "Mesa"
+            return f"{base} · {t_name}" if t_name else f"{base} (torneo)"
         return session_name or f"Mesa #{a.session_id}"
 
     return [{
@@ -73,10 +77,10 @@ async def list_dealer_alerts(
         "alert_type": a.alert_type,
         "message": a.message,
         "dealer_name": a.dealer_name,
-        "table_name": _table_name(a, name, t_number),
+        "table_name": _table_name(a, name, t_number, t_name),
         "session_id": a.session_id,
         "created_at": a.created_at.isoformat() if a.created_at else None,
-    } for a, name, t_number in rows]
+    } for a, name, t_number, t_name in rows]
 
 
 @alerts_router.post("/{alert_id}/resolve")

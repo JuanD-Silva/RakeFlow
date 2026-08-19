@@ -56,7 +56,22 @@ export default function GameControl() {
   const [currentTableId, setCurrentTableId] = useState(null);
   const activeSession = tables.find(t => t.id === currentTableId) || null;
 
-  const [activeTournament, setActiveTournament] = useState(null);
+  // Multi-torneo: lista de torneos en juego + id seleccionado (mismo patrón que
+  // las mesas cash). activeTournament es DERIVADO (no estado): un poll en vuelo
+  // con closure viejo no puede pisarlo. El ref refleja la selección actual para
+  // que checkSystemState (que corre con closures de renders viejos) no la pise.
+  const [liveTournaments, setLiveTournaments] = useState([]);
+  const [currentTournamentId, setCurrentTournamentId] = useState(null);
+  const currentTournamentIdRef = useRef(null);
+  // Secuencia de polls: una mutación optimista (abrir/crear torneo, mesa nueva)
+  // la incrementa para DESCARTAR respuestas de polls que ya estaban en vuelo —
+  // si no, un poll viejo borra el append optimista y rebota al menú.
+  const reqSeqRef = useRef(0);
+  const selectTournament = (id) => {
+    reqSeqRef.current++;
+    currentTournamentIdRef.current = id;
+    setCurrentTournamentId(id);
+  };
   const [scheduledTournaments, setScheduledTournaments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -92,23 +107,30 @@ export default function GameControl() {
 useEffect(() => {
     const checkSystemState = async () => {
       try {
-        const [openTables, tournament, scheduled] = await Promise.all([
+        const myReq = ++reqSeqRef.current;
+        const [openTables, liveTs, scheduled] = await Promise.all([
             sessionService.findOpenSessions(),
-            tournamentService.findActive(),
+            tournamentService.findLive(),
             tournamentService.getScheduled()
         ]);
+        // Respuesta vieja (hubo una mutación optimista o un poll más nuevo
+        // mientras esperábamos): descartarla entera.
+        if (myReq !== reqSeqRef.current) return;
 
         setTables(openTables);
-        setActiveTournament(tournament);
+        setLiveTournaments(liveTs);
         setScheduledTournaments(scheduled || []);
 
-        // En el primer load: decidir vista por defecto y mesa actual
+        // En el primer load: decidir vista por defecto y mesa/torneo actual
         if (isFirstLoad.current) {
             isFirstLoad.current = false;
-            if (openTables.length > 0 && tournament) {
+            if (openTables.length > 0 && liveTs.length > 0) {
                 setViewMode("menu");
-            } else if (tournament) {
+            } else if (liveTs.length === 1) {
+                selectTournament(liveTs[0].id);
                 setViewMode("tournament");
+            } else if (liveTs.length > 1) {
+                setViewMode("menu");
             } else if (openTables.length === 1) {
                 setCurrentTableId(openTables[0].id);
                 setViewMode("cash");
@@ -118,7 +140,15 @@ useEffect(() => {
                 setViewMode("menu");
             }
         } else {
-            // Refresh posterior: si la mesa actual ya no esta abierta, ir a menu
+            // Refresh posterior: si el torneo seleccionado ya no está en juego
+            // (lo terminaron), deseleccionar y volver a menú. Se lee el REF, no
+            // el closure: este callback puede venir de un render viejo.
+            const selId = currentTournamentIdRef.current;
+            if (selId && !liveTs.some(t => t.id === selId)) {
+                selectTournament(null);
+                setViewMode((v) => (v === "tournament" ? "menu" : v));
+            }
+            // Si la mesa cash actual ya no esta abierta, ir a menu
             if (currentTableId && !openTables.some(t => t.id === currentTableId)) {
                 setCurrentTableId(null);
                 if (openTables.length === 0) setViewMode("menu");
@@ -184,6 +214,14 @@ useEffect(() => {
     setViewMode("cash");
   };
 
+  const handleSwitchTournament = (tournamentId) => {
+    selectTournament(tournamentId);
+    setViewMode("tournament");
+  };
+
+  // Objeto del torneo seleccionado, siempre fresco desde la lista (derivado).
+  const activeTournament = liveTournaments.find(t => t.id === currentTournamentId) || null;
+
   // 3. INICIAR TORNEO
 const handleCreateTournament = async (formData) => {
       try {
@@ -196,7 +234,8 @@ const handleCreateTournament = async (formData) => {
               setScheduledTournaments((prev) => [...prev, newTournament]);
           } else {
               // 2b. En juego: entrar directo al panel de control
-              setActiveTournament(newTournament);
+              setLiveTournaments((prev) => [...prev, newTournament]);
+              selectTournament(newTournament.id);
               setViewMode("tournament");
           }
 
@@ -212,7 +251,8 @@ const handleCreateTournament = async (formData) => {
       try {
           const opened = await tournamentService.openScheduled(id);
           setScheduledTournaments((prev) => prev.filter((t) => t.id !== id));
-          setActiveTournament(opened);
+          setLiveTournaments((prev) => [...prev, opened]);
+          selectTournament(opened.id);
           setViewMode("tournament");
       } catch (error) {
           alert(error.response?.data?.detail || "No se pudo abrir el torneo programado");
@@ -240,8 +280,10 @@ const handleCreateTournament = async (formData) => {
     setIsModalOpen(false);
     setPendingSessionOpen(false);
     setPendingTableName(null);
-    // Si fue apertura de mesa nueva, entrar a esa mesa directamente
+    // Si fue apertura de mesa nueva, entrar a esa mesa directamente (y
+    // descartar polls en vuelo que aún no conocen la mesa recién creada)
     if (info && info.newSessionId) {
+      reqSeqRef.current++;
       setCurrentTableId(info.newSessionId);
       setViewMode("cash");
     }
@@ -294,10 +336,14 @@ const handleCreateTournament = async (formData) => {
   };
 
   const confirmEndTournament = async () => {
+    // Otro staff pudo terminar este torneo con el modal abierto (el polling
+    // sigue vivo y lo deselecciona): sin esta guarda, TypeError.
+    if (!activeTournament) { setShowEndTournamentModal(false); return; }
     setIsLoading(true);
     try {
       await tournamentService.endTournament(activeTournament.id);
-      setActiveTournament(null);
+      setLiveTournaments((prev) => prev.filter((t) => t.id !== activeTournament.id));
+      selectTournament(null);
       setViewMode("menu");  // volver al dashboard principal, no a la mesa cash
       setShowEndTournamentModal(false);
       refresh();
@@ -315,6 +361,35 @@ const handleCreateTournament = async (formData) => {
   return (
   <div className="max-w-4xl mx-auto p-4">
       {isLoading && <GlobalLoader />}
+
+      {/* STRIP DE TORNEOS (multi-torneo, solo en torneo con >= 2 en juego) */}
+      {viewMode === "tournament" && liveTournaments.length >= 2 && (
+        <div className="mb-4 flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
+          {liveTournaments.map(t => {
+            const isActive = t.id === currentTournamentId;
+            return (
+              <button
+                key={t.id}
+                onClick={() => handleSwitchTournament(t.id)}
+                className={`shrink-0 px-4 py-2 rounded-lg font-bold border transition-all text-left ${
+                  isActive
+                    ? 'bg-violet-600 text-white border-violet-500 shadow-lg shadow-violet-900/30'
+                    : 'bg-gray-800 text-gray-300 border-gray-700 hover:bg-gray-700 hover:border-gray-600'
+                }`}
+              >
+                <div className="flex items-center gap-2 text-sm uppercase tracking-wider">
+                  <TrophyIcon className="w-4 h-4 shrink-0" />
+                  <span>{t.name}</span>
+                </div>
+                <div className={`flex items-center gap-2 text-[10px] font-mono mt-1 ${isActive ? 'text-violet-100' : 'text-gray-500'}`}>
+                  <span>{t.players?.length ?? 0} jug</span>
+                  <span>· {t.status === 'RUNNING' ? 'en juego' : 'inscribiendo'}</span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* STRIP DE MESAS (multi-mesa, solo en cash con >= 2 mesas) */}
       {viewMode === "cash" && tables.length >= 2 && (
@@ -485,11 +560,14 @@ const handleCreateTournament = async (formData) => {
                 </div>
             </div>
 
-            {/* RELOJ / NIVELES (T3) */}
-            <TournamentClock tournament={activeTournament} />
+            {/* RELOJ / NIVELES (T3). key: al cambiar de torneo (multi-torneo) el
+                componente se remonta desde cero — sin key arrastraría el reloj,
+                las mesas o los modales del torneo anterior. */}
+            <TournamentClock key={activeTournament.id} tournament={activeTournament} />
 
             {/* MESAS DEL TORNEO (Fase 1a) */}
             <TournamentTables
+                key={`tables-${activeTournament.id}`}
                 tournament={activeTournament}
                 refreshTrigger={refreshKey}
                 onUpdate={refresh}
@@ -497,6 +575,7 @@ const handleCreateTournament = async (formData) => {
 
             {/* TABLA DE JUGADORES */}
             <TournamentPlayerTable
+                key={`players-${activeTournament.id}`}
                 tournament={activeTournament}
                 onUpdate={refresh}
             />
@@ -626,35 +705,42 @@ const handleCreateTournament = async (formData) => {
                  </button>
                )}
 
-               {/* Opción TORNEO */}
-{activeTournament ? (
-                   // CASO A: YA HAY TORNEO -> Botón "CONTINUAR"
+               {/* Opción TORNEO (multi-torneo: un botón "Continuar" por torneo en juego) */}
+               {liveTournaments.map((t) => (
                    <button
-                     onClick={() => setViewMode("tournament")}
+                     key={t.id}
+                     onClick={() => handleSwitchTournament(t.id)}
                      className="group relative overflow-hidden w-full bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white font-bold text-lg py-4 px-8 rounded-xl shadow-[0_0_20px_rgba(124,58,237,0.4)] border-b-4 border-violet-900 active:border-b-0 active:translate-y-1 transition-all duration-150 flex items-center justify-between gap-4 uppercase tracking-wider animate-pulse-slow"
                    >
-                     <div className="flex items-center gap-4">
+                     <div className="flex items-center gap-4 min-w-0">
                        <div className="bg-white/20 p-2 rounded-lg shrink-0"><TrophyIcon className="w-6 h-6 text-white" /></div>
-                       <div className="text-left">
-                          <span className="block text-xs text-violet-200 font-medium">{activeTournament.name}</span>
+                       <div className="text-left min-w-0">
+                          <span className="block text-xs text-violet-200 font-medium truncate">{t.name}</span>
                           <span className="block leading-none">Continuar Torneo</span>
                        </div>
                      </div>
-                     <div className="flex items-center gap-1.5 bg-white/10 px-3 py-1.5 rounded-lg border border-white/20">
+                     <div className="flex items-center gap-1.5 bg-white/10 px-3 py-1.5 rounded-lg border border-white/20 shrink-0">
                        <UserGroupIcon className="w-4 h-4 text-white shrink-0" />
-                       <span className="text-sm font-black font-mono">{activeTournament.players?.length || 0}</span>
+                       <span className="text-sm font-black font-mono">{t.players?.length || 0}</span>
                      </div>
                    </button>
-               ) : (
-                   // CASO B: NO HAY TORNEO -> Botón "CREAR" (El que tenías antes)
-                   <button 
-                     onClick={() => handleOpenModal("create-tournament", "")} 
-                     className="group relative overflow-hidden w-full bg-violet-700 hover:bg-violet-600 text-white font-bold text-lg py-4 px-8 rounded-xl shadow-[0_0_20px_rgba(124,58,237,0.3)] border-b-4 border-violet-900 active:border-b-0 active:translate-y-1 transition-all duration-150 flex items-center justify-center gap-4 uppercase tracking-wider"
-                   >
+               ))}
+               {/* Crear torneo: siempre disponible (puede haber varios a la vez) */}
+               <button
+                 onClick={() => handleOpenModal("create-tournament", "")}
+                 className={liveTournaments.length > 0
+                   ? "w-full flex items-center justify-center gap-2 text-violet-300 hover:text-white py-3 rounded-xl border border-violet-500/30 hover:bg-violet-600/20 transition-all text-sm font-bold uppercase tracking-widest"
+                   : "group relative overflow-hidden w-full bg-violet-700 hover:bg-violet-600 text-white font-bold text-lg py-4 px-8 rounded-xl shadow-[0_0_20px_rgba(124,58,237,0.3)] border-b-4 border-violet-900 active:border-b-0 active:translate-y-1 transition-all duration-150 flex items-center justify-center gap-4 uppercase tracking-wider"}
+               >
+                 {liveTournaments.length > 0 ? (
+                   <><TrophyIcon className="w-4 h-4" /> Organizar otro torneo</>
+                 ) : (
+                   <>
                      <div className="bg-violet-900/30 p-2 rounded-lg"><TrophyIcon className="w-6 h-6 text-violet-200" /></div>
                      <div className="text-left"><span className="block text-xs text-violet-300 font-medium">Evento Especial</span><span className="block leading-none">Organizar Torneo</span></div>
-                   </button>
-               )}
+                   </>
+                 )}
+               </button>
 
                {/* Torneos PROGRAMADOS (status SCHEDULED) */}
                {scheduledTournaments.length > 0 && (
