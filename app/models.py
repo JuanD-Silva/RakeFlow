@@ -460,7 +460,9 @@ class Tournament(Base):
 
     # Relaciones
     club = relationship("Club", back_populates="tournaments")
-    players = relationship("TournamentPlayer", back_populates="tournament", cascade="all, delete-orphan", lazy="selectin")
+    # order_by: orden ESTABLE de inscripción — sin él, el orden era arbitrario y
+    # cambiaba con cada UPDATE (rebuy/eliminar), haciendo "bailar" la tabla en la UI.
+    players = relationship("TournamentPlayer", back_populates="tournament", cascade="all, delete-orphan", lazy="selectin", order_by="TournamentPlayer.id")
 
     payout_structure = Column(JSON, default=[])
 

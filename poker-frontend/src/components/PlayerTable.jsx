@@ -2,6 +2,7 @@ import { useState, useEffect, Fragment, useCallback } from 'react';
 import { ChevronDownIcon, ChevronUpIcon, ClockIcon } from '@heroicons/react/24/solid';
 import api from '../api/axios';
 import { formatMoney } from '../utils/formatters';
+import { norm } from '../utils/text';
 import { transactionService, playerService } from '../api/services';
 import { useAuth } from '../context/AuthContext';
 import PlayerAppAccount from './PlayerAppAccount';
@@ -13,6 +14,7 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
   const [totals, setTotals] = useState({ buyin: 0, cashout: 0, balance: 0 });
   const [tableBonus, setTableBonus] = useState(0); // bono de mesa (sin jugador)
   const [expandedPlayerId, setExpandedPlayerId] = useState(null);
+  const [search, setSearch] = useState('');
   const { isOwner, isManager } = useAuth();
   const canManageApp = isOwner || isManager; // invitar / desbloquear histórico
 
@@ -155,6 +157,11 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
   if (error && players.length === 0) return <div className="text-red-400 text-center py-10 bg-red-900/10 rounded-xl border border-red-500/20">{error}</div>;
   if (players.length === 0) return <div className="text-gray-500 text-center py-10 italic bg-gray-800 rounded-xl border border-gray-700">Mesa vacía. Esperando jugadores...</div>;
 
+  // Filtro solo de VISTA (sin tildes): los totales de la mesa siguen siendo de todos.
+  const visiblePlayers = search.trim()
+    ? players.filter((p) => norm(p.name).includes(norm(search)))
+    : players;
+
   return (
     <div className="bg-gray-800 rounded-xl shadow-2xl border border-gray-700 overflow-hidden mt-6 animate-fade-in">
       {error && (
@@ -162,9 +169,23 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
           ⚠ Reconectando… mostrando últimos datos
         </div>
       )}
+      {players.length > 3 && (
+        <div className="p-3 border-b border-gray-700 bg-gray-900/50">
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="🔍 Buscar jugador en la mesa..."
+            className="w-full bg-gray-900 text-white border border-gray-600 rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-emerald-500 placeholder-gray-500"
+          />
+        </div>
+      )}
+      {search.trim() && visiblePlayers.length === 0 && (
+        <div className="p-6 text-center text-gray-500 text-sm italic">Nadie coincide con “{search}”.</div>
+      )}
       {/* MOVIL: cards apiladas */}
       <div className="md:hidden divide-y divide-gray-700">
-        {players.map((p) => {
+        {visiblePlayers.map((p) => {
           const isExpanded = expandedPlayerId === p.player_id;
           const transactions = p.transactions || [];
           const buyins = transactions.filter(t => t.type === 'BUYIN' || t.type === 'REBUY');
@@ -367,7 +388,7 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
           </thead>
 
           <tbody className="divide-y divide-gray-700">
-            {players.map((p) => {
+            {visiblePlayers.map((p) => {
               const isExpanded = expandedPlayerId === p.player_id;
               const transactions = p.transactions || []; 
               

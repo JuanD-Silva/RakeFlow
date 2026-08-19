@@ -7,6 +7,7 @@ import {
 } from '@heroicons/react/24/solid';
 import { tournamentService, playerService } from '../api/services';
 import { formatMoney } from '../utils/formatters';
+import { norm } from '../utils/text';
 
 export default function TournamentPlayerTable({ tournament, onUpdate }) {
     const [allPlayers, setAllPlayers] = useState([]);
@@ -25,6 +26,7 @@ export default function TournamentPlayerTable({ tournament, onUpdate }) {
     const [selectedPlayerId, setSelectedPlayerId] = useState("");
     const [newPlayerName, setNewPlayerName] = useState("");
     const [newPlayerPhone, setNewPlayerPhone] = useState("");
+    const [listSearch, setListSearch] = useState(""); // buscador de la lista de inscritos
     const [regOptions, setRegOptions] = useState({ payBuyin: true, payTip: false });
 
     useEffect(() => {
@@ -90,6 +92,10 @@ export default function TournamentPlayerTable({ tournament, onUpdate }) {
     const netPot = totalPotRaw - houseRake;
     const totalTipsCount = playersWithStats.reduce((acc, p) => acc + (p.tips_count || 0), 0);
     const playersWithTip = playersWithStats.filter(p => (p.tips_count || 0) > 0).length;
+    // Filtro solo de VISTA (sin tildes): pozo/KPIs siguen contando a todos.
+    const visiblePlayers = listSearch.trim()
+        ? playersWithStats.filter((p) => norm(getPlayerName(p.player_id)).includes(norm(listSearch)))
+        : playersWithStats;
     const totalTipsCollected = totalTipsCount * prices.tip;
 
     // --- HANDLERS ---
@@ -245,12 +251,26 @@ export default function TournamentPlayerTable({ tournament, onUpdate }) {
                         <button onClick={() => setIsRegisterOpen(true)} className="bg-violet-600 hover:bg-violet-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 shadow-lg"><UserPlusIcon className="w-3 h-3" /> Inscribir</button>
                     )}
                 </div>
+                {playersWithStats.length > 3 && (
+                    <div className="p-3 border-b border-gray-700 bg-gray-900/30">
+                        <input
+                            type="search"
+                            value={listSearch}
+                            onChange={(e) => setListSearch(e.target.value)}
+                            placeholder="🔍 Buscar inscrito..."
+                            className="w-full bg-gray-900 text-white border border-gray-600 rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 placeholder-gray-500"
+                        />
+                    </div>
+                )}
+                {listSearch.trim() && visiblePlayers.length === 0 && (
+                    <div className="p-6 text-center text-gray-500 text-sm italic">Nadie coincide con “{listSearch}”.</div>
+                )}
                 {/* MOVIL: cards apiladas (la tabla en horizontal es ilegible en pantallas chicas) */}
                 <div className="md:hidden divide-y divide-gray-700">
                     {playersWithStats.length === 0 && (
                         <div className="p-6 text-center text-gray-500 text-sm italic">Aun no hay jugadores inscritos.</div>
                     )}
-                    {playersWithStats.map((p) => (
+                    {visiblePlayers.map((p) => (
                         <div
                             key={`m-${p.id}`}
                             className={`p-4 ${p.status === 'ELIMINATED' ? 'opacity-50 grayscale' : p.status === 'WINNER' ? 'bg-yellow-900/10' : ''}`}
@@ -346,7 +366,7 @@ export default function TournamentPlayerTable({ tournament, onUpdate }) {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-700">
-                            {playersWithStats.map((p) => (
+                            {visiblePlayers.map((p) => (
                                 <tr key={p.id} className={`hover:bg-gray-700/30 transition-colors ${p.status === 'ELIMINATED' ? 'opacity-40 grayscale' : p.status === 'WINNER' ? 'bg-yellow-900/10' : ''}`}>
                                     <td className="px-4 py-3">
                                         <div className="font-bold text-white text-base flex items-center gap-2">
