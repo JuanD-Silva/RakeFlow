@@ -426,6 +426,7 @@ class TournamentPlayerSchema(BaseModel):
     is_tip_paid: bool
     tips_count: int = 0
     is_buyin_paid: bool = False
+    entries_count: int = 1  # 1 + re-entradas (cada una suma al pozo)
     rebuys_count: int
     addons_count: int
     double_rebuys_count: int = 0

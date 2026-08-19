@@ -535,8 +535,12 @@ class TournamentPlayer(Base):
 
     is_tip_paid = Column(Boolean, default=False)
     tips_count = Column(Integer, default=0)
-    is_buyin_paid = Column(Boolean, default=False)  # false = jugador debe la entrada
-    
+    is_buyin_paid = Column(Boolean, default=False)  # false = jugador debe la(s) entrada(s)
+
+    # Entradas pagadas al pozo: 1 normal, +1 por cada RE-ENTRADA (eliminado que
+    # vuelve a entrar). El pozo cuenta entries_count * buyin, no len(players).
+    entries_count = Column(Integer, nullable=False, default=1, server_default="1")
+
     # Contadores de Dinero
     rebuys_count = Column(Integer, default=0) # Cantidad de recompras hechas
     addons_count = Column(Integer, default=0) # Cantidad de add-ons hechos

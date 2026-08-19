@@ -68,8 +68,9 @@ export default function TournamentPlayerTable({ tournament, onUpdate }) {
         const doubleAddons = Number(p.double_addons_count) || 0;
         const singleAddons = totalAddons - doubleAddons;
 
-        // Lo que va al pozo (sin tips: el tip va al dealer, no al pozo)
-        const moneyInvested = prices.buyin
+        // Lo que va al pozo (sin tips: el tip va al dealer, no al pozo).
+        // entries_count = 1 + re-entradas: cada entrada suma un buy-in al pozo.
+        const moneyInvested = prices.buyin * (Number(p.entries_count) || 1)
             + (singleRebuys * prices.rebuyS) + (doubleRebuys * prices.rebuyD)
             + (singleAddons * prices.addonS) + (doubleAddons * prices.addonD);
 
@@ -444,7 +445,7 @@ export default function TournamentPlayerTable({ tournament, onUpdate }) {
                 </div>
             )}
             
-            {isRegisterOpen && <RegisterModal onClose={() => setIsRegisterOpen(false)} onConfirm={handleRegister} activeTab={activeTab} setActiveTab={setActiveTab} availablePlayers={allPlayers.filter(ap => !tournament.players?.find(tp => tp.player_id === ap.id))} selectedPlayerId={selectedPlayerId} setSelectedPlayerId={setSelectedPlayerId} newPlayerName={newPlayerName} setNewPlayerName={setNewPlayerName} newPlayerPhone={newPlayerPhone} setNewPlayerPhone={setNewPlayerPhone} regOptions={regOptions} setRegOptions={setRegOptions} prices={prices} loading={loading} />}
+            {isRegisterOpen && <RegisterModal onClose={() => setIsRegisterOpen(false)} onConfirm={handleRegister} activeTab={activeTab} setActiveTab={setActiveTab} availablePlayers={allPlayers.flatMap(ap => { const tp = tournament.players?.find(x => x.player_id === ap.id); if (!tp) return [ap]; return tp.status === 'ELIMINATED' ? [{ ...ap, reentry: true }] : []; })} selectedPlayerId={selectedPlayerId} setSelectedPlayerId={setSelectedPlayerId} newPlayerName={newPlayerName} setNewPlayerName={setNewPlayerName} newPlayerPhone={newPlayerPhone} setNewPlayerPhone={setNewPlayerPhone} regOptions={regOptions} setRegOptions={setRegOptions} prices={prices} loading={loading} />}
             {actionPlayer && <ActionModal player={actionPlayer} playerName={getPlayerName(actionPlayer.player_id)} rebuysClosed={rebuysClosed} addonsClosed={addonsClosed} rebuyUntil={tournament.rebuy_until_level} addonUntil={tournament.addon_until_level} onClose={() => setActionPlayer(null)} onRebuy={(t) => handleTransaction("Rebuy", t)} onAddon={(t) => handleTransaction("Addon", t)} onUndo={(action, type) => { setConfirmModal({ isOpen: true, title: "Deshacer", message: action === "tip" ? "¿Deshacer el último tip cobrado?" : `¿Deshacer ${action} ${type}?`, type: "danger", onConfirm: async () => { setLoading(true); try { await tournamentService.undoAction(tournament.id, actionPlayer.player_id, action, type); setActionPlayer(null); onUpdate(); showToast("Deshecho"); } catch(e) { showToast(e.response?.data?.detail || "Error", "error"); } finally { setLoading(false); setConfirmModal(prev => ({...prev, isOpen: false})); } } }); }} onPayTip={() => { handlePayTip(actionPlayer.player_id); }} onUnregister={() => handleUnregister(actionPlayer.player_id, getPlayerName(actionPlayer.player_id))} prices={prices} loading={loading} />}
         </div>
     );
@@ -705,6 +706,7 @@ function RegisterModal({ onClose, onConfirm, activeTab, setActiveTab, availableP
                                                  <p className="font-bold text-gray-200 group-hover:text-white">{p.name}</p>
                                                  {p.phone && <p className="text-xs text-gray-500">{p.phone}</p>}
                                              </div>
+                                             {p.reentry && <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/40 text-amber-300">↩ Re-entrada</span>}
                                          </div>
                                      )) : (
                                          <div className="p-6 text-gray-500 text-center text-sm flex flex-col items-center gap-2">
