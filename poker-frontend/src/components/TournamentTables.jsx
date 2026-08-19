@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { TableCellsIcon, PlusIcon, TrashIcon, UserGroupIcon, ArrowsRightLeftIcon, XMarkIcon, SparklesIcon, IdentificationIcon } from '@heroicons/react/24/solid';
 import { tournamentService, dealerService } from '../api/services';
+import ConfirmModal from './ConfirmModal';
 
 /**
  * Panel de mesas del torneo (Fase 1a). Crear mesas, ver ocupación/cupos por mesa
@@ -18,6 +19,9 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
   const [dealers, setDealers] = useState([]);
   const [plan, setPlan] = useState(null); // sugerencia de balanceo previsualizada
   const [planLoading, setPlanLoading] = useState(false);
+  // Confirmaciones con el ConfirmModal de la app (nada de window.confirm):
+  // { title, message, confirmText, run } — run se ejecuta al confirmar.
+  const [confirm, setConfirm] = useState(null);
 
   const load = useCallback(async () => {
     if (!tId) return;
@@ -39,11 +43,20 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
   const createTable = () => act(() => tournamentService.createTables(tId, { max_seats: Number(newSeats) || 9, count: 1 }));
   const autoSeat = () => act(() => tournamentService.autoSeat(tId));
   // Re-sorteo: mueve a TODOS los activos, así que siempre con confirmación.
-  const reshuffle = () => act(async () => {
-    if (!window.confirm('¿Volver a sortear todas las sillas? Todos los jugadores activos cambiarán de lugar.')) return null;
-    return tournamentService.reshuffleSeats(tId);
+  const reshuffle = () => setConfirm({
+    title: '🎲 Re-sortear sillas',
+    message: 'Todos los jugadores activos cambiarán de mesa y silla. Los eliminados no participan.',
+    confirmText: 'Sí, re-sortear',
+    run: () => tournamentService.reshuffleSeats(tId),
   });
-  const delTable = (id) => act(() => tournamentService.deleteTable(tId, id));
+  const delTable = (t) => setConfirm({
+    title: `Borrar Mesa ${t.table_number}`,
+    message: t.seated_count > 0
+      ? `Tiene ${t.seated_count} jugador${t.seated_count === 1 ? '' : 'es'} sentado${t.seated_count === 1 ? '' : 's'}: quedarán en lista de espera.`
+      : 'La mesa está vacía.',
+    confirmText: 'Sí, borrar',
+    run: () => tournamentService.deleteTable(tId, t.id),
+  });
   const doMove = (playerId, tableId) => act(async () => {
     const v = await tournamentService.movePlayer(tId, playerId, tableId);
     setMoveFor(null);
@@ -58,10 +71,17 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
       return v;
     } catch (e) {
       if (e?.response?.status === 409) {
-        if (!window.confirm('Ese dealer ya está en otra mesa. ¿Moverlo a esta?')) return null;
-        const v = await tournamentService.assignTableDealer(tId, tableId, dealerId, true);
-        setDealerFor(null);
-        return v;
+        setConfirm({
+          title: 'Dealer en otra mesa',
+          message: 'Ese dealer ya está en otra mesa. ¿Moverlo a esta?',
+          confirmText: 'Sí, moverlo',
+          run: async () => {
+            const v = await tournamentService.assignTableDealer(tId, tableId, dealerId, true);
+            setDealerFor(null);
+            return v;
+          },
+        });
+        return null;
       }
       throw e;
     }
@@ -166,7 +186,7 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
                   <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${t.seats_available > 0 ? 'bg-emerald-600/20 text-emerald-300' : 'bg-gray-800 text-gray-500'}`}>
                     {t.seated_count}/{t.max_seats}
                   </span>
-                  <button type="button" onClick={() => delTable(t.id)} disabled={busy}
+                  <button type="button" onClick={() => delTable(t)} disabled={busy}
                     className="p-1 text-gray-600 hover:text-red-400 disabled:opacity-40" title="Borrar mesa">
                     <TrashIcon className="w-3.5 h-3.5" />
                   </button>
@@ -318,6 +338,17 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={!!confirm}
+        onClose={() => setConfirm(null)}
+        onConfirm={() => { const { run } = confirm; setConfirm(null); act(run); }}
+        title={confirm?.title}
+        message={confirm?.message}
+        confirmText={confirm?.confirmText}
+        isDeleting={busy}
+        loadingText="Aplicando..."
+      />
     </div>
   );
 }
