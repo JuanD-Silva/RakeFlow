@@ -340,13 +340,18 @@ export const tournamentService = {
     }
   },
   // Torneos en juego (multi-torneo: puede haber varios). Fallback al endpoint
-  // viejo si el backend aún no expone /live (carrera de deploys Vercel/Railway).
+  // viejo SOLO si /live no existe (carrera de deploys Vercel/Railway); un error
+  // de red se relanza para que el caller NO confunda "falló" con "no hay
+  // torneos" (deseleccionaría un torneo vivo).
   findLive: async () => {
     try {
       return (await api.get('/tournaments/live')).data || [];
-    } catch {
-      const one = await tournamentService.findActive();
-      return one ? [one] : [];
+    } catch (error) {
+      if (error?.response?.status === 404 || error?.response?.status === 405) {
+        const one = await tournamentService.findActive();
+        return one ? [one] : [];
+      }
+      throw error;
     }
   },
   registerPlayer: async (tournamentId, data) => {

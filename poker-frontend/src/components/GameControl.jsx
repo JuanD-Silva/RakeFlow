@@ -56,11 +56,14 @@ export default function GameControl() {
   const [currentTableId, setCurrentTableId] = useState(null);
   const activeSession = tables.find(t => t.id === currentTableId) || null;
 
-  // Multi-torneo: lista de torneos en juego + el seleccionado (mismo patrón
-  // que las mesas cash). activeTournament = objeto del torneo seleccionado.
+  // Multi-torneo: lista de torneos en juego + id seleccionado (mismo patrón que
+  // las mesas cash). activeTournament es DERIVADO (no estado): un poll en vuelo
+  // con closure viejo no puede pisarlo. El ref refleja la selección actual para
+  // que checkSystemState (que corre con closures de renders viejos) no la pise.
   const [liveTournaments, setLiveTournaments] = useState([]);
   const [currentTournamentId, setCurrentTournamentId] = useState(null);
-  const [activeTournament, setActiveTournament] = useState(null);
+  const currentTournamentIdRef = useRef(null);
+  const selectTournament = (id) => { currentTournamentIdRef.current = id; setCurrentTournamentId(id); };
   const [scheduledTournaments, setScheduledTournaments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -112,8 +115,7 @@ useEffect(() => {
             if (openTables.length > 0 && liveTs.length > 0) {
                 setViewMode("menu");
             } else if (liveTs.length === 1) {
-                setCurrentTournamentId(liveTs[0].id);
-                setActiveTournament(liveTs[0]);
+                selectTournament(liveTs[0].id);
                 setViewMode("tournament");
             } else if (liveTs.length > 1) {
                 setViewMode("menu");
@@ -126,12 +128,12 @@ useEffect(() => {
                 setViewMode("menu");
             }
         } else {
-            // Refresh posterior: refrescar el objeto del torneo seleccionado; si
-            // ya no está en juego (lo terminaron), deseleccionar y volver a menú.
-            const selected = liveTs.find(t => t.id === currentTournamentId) || null;
-            setActiveTournament(selected);
-            if (currentTournamentId && !selected) {
-                setCurrentTournamentId(null);
+            // Refresh posterior: si el torneo seleccionado ya no está en juego
+            // (lo terminaron), deseleccionar y volver a menú. Se lee el REF, no
+            // el closure: este callback puede venir de un render viejo.
+            const selId = currentTournamentIdRef.current;
+            if (selId && !liveTs.some(t => t.id === selId)) {
+                selectTournament(null);
                 setViewMode((v) => (v === "tournament" ? "menu" : v));
             }
             // Si la mesa cash actual ya no esta abierta, ir a menu
@@ -201,10 +203,12 @@ useEffect(() => {
   };
 
   const handleSwitchTournament = (tournamentId) => {
-    setCurrentTournamentId(tournamentId);
-    setActiveTournament(liveTournaments.find(t => t.id === tournamentId) || null);
+    selectTournament(tournamentId);
     setViewMode("tournament");
   };
+
+  // Objeto del torneo seleccionado, siempre fresco desde la lista (derivado).
+  const activeTournament = liveTournaments.find(t => t.id === currentTournamentId) || null;
 
   // 3. INICIAR TORNEO
 const handleCreateTournament = async (formData) => {
@@ -219,8 +223,7 @@ const handleCreateTournament = async (formData) => {
           } else {
               // 2b. En juego: entrar directo al panel de control
               setLiveTournaments((prev) => [...prev, newTournament]);
-              setCurrentTournamentId(newTournament.id);
-              setActiveTournament(newTournament);
+              selectTournament(newTournament.id);
               setViewMode("tournament");
           }
 
@@ -237,8 +240,7 @@ const handleCreateTournament = async (formData) => {
           const opened = await tournamentService.openScheduled(id);
           setScheduledTournaments((prev) => prev.filter((t) => t.id !== id));
           setLiveTournaments((prev) => [...prev, opened]);
-          setCurrentTournamentId(opened.id);
-          setActiveTournament(opened);
+          selectTournament(opened.id);
           setViewMode("tournament");
       } catch (error) {
           alert(error.response?.data?.detail || "No se pudo abrir el torneo programado");
@@ -324,8 +326,7 @@ const handleCreateTournament = async (formData) => {
     try {
       await tournamentService.endTournament(activeTournament.id);
       setLiveTournaments((prev) => prev.filter((t) => t.id !== activeTournament.id));
-      setCurrentTournamentId(null);
-      setActiveTournament(null);
+      selectTournament(null);
       setViewMode("menu");  // volver al dashboard principal, no a la mesa cash
       setShowEndTournamentModal(false);
       refresh();
@@ -542,11 +543,14 @@ const handleCreateTournament = async (formData) => {
                 </div>
             </div>
 
-            {/* RELOJ / NIVELES (T3) */}
-            <TournamentClock tournament={activeTournament} />
+            {/* RELOJ / NIVELES (T3). key: al cambiar de torneo (multi-torneo) el
+                componente se remonta desde cero — sin key arrastraría el reloj,
+                las mesas o los modales del torneo anterior. */}
+            <TournamentClock key={activeTournament.id} tournament={activeTournament} />
 
             {/* MESAS DEL TORNEO (Fase 1a) */}
             <TournamentTables
+                key={`tables-${activeTournament.id}`}
                 tournament={activeTournament}
                 refreshTrigger={refreshKey}
                 onUpdate={refresh}
@@ -554,6 +558,7 @@ const handleCreateTournament = async (formData) => {
 
             {/* TABLA DE JUGADORES */}
             <TournamentPlayerTable
+                key={`players-${activeTournament.id}`}
                 tournament={activeTournament}
                 onUpdate={refresh}
             />
