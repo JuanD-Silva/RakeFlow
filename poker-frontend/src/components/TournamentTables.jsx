@@ -132,7 +132,7 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
           </span>
           <button type="button" onClick={autoSeat} disabled={busy || openTables.length === 0}
             className="text-[10px] font-black uppercase px-3 py-1.5 rounded-lg bg-amber-500 text-gray-900 hover:bg-amber-400 disabled:opacity-50 flex items-center gap-1">
-            <SparklesIcon className="w-3.5 h-3.5" /> Auto-sentar
+            <SparklesIcon className="w-3.5 h-3.5" /> Sortear sillas
           </button>
         </div>
       )}

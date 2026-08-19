@@ -1,4 +1,5 @@
 # app/routers/tournaments.py
+import random
 import secrets
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -267,6 +268,11 @@ def _lowest_free_seat(used: set, max_seats: int):
     return None
 
 
+def _random_free_seat(used: set, max_seats: int):
+    libres = [s for s in range(1, max_seats + 1) if s not in used]
+    return random.choice(libres) if libres else None
+
+
 def _compute_rebalance(tables: list, waiting: list = None) -> dict:
     """Plan de NIVELADO asistido. Puro (no toca DB). Recibe las mesas OPEN como
     [{id, table_number, max_seats, player_ids:[...]}] y la lista de espera
@@ -357,8 +363,8 @@ async def _auto_seat_one(db, tournament_id, t_player) -> bool:
     """Sienta UN jugador en la PRIMERA mesa OPEN (por número) con cupo — fill-first:
     se llena una mesa antes de usar la siguiente. Una mesa VACÍA (reserva) NO se
     estrena por un solo registro: el jugador queda en espera y el director la abre
-    con "Nivelar" cuando hay ≥2 esperando. Recalcula desde DB (registro de a uno).
-    No-op si no hay mesa disponible (queda en espera)."""
+    con "Nivelar" cuando hay ≥2 esperando. La silla dentro de la mesa se sortea.
+    Recalcula desde DB (registro de a uno). No-op si no hay mesa (queda en espera)."""
     tables = (await db.execute(
         select(models.TournamentTable)
         .where(models.TournamentTable.tournament_id == tournament_id)
@@ -377,7 +383,7 @@ async def _auto_seat_one(db, tournament_id, t_player) -> bool:
         return False
     used = await _used_seats(db, best.id)
     t_player.table_id = best.id
-    t_player.seat_number = _lowest_free_seat(used, best.max_seats)
+    t_player.seat_number = _random_free_seat(used, best.max_seats)
     return True
 
 
@@ -569,12 +575,16 @@ async def auto_seat_players(
         .where(models.TournamentPlayer.tournament_id == tournament_id)
         .where(models.TournamentPlayer.status == "ACTIVE")
         .where(models.TournamentPlayer.table_id.is_(None))
-        .order_by(models.TournamentPlayer.id)  # FIFO: primero en anotarse, primero sentado
+        .order_by(models.TournamentPlayer.id)  # FIFO: si no caben todos, el cupo es por orden de llegada
     )).scalars().all()
     counts = await _active_counts_by_table(db, tournament_id)
     used_by_table = {t.id: await _used_seats(db, t.id) for t in tables}
-    seated_n = 0
-    for idx, tp in enumerate(unseated):
+    # SORTEO en dos pasos: primero se calculan los lugares (mesa + silla al azar)
+    # que se van a usar — misma regla fill-first/reserva de siempre — y después se
+    # reparten entre los jugadores BARAJADOS. Así nadie queda sentado por orden de
+    # inscripción, pero si no caben todos, quiénes entran sigue siendo FIFO.
+    slots = []
+    for idx in range(len(unseated)):
         in_use = [t for t in tables if counts.get(t.id, 0) > 0]
         if in_use:
             best = next((t for t in in_use if counts.get(t.id, 0) < t.max_seats), None)
@@ -589,12 +599,15 @@ async def auto_seat_players(
             if reserve is None or remaining < 2:
                 break
             best = reserve
-        seat = _lowest_free_seat(used_by_table[best.id], best.max_seats)
-        tp.table_id = best.id
-        tp.seat_number = seat
+        slots.append((best.id, _random_free_seat(used_by_table[best.id], best.max_seats)))
         counts[best.id] = counts.get(best.id, 0) + 1
-        used_by_table[best.id].add(seat)
-        seated_n += 1
+        used_by_table[best.id].add(slots[-1][1])
+    entran = list(unseated[:len(slots)])
+    random.shuffle(entran)
+    for tp, (table_id, seat) in zip(entran, slots):
+        tp.table_id = table_id
+        tp.seat_number = seat
+    seated_n = len(slots)
     await log_action(
         db, request=request, club=current_club, action=AuditAction.TOURNAMENT_PLAYER_SEAT,
         entity_type="Tournament", entity_id=tournament_id, meta={"auto_seated": seated_n},
