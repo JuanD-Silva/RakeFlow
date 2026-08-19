@@ -157,8 +157,11 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
   if (error && players.length === 0) return <div className="text-red-400 text-center py-10 bg-red-900/10 rounded-xl border border-red-500/20">{error}</div>;
   if (players.length === 0) return <div className="text-gray-500 text-center py-10 italic bg-gray-800 rounded-xl border border-gray-700">Mesa vacía. Esperando jugadores...</div>;
 
-  // Filtro solo de VISTA (sin tildes): los totales de la mesa siguen siendo de todos.
-  const visiblePlayers = search.trim()
+  // Filtro solo de VISTA (sin tildes): los totales de la mesa siguen siendo de
+  // todos. showSearch gobierna input Y filtro juntos: si la lista baja de 4 con
+  // texto escrito, el filtro se apaga con el input (no queda trabado invisible).
+  const showSearch = players.length > 3;
+  const visiblePlayers = showSearch && search.trim()
     ? players.filter((p) => norm(p.name).includes(norm(search)))
     : players;
 
@@ -169,7 +172,7 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
           ⚠ Reconectando… mostrando últimos datos
         </div>
       )}
-      {players.length > 3 && (
+      {showSearch && (
         <div className="p-3 border-b border-gray-700 bg-gray-900/50">
           <input
             type="search"
@@ -180,7 +183,7 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
           />
         </div>
       )}
-      {search.trim() && visiblePlayers.length === 0 && (
+      {showSearch && search.trim() && visiblePlayers.length === 0 && (
         <div className="p-6 text-center text-gray-500 text-sm italic">Nadie coincide con “{search}”.</div>
       )}
       {/* MOVIL: cards apiladas */}

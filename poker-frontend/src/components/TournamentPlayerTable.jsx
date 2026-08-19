@@ -93,7 +93,10 @@ export default function TournamentPlayerTable({ tournament, onUpdate }) {
     const totalTipsCount = playersWithStats.reduce((acc, p) => acc + (p.tips_count || 0), 0);
     const playersWithTip = playersWithStats.filter(p => (p.tips_count || 0) > 0).length;
     // Filtro solo de VISTA (sin tildes): pozo/KPIs siguen contando a todos.
-    const visiblePlayers = listSearch.trim()
+    // showListSearch gobierna input Y filtro juntos: si la lista baja de 4 con
+    // texto escrito, el filtro se apaga con el input (no queda trabado invisible).
+    const showListSearch = playersWithStats.length > 3;
+    const visiblePlayers = showListSearch && listSearch.trim()
         ? playersWithStats.filter((p) => norm(getPlayerName(p.player_id)).includes(norm(listSearch)))
         : playersWithStats;
     const totalTipsCollected = totalTipsCount * prices.tip;
@@ -251,7 +254,7 @@ export default function TournamentPlayerTable({ tournament, onUpdate }) {
                         <button onClick={() => setIsRegisterOpen(true)} className="bg-violet-600 hover:bg-violet-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 shadow-lg"><UserPlusIcon className="w-3 h-3" /> Inscribir</button>
                     )}
                 </div>
-                {playersWithStats.length > 3 && (
+                {showListSearch && (
                     <div className="p-3 border-b border-gray-700 bg-gray-900/30">
                         <input
                             type="search"
@@ -262,7 +265,7 @@ export default function TournamentPlayerTable({ tournament, onUpdate }) {
                         />
                     </div>
                 )}
-                {listSearch.trim() && visiblePlayers.length === 0 && (
+                {showListSearch && listSearch.trim() && visiblePlayers.length === 0 && (
                     <div className="p-6 text-center text-gray-500 text-sm italic">Nadie coincide con “{listSearch}”.</div>
                 )}
                 {/* MOVIL: cards apiladas (la tabla en horizontal es ilegible en pantallas chicas) */}
