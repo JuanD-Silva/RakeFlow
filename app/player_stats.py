@@ -131,7 +131,7 @@ def tournament_investment(t: models.Tournament, p: models.TournamentPlayer) -> f
     (volumen de torneo para el estatus VIP) — si tocás una, tocá la otra."""
     single_rebuys = max(0, (p.rebuys_count or 0) - (p.double_rebuys_count or 0))
     single_addons = max(0, (p.addons_count or 0) - (p.double_addons_count or 0))
-    return t.buyin_amount + \
+    return (p.entries_count or 1) * t.buyin_amount + \
         ((p.tips_count or 0) * (t.dealer_tip_amount or 0)) + \
         single_rebuys * t.rebuy_price + \
         (p.double_rebuys_count or 0) * t.double_rebuy_price + \
@@ -372,7 +372,7 @@ async def compute_club_standings(db: AsyncSession, club_id: int) -> dict:
         volume_map[r.pid] = float(r.vol or 0)
     vtour = (await db.execute(text("""
         SELECT tp.player_id AS pid, SUM(
-            t.buyin_amount
+            COALESCE(tp.entries_count, 1) * t.buyin_amount
             + COALESCE(tp.tips_count, 0) * COALESCE(t.dealer_tip_amount, 0)
             + GREATEST(0, COALESCE(tp.rebuys_count, 0) - COALESCE(tp.double_rebuys_count, 0)) * COALESCE(t.rebuy_price, 0)
             + COALESCE(tp.double_rebuys_count, 0) * COALESCE(t.double_rebuy_price, 0)
