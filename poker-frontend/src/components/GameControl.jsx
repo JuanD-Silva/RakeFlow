@@ -1047,18 +1047,23 @@ function ActionButton({ color, label, onClick }) {
 // torneo finalizado salga de la lista de vivos. Un solo momento de motion:
 // la ráfaga de confetti al montar (mismo lenguaje que los logros del panel).
 function TournamentCeremony({ ceremony, onClose }) {
-  useEscape(onClose, true);
   // Compartir el podio como IMAGEN (mismo mecanismo que las tarjetas-trofeo del
   // panel del jugador): Web Share nativo → WhatsApp; fallback descarga el PNG.
   const podiumRef = useRef(null);
   const [shareState, setShareState] = useState(null); // null|'sharing'|'shared'|'downloaded'|'error'
+  // Escape apagado mientras se genera la imagen: cerrar a mitad de captura
+  // descargaba el PNG "fantasma" con la ceremonia ya cerrada (y la ceremonia
+  // es de un solo tiro). Convención del propio useEscape.
+  useEscape(onClose, shareState !== 'sharing');
+  const shareText = `🏆 ${ceremony.tournamentName}: así quedó el podio. ¡Nos vemos en el próximo torneo!`;
+  const fileSlug = (ceremony.tournamentName || 'torneo').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'torneo';
   const sharePodium = async () => {
     if (shareState === 'sharing') return;
     setShareState('sharing');
     try {
       const result = await shareCardImage(podiumRef.current, {
-        shareText: `🏆 ${ceremony.tournamentName}: así quedó el podio. ¡Nos vemos en el próximo torneo!`,
-        fileName: 'podio-torneo.png',
+        shareText,
+        fileName: `podio-${fileSlug}.png`,
       });
       setShareState(result);
     } catch (e) {
@@ -1110,6 +1115,7 @@ function TournamentCeremony({ ceremony, onClose }) {
               </div>
             ))}
           </div>
+          <p className="mt-4 text-[10px] font-bold uppercase tracking-widest text-violet-300/70">rakeflow.site</p>
         </div>
 
         <div className="bg-gray-900 p-6 pt-4 space-y-2.5">
@@ -1122,6 +1128,12 @@ function TournamentCeremony({ ceremony, onClose }) {
               : shareState === 'error' ? 'No se pudo — reintentar'
               : 'Compartir podio'}
           </button>
+          {shareState === 'downloaded' && (
+            <p className="text-xs text-gray-400 text-center">
+              Imagen descargada — adjúntala en tu chat.{' '}
+              <a href={`https://wa.me/?text=${encodeURIComponent(shareText)}`} target="_blank" rel="noreferrer" className="text-emerald-400 font-bold underline">Abrir WhatsApp</a>
+            </p>
+          )}
           <button onClick={onClose}
             className="w-full bg-violet-600 hover:bg-violet-500 text-white font-black uppercase tracking-wider py-3.5 rounded-xl shadow-lg shadow-violet-900/40 transition-colors">
             Cerrar la noche
