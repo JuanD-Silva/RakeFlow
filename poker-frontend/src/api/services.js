@@ -413,6 +413,9 @@ endTournament: async (tournamentId) => {
     const response = await api.post(`/tournaments/${tournamentId}/players/${playerId}/eliminate`);
     return response.data;
   },
+  // Deshacer un bust reciente (ELIMINATED → ACTIVE, sin mover plata)
+  reactivatePlayer: async (tournamentId, playerId) =>
+    (await api.post(`/tournaments/${tournamentId}/players/${playerId}/reactivate`)).data,
   // Quitar inscripción errada: borra el registro Y sus cobros (≠ eliminar/bust)
   unregisterPlayer: async (tournamentId, playerId) => {
     const response = await api.delete(`/tournaments/${tournamentId}/players/${playerId}`);
