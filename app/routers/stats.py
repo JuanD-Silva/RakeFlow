@@ -285,6 +285,7 @@ async def get_weekly_distribution(
                         "total": int(amount),
                         "percent": r.value,
                         "type": "PARTNER",
+                        "rule_id": r.id,
                     })
             else:
                 distribution.append({"name": "Fondo Club", "total": int(remaining_pool), "percent": 100, "type": "FUND"})
@@ -671,6 +672,13 @@ from fastapi import Request as _Request
 from ..audit import log_action as _log_action, AuditAction as _AuditAction
 
 
+def _parse_fecha(v: str):
+    try:
+        return datetime.strptime(v, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Fechas inválidas: usa YYYY-MM-DD.")
+
+
 class PartnerPayoutCreate(_BaseModel):
     beneficiary_name: str
     rule_id: int | None = None
@@ -689,15 +697,19 @@ async def list_partner_payouts(
     current_club: models.Club = Depends(get_current_club),
     _: models.User = Depends(require_role(_REPORT_ROLES)),
 ):
-    """Pagos a socios CONTENIDOS en el rango visto (un pago registrado en la
-    vista semanal cuenta también al mirar el mes que la contiene)."""
-    s = datetime.strptime(start_date, "%Y-%m-%d").date()
-    e = datetime.strptime(end_date, "%Y-%m-%d").date()
+    """Pagos a socios que SOLAPAN el rango visto. El front suma los CONTENIDOS
+    en el rango y usa los que lo desbordan (ej. un pago a nivel mes visto desde
+    la semana) como AVISO para no re-registrar."""
+    try:
+        s = datetime.strptime(start_date, "%Y-%m-%d").date()
+        e = datetime.strptime(end_date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Fechas inválidas: usa YYYY-MM-DD.")
     rows = (await db.execute(
         select(models.PartnerPayout)
         .where(models.PartnerPayout.club_id == current_club.id)
-        .where(models.PartnerPayout.period_start >= s)
-        .where(models.PartnerPayout.period_end <= e)
+        .where(models.PartnerPayout.period_end >= s)
+        .where(models.PartnerPayout.period_start <= e)
         .order_by(models.PartnerPayout.created_at.desc())
     )).scalars().all()
     return [{
@@ -730,10 +742,10 @@ async def create_partner_payout(
             raise HTTPException(status_code=404, detail="Regla de distribución no encontrada.")
     payout = models.PartnerPayout(
         club_id=current_club.id,
-        beneficiary_name=data.beneficiary_name.strip()[:120],
+        beneficiary_name=data.beneficiary_name.strip(),
         rule_id=data.rule_id,
-        period_start=datetime.strptime(data.period_start, "%Y-%m-%d").date(),
-        period_end=datetime.strptime(data.period_end, "%Y-%m-%d").date(),
+        period_start=_parse_fecha(data.period_start),
+        period_end=_parse_fecha(data.period_end),
         amount=data.amount,
         method=data.method,
         note=(data.note or None),

@@ -94,9 +94,17 @@ export default function WeeklyReport() {
     return () => { vivo = false; };
   }, [referenceDate, viewMode, payoutReload]);
 
-  const pagadoA = (nombre) => partnerPayouts
-    .filter((p) => p.beneficiary_name === nombre)
+  // Suman solo los pagos CONTENIDOS en el rango visto; un pago que lo
+  // desborda (ej. registrado a nivel MES y estamos viendo la semana) no suma
+  // pero sí AVISA — para no re-registrar el mismo pago dos veces.
+  const startISO = formatDateISO(range.start);
+  const endISO = formatDateISO(range.end);
+  const pagosDe = (nombre) => partnerPayouts.filter((p) => p.beneficiary_name === (nombre || '').trim());
+  const pagadoA = (nombre) => pagosDe(nombre)
+    .filter((p) => p.period_start >= startISO && p.period_end <= endISO)
     .reduce((acc, p) => acc + (p.amount || 0), 0);
+  const pagoExterno = (nombre) => pagosDe(nombre)
+    .some((p) => !(p.period_start >= startISO && p.period_end <= endISO));
 
   // Secuencia anti-respuestas-viejas: encadenar taps de ← dispara varios
   // fetches; solo la respuesta del MÁS reciente puede pintar (patrón reqSeq
@@ -428,17 +436,22 @@ export default function WeeklyReport() {
                       (como Liquidar de dealers) — no mueve la caja. */}
                   {(isSocio(item) || isFondoItem(item)) && item.total > 0 && (() => {
                     const pagado = pagadoA(item.name);
-                    const pendiente = Math.max(0, item.total - pagado);
+                    const externo = pagoExterno(item.name);
+                    const pendiente = item.total - pagado; // SIN clamp: si hay de más, se dice
                     return (
-                      <div className="border-t border-gray-700/50 pt-3 flex items-center justify-between gap-3">
-                        {pendiente <= 0 ? (
+                      <div className="border-t border-gray-700/50 pt-3 flex items-center justify-between gap-3 flex-wrap">
+                        {pagado > item.total ? (
+                          <span className="text-red-300 text-xs font-bold">Pagado {formatMoney(pagado)} de {formatMoney(item.total)} — hay registros de más, revisa</span>
+                        ) : pendiente <= 0 ? (
                           <span className="text-emerald-400 text-xs font-bold uppercase tracking-wider">✓ Pagado</span>
                         ) : pagado > 0 ? (
                           <span className="text-amber-300 text-xs font-bold">Pagado {formatMoney(pagado)} de {formatMoney(item.total)}</span>
+                        ) : externo ? (
+                          <span className="text-blue-300 text-xs font-bold">Registrado en otro periodo (ej. el mes) — no lo repitas</span>
                         ) : (
                           <span className="text-gray-400 text-xs font-bold uppercase tracking-wider">Sin registrar</span>
                         )}
-                        {pendiente > 0 && (
+                        {pendiente > 0 && !externo && (
                           <button
                             type="button"
                             onClick={() => setPayoutFor({ ...item, pendiente })}
@@ -535,6 +548,7 @@ function PartnerPayoutModal({ item, periodStart, periodEnd, onClose, onDone }) {
     try {
       const payout = await statsService.createPartnerPayout({
         beneficiary_name: item.name,
+        rule_id: item.rule_id ?? null,
         period_start: periodStart,
         period_end: periodEnd,
         amount: value,
