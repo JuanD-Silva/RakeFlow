@@ -121,13 +121,15 @@ export default function GameControl() {
   // Confirmación propia para borrar un torneo programado (era window.confirm)
   const [scheduledToDelete, setScheduledToDelete] = useState(null); // objeto torneo
   const [isDeletingScheduled, setIsDeletingScheduled] = useState(false);
-  useEscape(() => setShowEndTournamentModal(false), showEndTournamentModal && !isLoading);
-  useEscape(() => setShowAuditModal(false), showAuditModal);
   const [isLoading, setIsLoading] = useState(false);
   
   // ESTADOS DE AUDITORÍA
   const [auditData, setAuditData] = useState(null);
   const [showAuditModal, setShowAuditModal] = useState(false);
+  // Escape en los modales propios (tras las declaraciones: el enabled se
+  // evalúa en cada render y leer un const antes de su línea es TDZ = crash).
+  useEscape(() => setShowEndTournamentModal(false), showEndTournamentModal && !isLoading);
+  useEscape(() => setShowAuditModal(false), showAuditModal);
 
   // 1. CARGAR SESIÓN Y TORNEO ACTIVO
 useEffect(() => {

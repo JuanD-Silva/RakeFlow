@@ -523,7 +523,7 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
             
             {/* MODAL DE CONFIRMACIÓN */}
             {confirmModal.isOpen && (
-                <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[90] backdrop-blur-sm p-4 animate-fade-in">
+                <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[90] backdrop-blur-sm p-4 animate-fade-in" role="dialog" aria-modal="true" aria-label={confirmModal.title}>
                     <div className="bg-gray-800 rounded-2xl border border-gray-600 shadow-2xl w-full max-w-sm p-6 text-center transform scale-100 transition-all">
                         <div className={`p-4 rounded-full mb-4 mx-auto w-16 h-16 flex items-center justify-center ${
                             confirmModal.type === 'danger' ? 'bg-red-500/10 text-red-500' : 
@@ -624,7 +624,7 @@ function PayoutModal({ tournament, netPot, players, onClose, onRequestFinalize, 
     };
 
     return (
-        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[80] backdrop-blur-sm p-4 animate-fade-in" onClick={() => setOpenDropdown(null)}>
+        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[80] backdrop-blur-sm p-4 animate-fade-in" onClick={() => setOpenDropdown(null)} role="dialog" aria-modal="true" aria-label="Premiación">
             <div className="bg-gray-800 rounded-2xl border border-yellow-600/30 shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
 
                 {/* HEADER */}
@@ -766,7 +766,7 @@ function RegisterModal({ onClose, onConfirm, activeTab, setActiveTab, availableP
     const handleSelect = (p) => { setSelectedPlayerId(p.id); setSearchTerm(p.name); setShowDropdown(false); };
 
     return (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 backdrop-blur-sm p-4" role="dialog" aria-modal="true" aria-label="Inscribir jugador">
              <div className="bg-gray-800 rounded-2xl border border-gray-700 shadow-2xl w-full max-w-md animate-fade-in-up overflow-hidden">
                  {/* Header */}
                  <div className="bg-gray-900 p-5 border-b border-gray-700 flex justify-between items-center">
@@ -888,7 +888,7 @@ function ActionModal({ player, playerName, onClose, onRebuy, onAddon, onUndo, on
     const singleAddons = (player.addons_count || 0) - (player.double_addons_count || 0);
 
     return (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 backdrop-blur-sm p-4" role="dialog" aria-modal="true" aria-label={`Gestionar a ${playerName}`}>
             <div className="bg-gray-800 rounded-2xl border border-gray-700 shadow-2xl w-full max-w-md animate-fade-in-up overflow-hidden max-h-[90vh] overflow-y-auto">
                 {/* Header */}
                 <div className="bg-gray-900 p-5 border-b border-gray-700 flex justify-between items-center sticky top-0 z-10">
