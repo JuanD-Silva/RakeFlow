@@ -11,7 +11,6 @@ import {
 } from '@heroicons/react/24/outline';
 
 export default function TransactionManager({ player, onClose, onUpdate }) {
-  useEscape(onClose, !loading);
   // 1. ESTADO LOCAL: Copiamos las transacciones para manipularlas al instante
   const [localTransactions, setLocalTransactions] = useState([]);
   
@@ -25,6 +24,10 @@ export default function TransactionManager({ player, onClose, onUpdate }) {
   // Estados de feedback (Mensajes de éxito)
   const [loading, setLoading] = useState(false);
   const [notification, setNotification] = useState(null); // { type: 'success'|'error', msg: '' }
+
+  // Escape cierra el historial, salvo mientras hay una operación en vuelo
+  // (va DESPUÉS de los useState: leer `loading` antes era un ReferenceError).
+  useEscape(onClose, !loading);
 
   // Cargar datos iniciales
   useEffect(() => {
