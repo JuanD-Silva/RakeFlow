@@ -9,6 +9,8 @@ import { tournamentService, playerService } from '../api/services';
 import { formatMoney } from '../utils/formatters';
 import { norm } from '../utils/text';
 import { useEscape } from '../hooks/useEscape';
+import ConfirmModal from './ConfirmModal';
+import { useToast, Toast } from './Toast';
 
 export default function TournamentPlayerTable({ tournament, onUpdate, onFinalized }) {
     const [allPlayers, setAllPlayers] = useState([]);
@@ -19,7 +21,6 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
     const [actionPlayer, setActionPlayer] = useState(null); 
     
     const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: "", message: "", type: "info", onConfirm: null });
-    const [notification, setNotification] = useState({ show: false, message: "", type: "success" });
 
     // Estados Formulario Registro
     const [activeTab, setActiveTab] = useState("search");
@@ -29,9 +30,6 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
     const [newPlayerPhone, setNewPlayerPhone] = useState("");
     const [listSearch, setListSearch] = useState(""); // buscador de la lista de inscritos
     const [showFinance, setShowFinance] = useState(false); // HUD financiero en móvil (md+ siempre visible)
-    // Escape cierra el confirm inline (capa más alta); los modales de abajo
-    // excluyen esta capa en su enabled para no cerrarse en cascada.
-    useEscape(() => setConfirmModal(prev => ({ ...prev, isOpen: false })), confirmModal.isOpen && !loading);
     const [regOptions, setRegOptions] = useState({ payBuyin: true, payTip: false });
 
     useEffect(() => {
@@ -46,16 +44,7 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
 
     const getPlayerName = (id) => allPlayers.find(p => p.id === id)?.name || `Jugador #${id}`;
     
-    // action opcional: { label, onClick } — botón dentro del toast (ej. Deshacer).
-    // El timer se guarda para que un toast nuevo no muera por el timeout del viejo.
-    const toastTimer = useRef(null);
-    const togglingPaidRef = useRef(false);
-    useEffect(() => () => clearTimeout(toastTimer.current), []);
-    const showToast = (msg, type = "success", action = null) => {
-        if (toastTimer.current) clearTimeout(toastTimer.current);
-        setNotification({ show: true, message: msg, type, action });
-        toastTimer.current = setTimeout(() => setNotification({ show: false, message: "", type: "success", action: null }), action ? 5000 : 3000);
-    };
+    const { toast, showToast, dismissToast } = useToast();
 
     // --- CÁLCULOS FINANCIEROS ---
     const prices = {
@@ -124,7 +113,7 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
             } else if (!finalId) { setLoading(false); showToast("Selecciona un jugador", "error"); return; }
             await tournamentService.registerPlayer(tournament.id, { player_id: Number(finalId), pay_buyin: regOptions.payBuyin, pay_tip: regOptions.payTip });
             setIsRegisterOpen(false); setNewPlayerName(""); setSelectedPlayerId(""); onUpdate(); showToast("Inscrito");
-        } catch(e) { showToast("Error", "error"); } finally { setLoading(false); }
+        } catch(e) { showToast(e.response?.data?.detail || "No se pudo inscribir. Revisa e inténtalo de nuevo.", "error"); } finally { setLoading(false); }
     };
 
     const handleTransaction = (endpoint, type) => {
@@ -237,6 +226,7 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
     // Guard con REF, no con loading: setLoading montaría el GlobalLoader
     // (pantallazo negro por cobro) — mismo criterio que togglingPaidRef.
     const quickRebuyRef = useRef(false);
+    const togglingPaidRef = useRef(false); // guard anti doble-flip del fiado
     const handleQuickRebuy = async (pid, name) => {
         if (quickRebuyRef.current || loading) return;
         quickRebuyRef.current = true;
@@ -314,20 +304,7 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
             {loading && <GlobalLoader />}
 
             {/* NOTIFICACIONES (TOASTS) */}
-            {notification.show && (
-                <div className={`pointer-events-none fixed bottom-6 left-4 right-4 sm:bottom-auto sm:top-5 sm:left-auto sm:right-5 z-[100] px-6 py-4 rounded-xl shadow-2xl border flex items-center gap-3 animate-fade-in-up ${notification.type === 'error' ? 'bg-red-900/90 border-red-500 text-white' : 'bg-emerald-900/90 border-emerald-500 text-white'}`} role="status" aria-live="polite">
-                    {notification.type === 'error' ? <XCircleIcon className="w-6 h-6"/> : <CheckCircleIcon className="w-6 h-6"/>}
-                    <span className="font-bold">{notification.message}</span>
-                    {notification.action && (
-                        <button
-                            onClick={() => { const a = notification.action; setNotification({ show: false, message: "", type: "success", action: null }); a.onClick(); }}
-                            className="pointer-events-auto ml-2 shrink-0 px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 border border-white/30 font-black uppercase text-xs tracking-wider"
-                        >
-                            {notification.action.label}
-                        </button>
-                    )}
-                </div>
-            )}
+            <Toast toast={toast} onDismiss={dismissToast} />
 
             {/* HUD. En móvil arranca COLAPSADO en una barra con lo que se decide
                 en vivo (activos + pozo neto): las 6 cards costaban una pantalla
@@ -356,7 +333,7 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
                 {showAvgStack && <StatCard icon={<CircleStackIcon className="w-10 h-10 text-green-500" />} label="Stack Prom." value={avgStack.toLocaleString('es-CO')} sub="Fichas ÷ activos" color="green" />}
                 <StatCard icon={<BanknotesIcon className="w-10 h-10 text-green-500" />} label="Pozo Bruto" value={formatCurrency(totalPotRaw)} sub="Total Recaudado" color="green" />
                 <StatCard icon={<ChartBarIcon className="w-10 h-10 text-violet-500" />} label="Rake Club" value={formatCurrency(houseRake)} sub={`${prices.rake}%`} color="violet" />
-                <StatCard icon={<HeartIcon className="w-10 h-10 text-pink-500" />} label="Staff Bonus" value={formatCurrency(totalTipsCollected)} sub={`${totalTipsCount} tips (${playersWithTip}/${playersWithStats.length} jugadores)`} color="pink" />
+                <StatCard icon={<HeartIcon className="w-10 h-10 text-pink-500" />} label="Tips" value={formatCurrency(totalTipsCollected)} sub={`${totalTipsCount} tips (${playersWithTip}/${playersWithStats.length} jugadores)`} color="pink" />
                 <StatCard icon={<TrophyIcon className="w-10 h-10 text-yellow-500" />} label="A Repartir" value={formatCurrency(netPot)} sub="Pozo Neto" color="yellow" highlight />
             </div>
 
@@ -431,7 +408,7 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
                                     <div className="font-bold text-white text-base flex items-center gap-2 flex-wrap">
                                         <span className="truncate">{getPlayerName(p.player_id)}</span>
                                         {p.status === 'WINNER' && <span className="bg-yellow-500 text-black text-[10px] font-black px-1.5 rounded">#{p.rank}</span>}
-                                        {p.status === 'ELIMINATED' && <span className="text-red-500 text-[10px] font-black">OUT</span>}
+                                        {p.status === 'ELIMINATED' && <span className="text-red-400 text-[11px] font-black uppercase">Quebró</span>}
                                     </div>
                                     <div className="text-green-400 font-mono font-bold text-xl mt-1">{formatCurrency(p.totalPaid)}</div>
                                     <div className="text-[10px] text-gray-400 uppercase tracking-wider">Inversión total</div>
@@ -451,13 +428,13 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
                             <div className="flex flex-wrap gap-1.5 mb-3">
                                 <button
                                     onClick={() => handleTogglePaid(p.player_id)}
-                                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border transition-all active:scale-95 ${
+                                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider border transition-all active:scale-95 ${
                                         p.is_buyin_paid === false
                                             ? 'bg-red-500/10 border-red-500/40 text-red-400'
                                             : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
                                     }`}
                                 >
-                                    {p.is_buyin_paid === false ? '⏳ Debe' : '✓ Pago'}
+                                    {p.is_buyin_paid === false ? '⏳ Debe' : '✓ Pagó'}
                                 </button>
                                 {p.singleRebuys > 0 && (
                                     <span className="px-2 py-1 rounded bg-blue-900/20 border border-blue-500/30 text-[10px] font-bold text-blue-300 uppercase tracking-wide">
@@ -534,13 +511,13 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
                                         <div className="font-bold text-white text-base flex items-center gap-2">
                                             {getPlayerName(p.player_id)}
                                             {p.status === 'WINNER' && <span className="bg-yellow-500 text-black text-[10px] font-black px-1.5 rounded">#{p.rank}</span>}
-                                            {p.status === 'ELIMINATED' && <span className="text-red-500 text-[10px] font-black">OUT</span>}
+                                            {p.status === 'ELIMINATED' && <span className="text-red-400 text-[11px] font-black uppercase">Quebró</span>}
                                         </div>
                                     </td>
                                     <td className="px-4 py-3 text-center">
                                         <button
                                             onClick={() => handleTogglePaid(p.player_id)}
-                                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border transition-all active:scale-95 ${
+                                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider border transition-all active:scale-95 ${
                                                 p.is_buyin_paid === false
                                                     ? 'bg-red-500/10 border-red-500/40 text-red-400 hover:bg-red-500/20'
                                                     : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
@@ -606,38 +583,18 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
             {isPayoutOpen && <PayoutModal escEnabled={!confirmModal.isOpen} tournament={tournament} netPot={netPot} players={playersWithStats} onClose={() => setIsPayoutOpen(false)} onRequestFinalize={handleRequestFinalize} showToast={showToast} formatCurrency={formatCurrency} getPlayerName={getPlayerName} />}
             
             {/* MODAL DE CONFIRMACIÓN */}
-            {confirmModal.isOpen && (
-                <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[90] backdrop-blur-sm p-4 animate-fade-in" role="dialog" aria-modal="true" aria-label={confirmModal.title}>
-                    <div className="bg-gray-800 rounded-2xl border border-gray-600 shadow-2xl w-full max-w-sm p-6 text-center transform scale-100 transition-all">
-                        <div className={`p-4 rounded-full mb-4 mx-auto w-16 h-16 flex items-center justify-center ${
-                            confirmModal.type === 'danger' ? 'bg-red-500/10 text-red-500' : 
-                            confirmModal.type === 'success' ? 'bg-yellow-500/10 text-yellow-500' : 
-                            'bg-blue-500/10 text-blue-500'
-                        }`}>
-                            {confirmModal.type === 'success' ? <TrophyIcon className="w-8 h-8" /> : <ExclamationTriangleIcon className="w-8 h-8" />}
-                        </div>
-                        <h3 className="text-xl font-bold text-white mb-2">{confirmModal.title}</h3>
-                        <p className="text-gray-300 mb-2">{confirmModal.message}</p>
-                        {confirmModal.subMessage && (
-                            <p className="text-sm font-mono font-bold text-white bg-gray-700/50 py-2 px-3 rounded-lg mb-4 inline-block whitespace-pre-line text-left">
-                                {confirmModal.subMessage}
-                            </p>
-                        )}
-                        <div className="flex gap-3 w-full mt-4">
-                            <button onClick={() => setConfirmModal({...confirmModal, isOpen: false})} disabled={loading} className="flex-1 py-3 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white rounded-xl font-bold transition-colors">Cancelar</button>
-                            {/* disabled con loading: el GlobalLoader monta un frame tarde y
-                                un doble-tap nervioso podía disparar dos cobros. El color del
-                                texto vive en la variante (no mezclar text-white base con
-                                text-black condicional: el resultado dependía del orden CSS). */}
-                            <button onClick={confirmModal.onConfirm} disabled={loading} className={`flex-1 py-3 rounded-xl font-bold shadow-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                                confirmModal.type === 'danger' ? 'bg-red-600 hover:bg-red-500 text-white' :
-                                confirmModal.type === 'success' ? 'bg-yellow-600 hover:bg-yellow-500 text-black' :
-                                'bg-blue-600 hover:bg-blue-500 text-white'
-                            }`}>{loading ? 'Procesando…' : 'Confirmar'}</button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <ConfirmModal
+                isOpen={confirmModal.isOpen}
+                onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                onConfirm={confirmModal.onConfirm}
+                title={confirmModal.title}
+                message={confirmModal.message}
+                subMessage={confirmModal.subMessage}
+                variant={confirmModal.type}
+                isDeleting={loading}
+                confirmText="Confirmar"
+                loadingText="Procesando…"
+            />
             
             {isRegisterOpen && <RegisterModal onClose={() => setIsRegisterOpen(false)} onConfirm={handleRegister} activeTab={activeTab} setActiveTab={setActiveTab} availablePlayers={allPlayers.flatMap(ap => { const tp = tournament.players?.find(x => x.player_id === ap.id); if (!tp) return [ap]; return tp.status === 'ELIMINATED' ? [{ ...ap, reentry: true }] : []; })} selectedPlayerId={selectedPlayerId} setSelectedPlayerId={setSelectedPlayerId} newPlayerName={newPlayerName} setNewPlayerName={setNewPlayerName} newPlayerPhone={newPlayerPhone} setNewPlayerPhone={setNewPlayerPhone} regOptions={regOptions} setRegOptions={setRegOptions} prices={prices} loading={loading} />}
             {actionPlayer && <ActionModal escEnabled={!confirmModal.isOpen} player={actionPlayer} playerName={getPlayerName(actionPlayer.player_id)} rebuysClosed={rebuysClosed} addonsClosed={addonsClosed} rebuyUntil={tournament.rebuy_until_level} addonUntil={tournament.addon_until_level} onClose={() => setActionPlayer(null)} onRebuy={(t) => handleTransaction("Rebuy", t)} onAddon={(t) => handleTransaction("Addon", t)} onUndo={(action, type) => { setConfirmModal({ isOpen: true, title: "Deshacer", message: action === "tip" ? "¿Deshacer el último tip cobrado?" : `¿Deshacer ${action} ${type}?`, type: "danger", onConfirm: async () => { setLoading(true); try { await tournamentService.undoAction(tournament.id, actionPlayer.player_id, action, type); setActionPlayer(null); onUpdate(); showToast("Deshecho"); } catch(e) { showToast(e.response?.data?.detail || "Error", "error"); } finally { setLoading(false); setConfirmModal(prev => ({...prev, isOpen: false})); } } }); }} onPayTip={() => { handlePayTip(actionPlayer.player_id); }} onUnregister={() => handleUnregister(actionPlayer.player_id, getPlayerName(actionPlayer.player_id))} prices={prices} loading={loading} />}
@@ -664,7 +621,7 @@ function GlobalLoader() {
 
 // ... Resto de componentes (PayoutModal, StatCard, RegisterModal, ActionModal) se mantienen IGUAL que antes ...
 // Asegúrate de copiarlos del archivo anterior o pegarlos aquí si los necesitas.
-// --- COPIA AQUÍ PayoutModal, StatCard, RegisterModal, ActionModal ---
+// --- SUBCOMPONENTES: PayoutModal, StatCard, RegisterModal, ActionModal ---
 function PayoutModal({ tournament, netPot, players, onClose, onRequestFinalize, showToast, formatCurrency, getPlayerName, escEnabled = true }) {
     useEscape(onClose, escEnabled);
     const [selectedWinners, setSelectedWinners] = useState({});
@@ -677,7 +634,6 @@ function PayoutModal({ tournament, netPot, players, onClose, onRequestFinalize, 
         return nameA < nameB ? -1 : nameA > nameB ? 1 : 0;
     });
 
-    const rankMedals = ['🥇', '🥈', '🥉'];
     const rankColors = [
         { bg: 'bg-yellow-500/10', border: 'border-yellow-500/30', text: 'text-yellow-400', prize: 'text-yellow-300', highlight: 'bg-yellow-900/20' },
         { bg: 'bg-gray-400/10', border: 'border-gray-400/30', text: 'text-gray-300', prize: 'text-gray-200', highlight: 'bg-gray-700/30' },
@@ -709,7 +665,7 @@ function PayoutModal({ tournament, netPot, players, onClose, onRequestFinalize, 
 
     return (
         <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[80] backdrop-blur-sm p-4 animate-fade-in" onClick={() => setOpenDropdown(null)} role="dialog" aria-modal="true" aria-label="Premiación">
-            <div className="bg-gray-800 rounded-2xl border border-yellow-600/30 shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-gray-800 rounded-2xl border border-yellow-600/30 shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh] overflow-hidden" onClick={(e) => { e.stopPropagation(); setOpenDropdown(null); }}>
 
                 {/* HEADER */}
                 <div className="bg-gray-900 p-5 border-b border-gray-700 flex justify-between items-center">
@@ -740,7 +696,6 @@ function PayoutModal({ tournament, netPot, players, onClose, onRequestFinalize, 
                         const rank = index + 1;
                         const prize = netPot * (percent / 100);
                         const colors = rankColors[index] || { bg: 'bg-violet-500/10', border: 'border-violet-500/30', text: 'text-violet-400', prize: 'text-violet-300', highlight: 'bg-violet-900/20' };
-                        const medal = rankMedals[index] || `#${rank}`;
                         const selectedPid = selectedWinners[rank];
                         const selectedName = selectedPid ? getPlayerName(Number(selectedPid)) : null;
                         const alreadySelected = getAlreadySelected(rank);
@@ -752,8 +707,7 @@ function PayoutModal({ tournament, netPot, players, onClose, onRequestFinalize, 
                                 {/* Rank header + Selector en una sola fila compacta */}
                                 <div className="flex items-center justify-between px-4 py-2">
                                     <div className="flex items-center gap-2">
-                                        <span className="text-xl">{medal}</span>
-                                        <span className={`text-sm font-black uppercase ${colors.text}`}>#{rank}</span>
+                                        <span className={`shrink-0 w-7 h-7 rounded-full border-2 flex items-center justify-center font-black font-mono text-sm ${rank === 1 ? 'border-yellow-400/70 text-yellow-300 bg-yellow-500/10' : rank === 2 ? 'border-gray-300/50 text-gray-200 bg-gray-400/10' : rank === 3 ? 'border-orange-400/50 text-orange-300 bg-orange-500/10' : `${colors.text} border-gray-500/40`}`}>{rank}</span>
                                         <span className="text-gray-500 text-xs">({percent}%)</span>
                                     </div>
                                     <span className={`font-mono font-black text-lg ${colors.prize}`}>{formatCurrency(prize)}</span>
@@ -773,14 +727,13 @@ function PayoutModal({ tournament, netPot, players, onClose, onRequestFinalize, 
                                             </button>
                                         </div>
                                     ) : (
-                                        <div className="relative">
+                                        <div className="relative" onClick={(e) => e.stopPropagation()}>
                                             <MagnifyingGlassIcon className="absolute left-3 top-3.5 w-5 h-5 text-gray-500" />
                                             <input
                                                 type="text"
                                                 value={search}
                                                 onClick={() => setOpenDropdown(openDropdown === rank ? null : rank)}
                                                 onChange={(e) => { setSearchTerms({...searchTerms, [rank]: e.target.value}); setOpenDropdown(rank); }}
-                                                onBlur={() => setTimeout(() => setOpenDropdown(null), 200)}
                                                 placeholder="Buscar jugador..."
                                                 className="w-full bg-gray-900 border border-gray-600 rounded-xl py-3 pl-10 pr-4 text-white text-base font-medium placeholder-gray-600 outline-none focus:border-yellow-500/50 transition-colors"
                                             />
@@ -940,7 +893,7 @@ function RegisterModal({ onClose, onConfirm, activeTab, setActiveTab, availableP
                              <label className="flex items-center gap-3 bg-gray-800/50 border border-gray-600 rounded-xl p-4 cursor-pointer hover:border-pink-500/30 transition-colors active:bg-gray-700">
                                  <input type="checkbox" checked={regOptions.payTip} onChange={e=>setRegOptions({...regOptions, payTip:e.target.checked})} className="w-5 h-5 accent-pink-500" />
                                  <div className="flex-1">
-                                     <span className="text-white font-bold">Staff Bonus (Tip)</span>
+                                     <span className="text-white font-bold">Tip del dealer</span>
                                  </div>
                                  <span className="text-pink-400 font-mono font-bold text-lg">${prices.tip.toLocaleString()}</span>
                              </label>
@@ -996,7 +949,7 @@ function ActionModal({ player, playerName, onClose, onRebuy, onAddon, onUndo, on
                     {(prices.tip > 0 || (player.tips_count || 0) > 0) && (
                         <div>
                             <label className="text-pink-400 text-xs font-bold uppercase tracking-widest mb-3 block px-1 flex items-center gap-2">
-                                <HeartIcon className="w-4 h-4" /> Staff Bonus (Tip)
+                                <HeartIcon className="w-4 h-4" /> Tip del dealer
                                 {(player.tips_count || 0) > 0 && <span className="bg-pink-500/20 text-pink-300 px-2 py-0.5 rounded text-[10px]">{player.tips_count} pagado{player.tips_count !== 1 ? 's' : ''}</span>}
                             </label>
                             {(player.tips_count || 0) > 0 && (
@@ -1014,7 +967,7 @@ function ActionModal({ player, playerName, onClose, onRebuy, onAddon, onUndo, on
                                 </button>
                             )}
                             {(player.tips_count || 0) > 0 && (
-                                <button onClick={()=>onUndo("tip","SINGLE")} disabled={loading} className="w-full mt-2 text-red-400 hover:text-red-300 hover:bg-red-900/20 border border-gray-700 hover:border-red-500/30 py-2 rounded-lg text-[10px] font-bold uppercase transition-colors">
+                                <button onClick={()=>onUndo("tip","SINGLE")} disabled={loading} className="w-full mt-2 text-red-400 hover:text-red-300 hover:bg-red-900/20 border border-gray-700 hover:border-red-500/30 py-2 rounded-lg text-xs font-bold uppercase transition-colors">
                                     Deshacer tip ({player.tips_count})
                                 </button>
                             )}
@@ -1035,7 +988,7 @@ function ActionModal({ player, playerName, onClose, onRebuy, onAddon, onUndo, on
                                     <div className="text-xl font-black font-mono">{formatMoney(prices.rebuyS)}</div>
                                 </button>
                                 {singleRebuys > 0 && (
-                                    <button onClick={()=>onUndo("rebuy","SINGLE")} disabled={loading} className="w-full text-red-400 hover:text-red-300 hover:bg-red-900/20 border border-gray-700 hover:border-red-500/30 py-2 rounded-lg text-[10px] font-bold uppercase transition-colors">
+                                    <button onClick={()=>onUndo("rebuy","SINGLE")} disabled={loading} className="w-full text-red-400 hover:text-red-300 hover:bg-red-900/20 border border-gray-700 hover:border-red-500/30 py-2 rounded-lg text-xs font-bold uppercase transition-colors">
                                         Deshacer ({singleRebuys})
                                     </button>
                                 )}
@@ -1046,7 +999,7 @@ function ActionModal({ player, playerName, onClose, onRebuy, onAddon, onUndo, on
                                     <div className="text-xl font-black font-mono">{formatMoney(prices.rebuyD)}</div>
                                 </button>
                                 {(player.double_rebuys_count || 0) > 0 && (
-                                    <button onClick={()=>onUndo("rebuy","DOUBLE")} disabled={loading} className="w-full text-red-400 hover:text-red-300 hover:bg-red-900/20 border border-gray-700 hover:border-red-500/30 py-2 rounded-lg text-[10px] font-bold uppercase transition-colors">
+                                    <button onClick={()=>onUndo("rebuy","DOUBLE")} disabled={loading} className="w-full text-red-400 hover:text-red-300 hover:bg-red-900/20 border border-gray-700 hover:border-red-500/30 py-2 rounded-lg text-xs font-bold uppercase transition-colors">
                                         Deshacer ({player.double_rebuys_count})
                                     </button>
                                 )}
@@ -1068,7 +1021,7 @@ function ActionModal({ player, playerName, onClose, onRebuy, onAddon, onUndo, on
                                     <div className="text-xl font-black font-mono">{formatMoney(prices.addonS)}</div>
                                 </button>
                                 {singleAddons > 0 && (
-                                    <button onClick={()=>onUndo("addon","SINGLE")} disabled={loading} className="w-full text-red-400 hover:text-red-300 hover:bg-red-900/20 border border-gray-700 hover:border-red-500/30 py-2 rounded-lg text-[10px] font-bold uppercase transition-colors">
+                                    <button onClick={()=>onUndo("addon","SINGLE")} disabled={loading} className="w-full text-red-400 hover:text-red-300 hover:bg-red-900/20 border border-gray-700 hover:border-red-500/30 py-2 rounded-lg text-xs font-bold uppercase transition-colors">
                                         Deshacer ({singleAddons})
                                     </button>
                                 )}
@@ -1079,7 +1032,7 @@ function ActionModal({ player, playerName, onClose, onRebuy, onAddon, onUndo, on
                                     <div className="text-xl font-black font-mono">{formatMoney(prices.addonD)}</div>
                                 </button>
                                 {(player.double_addons_count || 0) > 0 && (
-                                    <button onClick={()=>onUndo("addon","DOUBLE")} disabled={loading} className="w-full text-red-400 hover:text-red-300 hover:bg-red-900/20 border border-gray-700 hover:border-red-500/30 py-2 rounded-lg text-[10px] font-bold uppercase transition-colors">
+                                    <button onClick={()=>onUndo("addon","DOUBLE")} disabled={loading} className="w-full text-red-400 hover:text-red-300 hover:bg-red-900/20 border border-gray-700 hover:border-red-500/30 py-2 rounded-lg text-xs font-bold uppercase transition-colors">
                                         Deshacer ({player.double_addons_count})
                                     </button>
                                 )}

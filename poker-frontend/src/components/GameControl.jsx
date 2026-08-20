@@ -12,6 +12,7 @@ import DealerPanel from './DealerPanel';
 import PlayerTable from './PlayerTable';
 import api from '../api/axios';
 import ConfirmModal from './ConfirmModal';
+import { useToast, Toast } from './Toast';
 import TournamentPlayerTable from './TournamentPlayerTable';
 import TournamentClock from './TournamentClock';
 import TournamentTables from './TournamentTables';
@@ -108,16 +109,10 @@ export default function GameControl() {
   // Ceremonia de premios: vive AQUÍ (no en TournamentPlayerTable) para
   // sobrevivir a que el torneo salga de la lista de vivos tras finalizar.
   const [ceremony, setCeremony] = useState(null);
-  // Toast propio: el canal de errores era alert() nativo (se ve roto en la
-  // PWA y viola el principio "destructivo/feedback con UI propia").
-  const [notice, setNotice] = useState(null); // { message, type }
-  const noticeTimer = useRef(null);
-  const showNotice = (message, type = "error") => {
-    if (noticeTimer.current) clearTimeout(noticeTimer.current);
-    setNotice({ message, type });
-    noticeTimer.current = setTimeout(() => setNotice(null), 4500);
-  };
-  useEffect(() => () => clearTimeout(noticeTimer.current), []);
+  // Toast compartido de la app (Toast.jsx); showNotice conserva la firma
+  // vieja (default error) para no tocar los call-sites.
+  const { toast, showToast: showAppToast, dismissToast } = useToast();
+  const showNotice = (message, type = "error") => showAppToast(message, type);
   // Confirmación propia para borrar un torneo programado (era window.confirm)
   const [scheduledToDelete, setScheduledToDelete] = useState(null); // objeto torneo
   const [isDeletingScheduled, setIsDeletingScheduled] = useState(false);
@@ -778,7 +773,7 @@ const handleCreateTournament = async (formData) => {
                        </div>
                        <div className="flex gap-1.5 shrink-0">
                          <button onClick={() => handleOpenScheduled(t.id)} className="text-[10px] font-bold uppercase px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-colors">Abrir</button>
-                         <button onClick={() => setScheduledToDelete(t)} aria-label={`Eliminar ${t.name}`} className="text-[10px] font-bold uppercase px-3 py-1.5 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors">Eliminar</button>
+                         <button onClick={() => setScheduledToDelete(t)} aria-label={`Eliminar ${t.name}`} className="text-xs font-bold uppercase px-3 py-1.5 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors">Eliminar</button>
                        </div>
                      </div>
                    ))}
@@ -993,12 +988,7 @@ const handleCreateTournament = async (formData) => {
         <TournamentCeremony ceremony={ceremony} onClose={() => { setCeremony(null); refresh(); }} />
       )}
 
-      {/* TOAST de GameControl (reemplaza los alert() nativos) */}
-      {notice && (
-        <div className={`pointer-events-none fixed bottom-6 left-4 right-4 sm:bottom-auto sm:top-5 sm:left-auto sm:right-5 z-[110] px-6 py-4 rounded-xl shadow-2xl border font-bold animate-fade-in-up ${notice.type === 'success' ? 'bg-emerald-900/90 border-emerald-500 text-white' : 'bg-red-900/90 border-red-500 text-white'}`} role="status" aria-live="polite">
-          {notice.message}
-        </div>
-      )}
+      <Toast toast={toast} onDismiss={dismissToast} />
 
       <ConfirmModal
         isOpen={!!scheduledToDelete}

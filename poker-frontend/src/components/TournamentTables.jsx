@@ -139,14 +139,14 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
         <div className="flex items-center gap-2 text-[11px]">
           {total_seated >= 2 && (
             <button type="button" onClick={reshuffle} disabled={busy}
-              className="px-2.5 py-1 rounded-lg border border-violet-500/40 text-violet-300 hover:bg-violet-500/10 disabled:opacity-50 font-bold uppercase text-[10px] flex items-center gap-1"
+              className="px-2.5 py-1 rounded-lg border border-violet-500/40 text-violet-300 hover:bg-violet-500/10 disabled:opacity-50 font-bold uppercase text-xs flex items-center gap-1"
               title="Volver a sortear todas las sillas (mueve a todos los activos)">
               <ArrowPathRoundedSquareIcon className="w-3.5 h-3.5" /> Re-sortear
             </button>
           )}
           {openTables.length >= 2 && (
             <button type="button" onClick={openPlan} disabled={busy || planLoading}
-              className={`px-2.5 py-1 rounded-lg border disabled:opacity-50 font-bold uppercase text-[10px] flex items-center gap-1 ${needsBalance ? 'border-amber-500/60 bg-amber-500/15 text-amber-300 animate-pulse' : 'border-violet-500/40 text-violet-300 hover:bg-violet-500/10'}`}
+              className={`px-2.5 py-1 rounded-lg border disabled:opacity-50 font-bold uppercase text-xs flex items-center gap-1 ${needsBalance ? 'border-amber-500/60 bg-amber-500/15 text-amber-300 animate-pulse' : 'border-violet-500/40 text-violet-300 hover:bg-violet-500/10'}`}
               title={needsBalance ? 'Las mesas están desparejas o hay jugadores por sentar' : 'Nivelar mesas'}>
               <ScaleIcon className="w-3.5 h-3.5" /> {planLoading ? '...' : 'Nivelar'}
             </button>
@@ -167,7 +167,7 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
             {unseated.length} en lista de espera
           </span>
           <button type="button" onClick={autoSeat} disabled={busy || openTables.length === 0}
-            className="text-[10px] font-black uppercase px-3 py-1.5 rounded-lg bg-amber-500 text-gray-900 hover:bg-amber-400 disabled:opacity-50 flex items-center gap-1">
+            className="text-xs font-black uppercase px-3 py-1.5 rounded-lg bg-amber-500 text-gray-900 hover:bg-amber-400 disabled:opacity-50 flex items-center gap-1">
             <SparklesIcon className="w-3.5 h-3.5" /> Sortear sillas
           </button>
         </div>
