@@ -24,6 +24,9 @@ export default defineConfig([
     },
     rules: {
       'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+      // TDZ: leer un const/let antes de declararlo es ReferenceError en runtime
+      // (nos pasó en TransactionManager con useEscape(…, !loading)).
+      'no-use-before-define': ['error', { functions: false, classes: false, variables: false }],
     },
   },
 ])
