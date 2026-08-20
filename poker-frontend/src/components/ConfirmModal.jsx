@@ -1,13 +1,16 @@
 import { ExclamationTriangleIcon } from '@heroicons/react/24/outline';
+import { useEscape } from '../hooks/useEscape';
 
 export default function ConfirmModal({ isOpen, onClose, onConfirm, title, message, isDeleting = false, confirmText = "Sí, Eliminar", loadingText = "Eliminando..." }) {
+  // Antes del early return: los hooks no pueden ser condicionales.
+  useEscape(onClose, isOpen && !isDeleting);
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 animate-fade-in">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 animate-fade-in" role="dialog" aria-modal="true" aria-label={title || "Confirmar"}>
       {/* 1. Fondo Oscuro (Backdrop) */}
-      <div 
-        className="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity" 
+      <div
+        className="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity"
         onClick={onClose}
       ></div>
 

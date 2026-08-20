@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { TableCellsIcon, PlusIcon, TrashIcon, UserGroupIcon, ArrowsRightLeftIcon, XMarkIcon, SparklesIcon, IdentificationIcon, ScaleIcon, ArrowPathRoundedSquareIcon } from '@heroicons/react/24/solid';
 import { tournamentService, dealerService } from '../api/services';
 import ConfirmModal from './ConfirmModal';
+import { useEscape } from '../hooks/useEscape';
 
 /**
  * Panel de mesas del torneo (Fase 1a). Crear mesas, ver ocupación/cupos por mesa
@@ -22,6 +23,9 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
   // Confirmaciones con el ConfirmModal de la app (nada de window.confirm):
   // { title, message, confirmText, run } — run se ejecuta al confirmar.
   const [confirm, setConfirm] = useState(null);
+  // Escape cierra el sheet abierto (mover/dealer/plan); el ConfirmModal
+  // compartido trae su propio Escape, por eso se excluye con !confirm.
+  useEscape(() => { setMoveFor(null); setDealerFor(null); setPlan(null); }, !confirm && (!!moveFor || !!dealerFor || !!plan));
 
   const load = useCallback(async () => {
     if (!tId) return;
@@ -244,7 +248,7 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
 
       {/* PICKER DE MESA PARA MOVER */}
       {moveFor && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/70" onClick={() => setMoveFor(null)}>
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/70" onClick={() => setMoveFor(null)} role="dialog" aria-modal="true" aria-label={`Mover a ${moveFor.name}`}>
           <div className="bg-gray-900 border border-gray-700 rounded-2xl p-4 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
               <h4 className="text-white text-sm font-bold">Mover a <span className="text-violet-300">{moveFor.name}</span></h4>
@@ -272,7 +276,7 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
 
       {/* PICKER DE DEALER PARA LA MESA */}
       {dealerFor && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/70" onClick={() => setDealerFor(null)}>
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/70" onClick={() => setDealerFor(null)} role="dialog" aria-modal="true" aria-label="Asignar dealer">
           <div className="bg-gray-900 border border-gray-700 rounded-2xl p-4 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
               <h4 className="text-white text-sm font-bold">Dealer de la <span className="text-violet-300">Mesa {dealerFor.table_number}</span></h4>
@@ -306,7 +310,7 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
 
       {/* MODAL: previsualización del balanceo (sugerir + aplicar) */}
       {plan && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/70" onClick={() => setPlan(null)}>
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/70" onClick={() => setPlan(null)} role="dialog" aria-modal="true" aria-label="Plan de nivelado">
           <div className="bg-gray-900 border border-gray-700 rounded-2xl p-4 w-full max-w-sm max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
               <h4 className="text-white text-sm font-bold flex items-center gap-1.5"><ScaleIcon className="w-4 h-4 text-violet-400" /> Nivelar mesas</h4>
