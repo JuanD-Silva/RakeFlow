@@ -229,7 +229,7 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
                     {p.has_digital_payments && <span className="text-blue-300">📱 Digital</span>}
                     {p.is_busted && (
                       <span className="bg-red-500/15 border border-red-500/40 text-red-400 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">
-                        💀 Quebro {p.busted_at ? `· ${formatTime(p.busted_at)}` : ''}
+                        💀 Quebró {p.busted_at ? `· ${formatTime(p.busted_at)}` : ''}
                       </span>
                     )}
                   </div>
@@ -326,7 +326,7 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
                           : 'bg-gray-800 border-gray-600 text-gray-400'
                       }`}
                     >
-                      {p.is_busted ? '💀 Quebro (deshacer)' : '💀 Quebro'}
+                      {p.is_busted ? '💀 Quebró (deshacer)' : '💀 Quebró'}
                     </button>
                   </div>
                   {buyins.length > 0 ? (
@@ -436,7 +436,7 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
                   {/* FILA PRINCIPAL */}
                   <tr 
                     onClick={() => toggleRow(p.player_id)} 
-                    className={`cursor-pointer transition-colors ${isExpanded ? 'bg-gray-700/50' : 'hover:bg-gray-750'}`}
+                    className={`cursor-pointer transition-colors ${isExpanded ? 'bg-gray-700/50' : 'hover:bg-gray-700/50'}`}
                   >
                     <td className="p-4 text-gray-500 text-center">
                       {isExpanded ? <ChevronUpIcon className="w-4 h-4 text-emerald-500" /> : <ChevronDownIcon className="w-4 h-4" />}
@@ -598,7 +598,7 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
                                <div className="p-3 bg-red-900/20 border border-red-900/50 rounded text-red-200 text-sm">
                                   ⚠️ No hay detalles disponibles. <br/>
                                   <span className="text-xs opacity-70">
-                                    Revisa la consola (F12) para ver qué llegó en "transactions".
+                                    No se pudieron cargar los movimientos. Recarga la página o revisa la conexión.
                                   </span>
                                </div>
                              )}
