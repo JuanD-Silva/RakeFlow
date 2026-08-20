@@ -233,10 +233,13 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
     // la fila, con Deshacer 5s en vez de confirm previo — mismo criterio que el
     // fiado: la reversa existe y está probada. Solo rebuy SENCILLO; dobles y
     // add-ons siguen en Gestionar.
-    const quickRebuyEnabled = !rebuysClosed && prices.rebuyS > 0 && tournament.status !== 'COMPLETED';
+    const quickRebuyEnabled = !rebuysClosed && prices.rebuyS > 0 && !['FINISHED', 'COMPLETED'].includes(tournament.status);
+    // Guard con REF, no con loading: setLoading montaría el GlobalLoader
+    // (pantallazo negro por cobro) — mismo criterio que togglingPaidRef.
+    const quickRebuyRef = useRef(false);
     const handleQuickRebuy = async (pid, name) => {
-        if (loading) return;
-        setLoading(true);
+        if (quickRebuyRef.current || loading) return;
+        quickRebuyRef.current = true;
         try {
             await tournamentService.addRebuy(tournament.id, pid, "SINGLE");
             onUpdate();
@@ -255,7 +258,7 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
         } catch (e) {
             showToast(e.response?.data?.detail || "No se pudo cobrar el rebuy.", "error");
         } finally {
-            setLoading(false);
+            quickRebuyRef.current = false;
         }
     };
 
@@ -312,13 +315,13 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
 
             {/* NOTIFICACIONES (TOASTS) */}
             {notification.show && (
-                <div className={`fixed bottom-6 left-4 right-4 sm:bottom-auto sm:top-5 sm:left-auto sm:right-5 z-[100] px-6 py-4 rounded-xl shadow-2xl border flex items-center gap-3 animate-fade-in-up ${notification.type === 'error' ? 'bg-red-900/90 border-red-500 text-white' : 'bg-emerald-900/90 border-emerald-500 text-white'}`} role="status" aria-live="polite">
+                <div className={`pointer-events-none fixed bottom-6 left-4 right-4 sm:bottom-auto sm:top-5 sm:left-auto sm:right-5 z-[100] px-6 py-4 rounded-xl shadow-2xl border flex items-center gap-3 animate-fade-in-up ${notification.type === 'error' ? 'bg-red-900/90 border-red-500 text-white' : 'bg-emerald-900/90 border-emerald-500 text-white'}`} role="status" aria-live="polite">
                     {notification.type === 'error' ? <XCircleIcon className="w-6 h-6"/> : <CheckCircleIcon className="w-6 h-6"/>}
                     <span className="font-bold">{notification.message}</span>
                     {notification.action && (
                         <button
                             onClick={() => { const a = notification.action; setNotification({ show: false, message: "", type: "success", action: null }); a.onClick(); }}
-                            className="ml-2 shrink-0 px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 border border-white/30 font-black uppercase text-xs tracking-wider"
+                            className="pointer-events-auto ml-2 shrink-0 px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 border border-white/30 font-black uppercase text-xs tracking-wider"
                         >
                             {notification.action.label}
                         </button>
@@ -490,10 +493,10 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
                                         <button
                                             onClick={() => handleQuickRebuy(p.player_id, getPlayerName(p.player_id))}
                                             disabled={loading}
-                                            className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white py-3 rounded-lg text-sm font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-colors active:scale-[0.98]"
+                                            className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white py-2 rounded-lg font-bold uppercase tracking-wider flex flex-col items-center justify-center transition-colors active:scale-[0.98]"
                                         >
-                                            <BoltIcon className="w-4 h-4" />
-                                            Rebuy {formatCurrency(prices.rebuyS)}
+                                            <span className="flex items-center gap-1 text-sm"><BoltIcon className="w-4 h-4" /> Rebuy</span>
+                                            <span className="text-[10px] font-mono tracking-normal">{formatCurrency(prices.rebuyS)}</span>
                                         </button>
                                     )}
                                     <button
