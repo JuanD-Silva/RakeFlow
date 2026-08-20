@@ -28,6 +28,19 @@ export default function WeeklyReport() {
     if (hoy.getDay() === 1) { const d = new Date(hoy); d.setDate(d.getDate() - 7); return d; }
     return hoy;
   });
+  // El ancla -7 es un hack SOLO para la vista semanal: al saltar a día/mes sin
+  // haber navegado, volvemos a hoy (DIARIO del lunes = hoy, no hace 7 días;
+  // MENSUAL del 1° = este mes, no el pasado). Si el usuario ya navegó con las
+  // flechas, el periodo elegido se preserva en todos los modos.
+  const inicioLunesRef = useRef(new Date().getDay() === 1);
+  const navegadoRef = useRef(false);
+  const cambiarModo = (m) => {
+    setViewMode(m);
+    if (m !== 'week' && inicioLunesRef.current && !navegadoRef.current) {
+      setReferenceDate(new Date());
+      inicioLunesRef.current = false;
+    }
+  };
   const [reportTab, setReportTab] = useState('distribution'); // 'distribution' | 'dealers'
   const { email } = useAuth();
 
@@ -93,19 +106,22 @@ export default function WeeklyReport() {
   };
 
   const changePeriod = (direction) => {
+    navegadoRef.current = true;
     const newDate = new Date(referenceDate);
     if (viewMode === 'day') {
       newDate.setDate(newDate.getDate() + direction);
     } else if (viewMode === 'week') {
       newDate.setDate(newDate.getDate() + (direction * 7));
     } else {
-      newDate.setMonth(newDate.getMonth() + direction);
+      // Sobre el día 1: setMonth con día 29-31 desborda (31-mar − 1 mes = 3-mar)
+      // y el "mes anterior" era un no-op silencioso.
+      return setReferenceDate(new Date(newDate.getFullYear(), newDate.getMonth() + direction, 1));
     }
     setReferenceDate(newDate);
   };
 
 
-  if (loading && !data) return (
+  if (loading && (!data || data.error)) return (
     <div className="flex flex-col items-center justify-center h-64 space-y-4">
       <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
       <p className="text-gray-500 font-mono text-sm">Calculando estados financieros...</p>
@@ -167,7 +183,7 @@ export default function WeeklyReport() {
   };
 
   return (
-    <div className={`${loading ? "opacity-60 transition-opacity" : ""} max-w-5xl mx-auto p-6 space-y-8 animate-fade-in`}>
+    <div className={`transition-opacity ${loading ? "opacity-60" : ""} max-w-5xl mx-auto p-6 space-y-8 animate-fade-in`}>
       {reportTab === 'distribution' && <KPIDashboard startDate={range.start} endDate={range.end} />}
 
       {/* TABS: Distribución / Dealers  +  Exportar */}
@@ -193,19 +209,19 @@ export default function WeeklyReport() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gray-800/40 p-4 rounded-2xl border border-gray-700/50 backdrop-blur-sm">
         <div className="flex bg-gray-900 p-1 rounded-xl w-fit">
           <button
-            onClick={() => setViewMode('day')}
+            onClick={() => cambiarModo('day')}
             className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${viewMode === 'day' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
           >
             DIARIO
           </button>
           <button
-            onClick={() => setViewMode('week')}
+            onClick={() => cambiarModo('week')}
             className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${viewMode === 'week' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
           >
             SEMANAL
           </button>
           <button
-            onClick={() => setViewMode('month')}
+            onClick={() => cambiarModo('month')}
             className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${viewMode === 'month' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
           >
             MENSUAL
