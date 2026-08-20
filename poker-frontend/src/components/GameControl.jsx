@@ -17,6 +17,7 @@ import TournamentClock from './TournamentClock';
 import TournamentTables from './TournamentTables';
 import { useAuth } from '../context/AuthContext';
 import { formatMoney } from '../utils/formatters';
+import { useEscape } from '../hooks/useEscape';
 
 // Formatea una duracion en mins -> "1h 30m", "45m", "2h"
 function formatDuration(startIso) {
@@ -55,6 +56,10 @@ export default function GameControl() {
   const { logout } = useAuth();
   const [tables, setTables] = useState([]); // Sessions OPEN del club
   const [currentTableId, setCurrentTableId] = useState(null);
+  // Espejo en ref (mismo patrón que selectTournament): checkSystemState corre
+  // con closures de renders viejos y podía deseleccionar la mesa recién creada.
+  const currentTableIdRef = useRef(null);
+  const selectTable = (id) => { reqSeqRef.current++; currentTableIdRef.current = id; setCurrentTableId(id); };
   const activeSession = tables.find(t => t.id === currentTableId) || null;
 
   // Multi-torneo: lista de torneos en juego + id seleccionado (mismo patrón que
@@ -121,6 +126,10 @@ export default function GameControl() {
   // ESTADOS DE AUDITORÍA
   const [auditData, setAuditData] = useState(null);
   const [showAuditModal, setShowAuditModal] = useState(false);
+  // Escape en los modales propios (tras las declaraciones: el enabled se
+  // evalúa en cada render y leer un const antes de su línea es TDZ = crash).
+  useEscape(() => setShowEndTournamentModal(false), showEndTournamentModal && !isLoading);
+  useEscape(() => setShowAuditModal(false), showAuditModal);
 
   // 1. CARGAR SESIÓN Y TORNEO ACTIVO
 useEffect(() => {
@@ -151,7 +160,7 @@ useEffect(() => {
             } else if (liveTs.length > 1) {
                 setViewMode("menu");
             } else if (openTables.length === 1) {
-                setCurrentTableId(openTables[0].id);
+                selectTable(openTables[0].id);
                 setViewMode("cash");
             } else if (openTables.length > 1) {
                 setViewMode("menu");
@@ -173,8 +182,9 @@ useEffect(() => {
                 setEndAck(false);
             }
             // Si la mesa cash actual ya no esta abierta, ir a menu
-            if (currentTableId && !openTables.some(t => t.id === currentTableId)) {
-                setCurrentTableId(null);
+            const tblId = currentTableIdRef.current;
+            if (tblId && !openTables.some(t => t.id === tblId)) {
+                selectTable(null);
                 if (openTables.length === 0) setViewMode("menu");
             }
         }
@@ -234,7 +244,7 @@ useEffect(() => {
   };
 
   const handleSwitchTable = (tableId) => {
-    setCurrentTableId(tableId);
+    selectTable(tableId);
     setViewMode("cash");
   };
 
@@ -313,8 +323,7 @@ const handleCreateTournament = async (formData) => {
     // Si fue apertura de mesa nueva, entrar a esa mesa directamente (y
     // descartar polls en vuelo que aún no conocen la mesa recién creada)
     if (info && info.newSessionId) {
-      reqSeqRef.current++;
-      setCurrentTableId(info.newSessionId);
+      selectTable(info.newSessionId);
       setViewMode("cash");
     }
     refresh();
@@ -347,10 +356,10 @@ const handleCreateTournament = async (formData) => {
         const remaining = tables.filter(t => t.id !== deletedId);
         setTables(remaining);
         if (remaining.length === 0) {
-          setCurrentTableId(null);
+          selectTable(null);
           setViewMode("menu");
         } else {
-          setCurrentTableId(remaining[0].id);
+          selectTable(remaining[0].id);
         }
         setShowDeleteConfirm(false);
      } catch (error) {
@@ -901,7 +910,7 @@ const handleCreateTournament = async (formData) => {
 
       {/* MODAL DE AUDITORÍA */}
       {showAuditModal && auditData && (
-        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[60] p-4 backdrop-blur-md animate-fade-in">
+        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[60] p-4 backdrop-blur-md animate-fade-in" role="dialog" aria-modal="true" aria-label="Auditoría rápida">
            {/* ... Contenido igual al que ya tenías ... */}
            <div className="bg-gray-900 rounded-xl max-w-sm w-full max-h-[90vh] overflow-y-auto border border-gray-700 shadow-2xl">
              <div className="bg-gray-800 p-4 border-b border-gray-700 flex justify-between items-center">
@@ -933,7 +942,7 @@ const handleCreateTournament = async (formData) => {
         const endSinPremiar = !(activeTournament.players || []).some(p => (p.prize_collected || 0) > 0);
         const needsAck = endActivos > 0 && endSinPremiar;
         return (
-    <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[70] backdrop-blur-sm p-4 animate-fade-in">
+    <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[70] backdrop-blur-sm p-4 animate-fade-in" role="dialog" aria-modal="true" aria-label="Terminar torneo">
          <div className="bg-gray-800 rounded-2xl border border-red-500/50 shadow-2xl w-full max-w-sm max-h-[90vh] overflow-y-auto p-6 text-center">
              <div className="bg-red-500/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
                  <ExclamationTriangleIcon className="w-8 h-8 text-red-500" />
@@ -1046,6 +1055,7 @@ function ActionButton({ color, label, onClick }) {
 // torneo finalizado salga de la lista de vivos. Un solo momento de motion:
 // la ráfaga de confetti al montar (mismo lenguaje que los logros del panel).
 function TournamentCeremony({ ceremony, onClose }) {
+  useEscape(onClose, true);
   useEffect(() => {
     const bursts = [
       setTimeout(() => confetti({ particleCount: 120, spread: 75, origin: { y: 0.7 } }), 150),
@@ -1064,7 +1074,7 @@ function TournamentCeremony({ ceremony, onClose }) {
     ? 'border-orange-400/50 text-orange-300 bg-orange-500/10'
     : 'border-violet-500/40 text-violet-300 bg-violet-500/10';
   return (
-    <div className="fixed inset-0 z-[120] bg-gray-950/95 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
+    <div className="fixed inset-0 z-[120] bg-gray-950/95 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in" role="dialog" aria-modal="true" aria-label="Ceremonia de premios">
       <div className="w-full max-w-sm bg-gradient-to-b from-violet-950/80 to-gray-900 border border-yellow-500/30 rounded-3xl shadow-2xl shadow-violet-900/40 p-6 text-center max-h-[90vh] overflow-y-auto">
         <div className="bg-yellow-500/15 border border-yellow-500/30 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
           <TrophyIcon className="w-11 h-11 text-yellow-400" />

@@ -8,6 +8,7 @@ import {
 import { tournamentService, playerService } from '../api/services';
 import { formatMoney } from '../utils/formatters';
 import { norm } from '../utils/text';
+import { useEscape } from '../hooks/useEscape';
 
 export default function TournamentPlayerTable({ tournament, onUpdate, onFinalized }) {
     const [allPlayers, setAllPlayers] = useState([]);
@@ -28,6 +29,9 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
     const [newPlayerPhone, setNewPlayerPhone] = useState("");
     const [listSearch, setListSearch] = useState(""); // buscador de la lista de inscritos
     const [showFinance, setShowFinance] = useState(false); // HUD financiero en móvil (md+ siempre visible)
+    // Escape cierra el confirm inline (capa más alta); los modales de abajo
+    // excluyen esta capa en su enabled para no cerrarse en cascada.
+    useEscape(() => setConfirmModal(prev => ({ ...prev, isOpen: false })), confirmModal.isOpen && !loading);
     const [regOptions, setRegOptions] = useState({ payBuyin: true, payTip: false });
 
     useEffect(() => {
@@ -505,7 +509,7 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
                                         )}
                                     </td>
                                     <td className="px-4 py-3 text-right">
-                                         {p.status === 'ACTIVE' && tournament.status !== 'COMPLETED' && <button onClick={() => handleEliminate(p.player_id, getPlayerName(p.player_id))}><XCircleIcon className="w-5 h-5 text-gray-600 hover:text-red-500"/></button>}
+                                         {p.status === 'ACTIVE' && tournament.status !== 'COMPLETED' && <button onClick={() => handleEliminate(p.player_id, getPlayerName(p.player_id))} className="p-2 -m-1" aria-label={`Eliminar a ${getPlayerName(p.player_id)}`}><XCircleIcon className="w-5 h-5 text-gray-500 hover:text-red-500"/></button>}
                                     </td>
                                 </tr>
                             ))}
@@ -515,11 +519,11 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
             </div>
 
             {/* MODALES */}
-            {isPayoutOpen && <PayoutModal tournament={tournament} netPot={netPot} players={playersWithStats} onClose={() => setIsPayoutOpen(false)} onRequestFinalize={handleRequestFinalize} showToast={showToast} formatCurrency={formatCurrency} getPlayerName={getPlayerName} />}
+            {isPayoutOpen && <PayoutModal escEnabled={!confirmModal.isOpen} tournament={tournament} netPot={netPot} players={playersWithStats} onClose={() => setIsPayoutOpen(false)} onRequestFinalize={handleRequestFinalize} showToast={showToast} formatCurrency={formatCurrency} getPlayerName={getPlayerName} />}
             
             {/* MODAL DE CONFIRMACIÓN */}
             {confirmModal.isOpen && (
-                <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[90] backdrop-blur-sm p-4 animate-fade-in">
+                <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[90] backdrop-blur-sm p-4 animate-fade-in" role="dialog" aria-modal="true" aria-label={confirmModal.title}>
                     <div className="bg-gray-800 rounded-2xl border border-gray-600 shadow-2xl w-full max-w-sm p-6 text-center transform scale-100 transition-all">
                         <div className={`p-4 rounded-full mb-4 mx-auto w-16 h-16 flex items-center justify-center ${
                             confirmModal.type === 'danger' ? 'bg-red-500/10 text-red-500' : 
@@ -552,7 +556,7 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
             )}
             
             {isRegisterOpen && <RegisterModal onClose={() => setIsRegisterOpen(false)} onConfirm={handleRegister} activeTab={activeTab} setActiveTab={setActiveTab} availablePlayers={allPlayers.flatMap(ap => { const tp = tournament.players?.find(x => x.player_id === ap.id); if (!tp) return [ap]; return tp.status === 'ELIMINATED' ? [{ ...ap, reentry: true }] : []; })} selectedPlayerId={selectedPlayerId} setSelectedPlayerId={setSelectedPlayerId} newPlayerName={newPlayerName} setNewPlayerName={setNewPlayerName} newPlayerPhone={newPlayerPhone} setNewPlayerPhone={setNewPlayerPhone} regOptions={regOptions} setRegOptions={setRegOptions} prices={prices} loading={loading} />}
-            {actionPlayer && <ActionModal player={actionPlayer} playerName={getPlayerName(actionPlayer.player_id)} rebuysClosed={rebuysClosed} addonsClosed={addonsClosed} rebuyUntil={tournament.rebuy_until_level} addonUntil={tournament.addon_until_level} onClose={() => setActionPlayer(null)} onRebuy={(t) => handleTransaction("Rebuy", t)} onAddon={(t) => handleTransaction("Addon", t)} onUndo={(action, type) => { setConfirmModal({ isOpen: true, title: "Deshacer", message: action === "tip" ? "¿Deshacer el último tip cobrado?" : `¿Deshacer ${action} ${type}?`, type: "danger", onConfirm: async () => { setLoading(true); try { await tournamentService.undoAction(tournament.id, actionPlayer.player_id, action, type); setActionPlayer(null); onUpdate(); showToast("Deshecho"); } catch(e) { showToast(e.response?.data?.detail || "Error", "error"); } finally { setLoading(false); setConfirmModal(prev => ({...prev, isOpen: false})); } } }); }} onPayTip={() => { handlePayTip(actionPlayer.player_id); }} onUnregister={() => handleUnregister(actionPlayer.player_id, getPlayerName(actionPlayer.player_id))} prices={prices} loading={loading} />}
+            {actionPlayer && <ActionModal escEnabled={!confirmModal.isOpen} player={actionPlayer} playerName={getPlayerName(actionPlayer.player_id)} rebuysClosed={rebuysClosed} addonsClosed={addonsClosed} rebuyUntil={tournament.rebuy_until_level} addonUntil={tournament.addon_until_level} onClose={() => setActionPlayer(null)} onRebuy={(t) => handleTransaction("Rebuy", t)} onAddon={(t) => handleTransaction("Addon", t)} onUndo={(action, type) => { setConfirmModal({ isOpen: true, title: "Deshacer", message: action === "tip" ? "¿Deshacer el último tip cobrado?" : `¿Deshacer ${action} ${type}?`, type: "danger", onConfirm: async () => { setLoading(true); try { await tournamentService.undoAction(tournament.id, actionPlayer.player_id, action, type); setActionPlayer(null); onUpdate(); showToast("Deshecho"); } catch(e) { showToast(e.response?.data?.detail || "Error", "error"); } finally { setLoading(false); setConfirmModal(prev => ({...prev, isOpen: false})); } } }); }} onPayTip={() => { handlePayTip(actionPlayer.player_id); }} onUnregister={() => handleUnregister(actionPlayer.player_id, getPlayerName(actionPlayer.player_id))} prices={prices} loading={loading} />}
         </div>
     );
 }
@@ -577,7 +581,8 @@ function GlobalLoader() {
 // ... Resto de componentes (PayoutModal, StatCard, RegisterModal, ActionModal) se mantienen IGUAL que antes ...
 // Asegúrate de copiarlos del archivo anterior o pegarlos aquí si los necesitas.
 // --- COPIA AQUÍ PayoutModal, StatCard, RegisterModal, ActionModal ---
-function PayoutModal({ tournament, netPot, players, onClose, onRequestFinalize, showToast, formatCurrency, getPlayerName }) {
+function PayoutModal({ tournament, netPot, players, onClose, onRequestFinalize, showToast, formatCurrency, getPlayerName, escEnabled = true }) {
+    useEscape(onClose, escEnabled);
     const [selectedWinners, setSelectedWinners] = useState({});
     const [openDropdown, setOpenDropdown] = useState(null);
     const [searchTerms, setSearchTerms] = useState({});
@@ -619,7 +624,7 @@ function PayoutModal({ tournament, netPot, players, onClose, onRequestFinalize, 
     };
 
     return (
-        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[80] backdrop-blur-sm p-4 animate-fade-in" onClick={() => setOpenDropdown(null)}>
+        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[80] backdrop-blur-sm p-4 animate-fade-in" onClick={() => setOpenDropdown(null)} role="dialog" aria-modal="true" aria-label="Premiación">
             <div className="bg-gray-800 rounded-2xl border border-yellow-600/30 shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
 
                 {/* HEADER */}
@@ -698,9 +703,9 @@ function PayoutModal({ tournament, netPot, players, onClose, onRequestFinalize, 
                                             {openDropdown === rank && (
                                                 <div className="absolute z-50 w-full mt-2 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl max-h-40 overflow-y-auto">
                                                     {availableForRank.length > 0 ? availableForRank.map((p) => (
-                                                        <div key={p.id} onClick={() => { setSelectedWinners({...selectedWinners, [rank]: p.player_id}); setOpenDropdown(null); setSearchTerms({...searchTerms, [rank]: ''}); }} className="p-3.5 hover:bg-yellow-600/20 hover:border-l-4 hover:border-yellow-500 cursor-pointer border-b border-gray-800 transition-all">
+                                                        <button type="button" key={p.id} onClick={() => { setSelectedWinners({...selectedWinners, [rank]: p.player_id}); setOpenDropdown(null); setSearchTerms({...searchTerms, [rank]: ''}); }} className="w-full text-left p-3.5 hover:bg-yellow-600/20 focus-visible:bg-yellow-600/20 cursor-pointer border-b border-gray-800 transition-all">
                                                             <p className="font-bold text-gray-200">{getPlayerName(p.player_id)}</p>
-                                                        </div>
+                                                        </button>
                                                     )) : (
                                                         <div className="p-4 text-gray-500 text-center text-sm">No disponible</div>
                                                     )}
@@ -743,6 +748,7 @@ function StatCard({ icon, label, value, sub, color, highlight }) {
 }
 
 function RegisterModal({ onClose, onConfirm, activeTab, setActiveTab, availablePlayers, selectedPlayerId, setSelectedPlayerId, newPlayerName, setNewPlayerName, newPlayerPhone, setNewPlayerPhone, regOptions, setRegOptions, prices, loading }) {
+    useEscape(onClose, !loading);
     const [searchTerm, setSearchTerm] = useState("");
     const [showDropdown, setShowDropdown] = useState(false);
     const wrapperRef = useRef(null);
@@ -760,7 +766,7 @@ function RegisterModal({ onClose, onConfirm, activeTab, setActiveTab, availableP
     const handleSelect = (p) => { setSelectedPlayerId(p.id); setSearchTerm(p.name); setShowDropdown(false); };
 
     return (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 backdrop-blur-sm p-4" role="dialog" aria-modal="true" aria-label="Inscribir jugador">
              <div className="bg-gray-800 rounded-2xl border border-gray-700 shadow-2xl w-full max-w-md animate-fade-in-up overflow-hidden">
                  {/* Header */}
                  <div className="bg-gray-900 p-5 border-b border-gray-700 flex justify-between items-center">
@@ -807,13 +813,13 @@ function RegisterModal({ onClose, onConfirm, activeTab, setActiveTab, availableP
                              {showDropdown && (
                                  <div className="absolute z-50 w-full mt-2 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl max-h-48 overflow-y-auto">
                                      {filtered.length > 0 ? filtered.map((p) => (
-                                         <div key={p.id} onClick={() => handleSelect(p)} className="p-3.5 hover:bg-violet-600/20 hover:border-l-4 hover:border-violet-500 cursor-pointer border-b border-gray-800 transition-all flex items-center justify-between group">
+                                         <button type="button" key={p.id} onClick={() => handleSelect(p)} className="w-full text-left p-3.5 hover:bg-violet-600/20 focus-visible:bg-violet-600/20 cursor-pointer border-b border-gray-800 transition-all flex items-center justify-between group">
                                              <div>
                                                  <p className="font-bold text-gray-200 group-hover:text-white">{p.name}</p>
                                                  {p.phone && <p className="text-xs text-gray-500">{p.phone}</p>}
                                              </div>
                                              {p.reentry && <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/40 text-amber-300">↩ Re-entrada</span>}
-                                         </div>
+                                         </button>
                                      )) : (
                                          <div className="p-6 text-gray-500 text-center text-sm flex flex-col items-center gap-2">
                                              <UserIcon className="w-8 h-8 opacity-50" />
@@ -876,12 +882,13 @@ function RegisterModal({ onClose, onConfirm, activeTab, setActiveTab, availableP
     );
 }
 
-function ActionModal({ player, playerName, onClose, onRebuy, onAddon, onUndo, onPayTip, onUnregister, prices, loading, rebuysClosed, addonsClosed, rebuyUntil, addonUntil }) {
+function ActionModal({ player, playerName, onClose, onRebuy, onAddon, onUndo, onPayTip, onUnregister, prices, loading, rebuysClosed, addonsClosed, rebuyUntil, addonUntil, escEnabled = true }) {
+    useEscape(onClose, escEnabled && !loading);
     const singleRebuys = (player.rebuys_count || 0) - (player.double_rebuys_count || 0);
     const singleAddons = (player.addons_count || 0) - (player.double_addons_count || 0);
 
     return (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 backdrop-blur-sm p-4" role="dialog" aria-modal="true" aria-label={`Gestionar a ${playerName}`}>
             <div className="bg-gray-800 rounded-2xl border border-gray-700 shadow-2xl w-full max-w-md animate-fade-in-up overflow-hidden max-h-[90vh] overflow-y-auto">
                 {/* Header */}
                 <div className="bg-gray-900 p-5 border-b border-gray-700 flex justify-between items-center sticky top-0 z-10">
