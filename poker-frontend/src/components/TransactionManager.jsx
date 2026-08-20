@@ -48,7 +48,8 @@ export default function TransactionManager({ player, onClose, onUpdate }) {
     setLoading(true);
     try {
       // 1. Llamada al Backend
-      await api.put(`/transactions/${txId}`, { amount: parseFloat(editAmount), method: "CASH" });
+      // method NO viaja: editar el monto no debe cambiar cómo se pagó
+      await api.put(`/transactions/${txId}`, { amount: parseFloat(editAmount) });
       
       // 2. Actualizar UI Localmente (Inmediato)
       const updatedList = localTransactions.map(tx => 
