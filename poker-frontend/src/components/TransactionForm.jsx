@@ -174,6 +174,33 @@ export default function TransactionForm({ type, onSuccess, sessionId, createSess
   };
   const config = getConfig();
 
+  // El botón dice QUÉ va a pasar con la plata y con QUIÉN ("Pagar $1.500.000
+  // a Pedro"), no un "Confirmar" genérico: el reaseguro en el momento exacto
+  // del toque, donde más duele equivocarse.
+  const amtNum = parseFloat(amount);
+  const amtOk = Number.isFinite(amtNum) && amtNum > 0;
+  const nombreSel = isCreatingNew
+    ? newPlayerName.trim()
+    : (players.find((pl) => String(pl.id) === String(playerId))?.name
+        || (preselectedPlayer && String(preselectedPlayer.id) === String(playerId) ? preselectedPlayer.name : '')
+        || '');
+  const primerNombre = nombreSel.split(/\s+/)[0] || '';
+  const btnLabel = (() => {
+    if (!amtOk) return 'Confirmar';
+    const m = formatMoney(amtNum);
+    if (type === 'bonus' && bonusAll) return `Bono de mesa ${m}`;
+    if (type === 'tip') return `Propina ${m}`;
+    if (!primerNombre) return 'Confirmar';
+    switch (type) {
+      case 'buyin': return `Registrar ${m} — ${primerNombre}`;
+      case 'cashout': return `Pagar ${m} a ${primerNombre}`;
+      case 'spend': return `Cobrar ${m} a ${primerNombre}`;
+      case 'bonus': return `Bono ${m} — ${primerNombre}`;
+      case 'jackpot-payout': return `Pagar jackpot ${m} a ${primerNombre}`;
+      default: return 'Confirmar';
+    }
+  })();
+
   const handleSelectPlayer = (player) => {
     setPlayerId(String(player.id));
     setSearchTerm(player.name);
@@ -190,8 +217,13 @@ export default function TransactionForm({ type, onSuccess, sessionId, createSess
       if (!amount || amount <= 0) return setError("El monto debe ser mayor a 0.");
       setLoading(true);
       try {
-        await transactionService.bonusAll(parseFloat(amount), sessionId);
-        onSuccess();
+        const r = await transactionService.bonusAll(parseFloat(amount), sessionId);
+        // Es UNA sola transacción de mesa (player_id NULL): se deshace igual
+        // que un cobro por jugador — antes era la única plata sin red.
+        const undo = r?.data?.id
+          ? { txId: r.data.id, label: `Bono de mesa de ${formatMoney(parseFloat(amount))}` }
+          : null;
+        onSuccess(undo ? { undo } : undefined);
       } catch (err) {
         setError(err.response?.data?.detail || err.message || "Error al procesar.");
       } finally {
@@ -555,8 +587,8 @@ export default function TransactionForm({ type, onSuccess, sessionId, createSess
                 </>
             ) : (
                 <>
-                   <span className="text-2xl">{config.icon}</span> 
-                   <span>Confirmar</span>
+                   <span className="text-2xl">{config.icon}</span>
+                   <span className="truncate normal-case tracking-normal">{btnLabel}</span>
                 </>
             )}
         </button>
