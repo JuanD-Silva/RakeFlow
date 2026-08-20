@@ -159,7 +159,7 @@ export default function TournamentClock({ tournament }) {
           <button
             onClick={openEdit}
             title="Editar la estructura de blinds"
-            className="text-[10px] font-bold uppercase px-2.5 py-1 rounded-full border border-gray-600 text-gray-300 hover:bg-gray-700/50 transition-colors flex items-center gap-1"
+            className="text-xs font-bold uppercase px-2.5 py-1 rounded-full border border-gray-600 text-gray-300 hover:bg-gray-700/50 transition-colors flex items-center gap-1"
           >
             <PencilSquareIcon className="w-3 h-3" /> Editar
           </button>
@@ -167,7 +167,7 @@ export default function TournamentClock({ tournament }) {
             <button
               onClick={shareTv}
               title="Copiar link de la pantalla TV (para proyectar)"
-              className={`text-[10px] font-bold uppercase px-2.5 py-1 rounded-full border transition-colors flex items-center gap-1 ${
+              className={`text-xs font-bold uppercase px-2.5 py-1 rounded-full border transition-colors flex items-center gap-1 ${
                 copiedTv
                   ? 'border-emerald-500/40 text-emerald-300 bg-emerald-500/10'
                   : 'border-violet-500/40 text-violet-300 hover:bg-violet-500/10'
@@ -176,7 +176,7 @@ export default function TournamentClock({ tournament }) {
               {copiedTv ? <><CheckIcon className="w-3 h-3" /> Link TV</> : <><TvIcon className="w-3 h-3" /> Compartir TV</>}
             </button>
           )}
-          <span className={`text-[10px] font-bold uppercase px-2.5 py-1 rounded-full ring-1 ${statusPill.cls}`}>{statusPill.txt}</span>
+          <span className={`text-xs font-bold uppercase px-2.5 py-1 rounded-full ring-1 ${statusPill.cls}`}>{statusPill.txt}</span>
           {error && <span className="text-[10px] text-amber-400/80 font-bold" title="Reconectando">⚠</span>}
         </div>
       </div>
