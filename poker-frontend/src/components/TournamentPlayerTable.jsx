@@ -304,8 +304,6 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
 
             {/* NOTIFICACIONES (TOASTS) */}
             <Toast toast={toast} onDismiss={dismissToast} />
-                </div>
-            )}
 
             {/* HUD. En móvil arranca COLAPSADO en una barra con lo que se decide
                 en vivo (activos + pozo neto): las 6 cards costaban una pantalla
