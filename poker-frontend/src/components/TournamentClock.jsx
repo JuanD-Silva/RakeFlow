@@ -225,7 +225,7 @@ export default function TournamentClock({ tournament }) {
             </>
           )}
           {clock?.next_level && (
-            <p className="text-[11px] text-gray-500 mt-2">
+            <p className="text-[11px] text-gray-400 mt-2">
               Sigue:{' '}
               {clock.next_level.is_break
                 ? 'Descanso'
@@ -268,7 +268,7 @@ export default function TournamentClock({ tournament }) {
 
       <Modal isOpen={editOpen} onClose={() => setEditOpen(false)} title="Editar estructura de blinds">
         <div className="space-y-4">
-          <p className="text-[11px] text-gray-500">
+          <p className="text-[11px] text-gray-400">
             Editar mientras corre el torneo no reinicia el reloj. Si recortas la
             estructura, el nivel actual se acota al último disponible.
           </p>

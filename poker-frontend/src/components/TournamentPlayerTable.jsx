@@ -27,6 +27,7 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
     const [newPlayerName, setNewPlayerName] = useState("");
     const [newPlayerPhone, setNewPlayerPhone] = useState("");
     const [listSearch, setListSearch] = useState(""); // buscador de la lista de inscritos
+    const [showFinance, setShowFinance] = useState(false); // HUD financiero en móvil (md+ siempre visible)
     const [regOptions, setRegOptions] = useState({ payBuyin: true, payTip: false });
 
     useEffect(() => {
@@ -260,8 +261,29 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
                 </div>
             )}
 
-            {/* HUD */}
-            <div className={`grid grid-cols-2 md:grid-cols-3 ${showAvgStack ? 'xl:grid-cols-6' : 'xl:grid-cols-5'} gap-4 animate-fade-in-up`}>
+            {/* HUD. En móvil arranca COLAPSADO en una barra con lo que se decide
+                en vivo (activos + pozo neto): las 6 cards costaban una pantalla
+                entera antes de la lista de jugadores. En md+ siempre expandido. */}
+            <button
+                type="button"
+                onClick={() => setShowFinance((v) => !v)}
+                aria-expanded={showFinance}
+                className="md:hidden w-full flex items-center justify-between gap-3 bg-gray-800 border border-gray-700 rounded-xl px-4 py-3"
+            >
+                <span className="flex items-center gap-2 min-w-0">
+                    <UserIcon className="w-4 h-4 text-blue-400 shrink-0" />
+                    <span className="text-white font-bold text-sm">{activePlayersCount}/{playersWithStats.length}</span>
+                    <span className="text-gray-400 text-xs">activos</span>
+                </span>
+                <span className="flex items-center gap-2 min-w-0">
+                    <TrophyIcon className="w-4 h-4 text-yellow-400 shrink-0" />
+                    <span className="text-yellow-200 font-mono font-bold text-sm truncate">{formatCurrency(netPot)}</span>
+                </span>
+                <span className="text-violet-300 text-[11px] font-bold uppercase tracking-wider shrink-0">
+                    {showFinance ? 'Ocultar' : 'Finanzas'}
+                </span>
+            </button>
+            <div className={`${showFinance ? 'grid' : 'hidden'} md:grid grid-cols-2 md:grid-cols-3 ${showAvgStack ? 'xl:grid-cols-6' : 'xl:grid-cols-5'} gap-4 animate-fade-in-up`}>
                 <StatCard icon={<UserIcon className="w-10 h-10 text-blue-500" />} label="Jugadores" value={`${activePlayersCount} / ${playersWithStats.length}`} sub="Activos / Total" color="blue" />
                 {showAvgStack && <StatCard icon={<CircleStackIcon className="w-10 h-10 text-green-500" />} label="Stack Prom." value={avgStack.toLocaleString('es-CO')} sub="Fichas ÷ activos" color="green" />}
                 <StatCard icon={<BanknotesIcon className="w-10 h-10 text-green-500" />} label="Pozo Bruto" value={formatCurrency(totalPotRaw)} sub="Total Recaudado" color="green" />
@@ -344,7 +366,7 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
                                         {p.status === 'ELIMINATED' && <span className="text-red-500 text-[10px] font-black">OUT</span>}
                                     </div>
                                     <div className="text-green-400 font-mono font-bold text-xl mt-1">{formatCurrency(p.totalPaid)}</div>
-                                    <div className="text-[10px] text-gray-500 uppercase tracking-wider">Inversión total</div>
+                                    <div className="text-[10px] text-gray-400 uppercase tracking-wider">Inversión total</div>
                                 </div>
                                 {p.status === 'ACTIVE' && tournament.status !== 'COMPLETED' && (
                                     <button
@@ -612,7 +634,7 @@ function PayoutModal({ tournament, netPot, players, onClose, onRequestFinalize, 
                         </div>
                     </div>
                     <div className="text-right">
-                        <p className="text-[10px] text-gray-500 font-bold uppercase">Pozo Neto</p>
+                        <p className="text-[10px] text-gray-400 font-bold uppercase">Pozo Neto</p>
                         <p className="text-yellow-400 font-mono font-black text-xl">{formatCurrency(netPot)}</p>
                     </div>
                 </div>
