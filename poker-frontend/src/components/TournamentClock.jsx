@@ -228,7 +228,7 @@ export default function TournamentClock({ tournament }) {
             <p className="text-[11px] text-gray-500 mt-2">
               Sigue:{' '}
               {clock.next_level.is_break
-                ? '☕ Break'
+                ? '☕ Descanso'
                 : `${cop(clock.next_level.small_blind)}/${cop(clock.next_level.big_blind)}`}
             </p>
           )}
