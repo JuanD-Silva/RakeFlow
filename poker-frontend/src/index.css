@@ -16,6 +16,15 @@ body {
   color: #ffffff;
 }
 
+/* Cinturón móvil: ningún elemento que desborde (una fila que no envuelve,
+   un número largo) puede ensanchar la página y dejar el logo/nav cortados
+   con scroll horizontal (pasó en el reloj de torneo, ago-2026). `clip` no
+   crea contenedor de scroll, así que no rompe position: sticky. */
+html, body {
+  max-width: 100%;
+  overflow-x: clip;
+}
+
 /* Landing animations */
 @keyframes fade-up {
   from { opacity: 0; transform: translateY(40px); }
