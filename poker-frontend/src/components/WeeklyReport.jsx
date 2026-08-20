@@ -122,7 +122,9 @@ export default function WeeklyReport() {
     if (n.includes('caja') || n.includes('fondo') || n.includes('reserva') || n.includes('operativo')) return 'FUND';
     return 'META';
   };
-  const isSocio = (item) => itemType(item) === 'PARTNER' || itemType(item) === 'FUND';
+  // FUND cuenta SOLO en la card de Fondos (sumarlo también a socios lo
+  // duplicaba en pantalla y en el export para clubes sin reglas PERCENTAGE).
+  const isSocio = (item) => itemType(item) === 'PARTNER';
   const isMetaItem = (item) => itemType(item) === 'META';
   const isFondoItem = (item) => itemType(item) === 'FUND';
 
@@ -286,11 +288,24 @@ export default function WeeklyReport() {
         {data.distribution.length > 0 ? (
           data.distribution.map((item, idx) => {
             const t = itemType(item);
-            const isMeta = t === 'META' || t === 'EXPENSES';
+            const isMeta = t === 'META';
             const isFondo = t === 'FUND';
+            const isGastoItem = t === 'EXPENSES';
 
             let theme;
-            if (isMeta && !isFondo) {
+            if (isGastoItem) {
+                theme = {
+                    icon: ScaleIcon,
+                    label: "Egreso · Dealers y cortesías (sale antes del reparto)",
+                    chipText: "→ GASTO",
+                    chipCls: "text-red-400 bg-red-500/10",
+                    mainColor: "text-red-400",
+                    bgColor: "bg-red-600/20",
+                    borderColor: "border-red-500/30",
+                    hoverBorder: "hover:border-red-500/50",
+                    bottomBar: "bg-red-500/0 group-hover:bg-red-500/50"
+                };
+            } else if (isMeta) {
                 theme = {
                     icon: ScaleIcon,
                     label: "Reparto · Abono a meta (prioridad 1)",
