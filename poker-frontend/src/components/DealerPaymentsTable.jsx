@@ -13,6 +13,7 @@ import { CurrencyDollarIcon, ClockIcon, UserGroupIcon, CheckCircleIcon } from '@
 export default function DealerPaymentsTable({ startISO, endISO }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [liquidating, setLiquidating] = useState(null); // dealer a liquidar
 
@@ -20,12 +21,15 @@ export default function DealerPaymentsTable({ startISO, endISO }) {
     let cancelled = false;
     (async () => {
       setLoading(true);
+      setLoadError(false);
       try {
         const res = await statsService.getDealerPayments(startISO, endISO);
         if (!cancelled) setData(res);
       } catch (err) {
         console.error("Error cargando pagos a dealers", err);
-        if (!cancelled) setData({ summary: {}, dealers: [] });
+        // La VERDAD: "no pude cargar" nunca se disfraza de "no hubo pagos" —
+        // el dueño podía irse creyendo que no debe nada.
+        if (!cancelled) { setData(null); setLoadError(true); }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -36,6 +40,14 @@ export default function DealerPaymentsTable({ startISO, endISO }) {
   if (loading) return (
     <div className="flex justify-center py-16">
       <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-amber-500"></div>
+    </div>
+  );
+
+  if (loadError) return (
+    <div className="text-center py-10 bg-red-900/10 rounded-xl border border-red-500/20">
+      <p className="text-red-300 font-bold mb-3">No se pudieron cargar los pagos a dealers.</p>
+      <p className="text-gray-400 text-sm mb-4">Esto NO significa que no haya deudas — es un fallo de conexión.</p>
+      <button onClick={() => setReloadKey((k) => k + 1)} className="px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-sm uppercase tracking-wider">Reintentar</button>
     </div>
   );
 
@@ -205,7 +217,7 @@ function LiquidarModal({ dealer, startISO, endISO, onClose, onDone }) {
   const submit = async (e) => {
     e.preventDefault();
     const value = Number(amount);
-    if (!value || value <= 0) { setError('Ingresá un monto válido.'); return; }
+    if (!value || value <= 0) { setError('Ingresa un monto válido.'); return; }
     setError(null);
     setLoading(true);
     try {

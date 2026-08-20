@@ -67,16 +67,24 @@ export default function KPIDashboard({ startDate, endDate } = {}) {
 
   const openHoursModal = async () => {
     setShowHoursModal(true);
-    if (historyItems.length === 0) {
-      setLoadingHistory(true);
-      try {
-        const data = await historyService.getAll();
-        setHistoryItems(data || []);
-      } catch (e) {
-        console.error("Error cargando historial", e);
-      } finally {
-        setLoadingHistory(false);
-      }
+    // SIEMPRE refetch y SIEMPRE filtrado al rango navegado: el modal cacheaba
+    // TODO el historial del club y contradecía a la card que dice "del periodo"
+    // — números que no cuadran con la card que los abrió.
+    setLoadingHistory(true);
+    try {
+      const data = await historyService.getAll();
+      const desde = new Date(startDate); desde.setHours(0, 0, 0, 0);
+      const hasta = new Date(endDate); hasta.setHours(23, 59, 59, 999);
+      const enRango = (data || []).filter((it) => {
+        const f = new Date(it.date || it.start_time || it.created_at);
+        return !isNaN(f) && f >= desde && f <= hasta;
+      });
+      setHistoryItems(enRango);
+    } catch (e) {
+      console.error("Error cargando historial", e);
+      setHistoryItems([]);
+    } finally {
+      setLoadingHistory(false);
     }
   };
 
