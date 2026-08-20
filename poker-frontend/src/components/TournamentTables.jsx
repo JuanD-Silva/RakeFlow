@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { TableCellsIcon, PlusIcon, TrashIcon, UserGroupIcon, ArrowsRightLeftIcon, XMarkIcon, SparklesIcon, IdentificationIcon } from '@heroicons/react/24/solid';
+import { TableCellsIcon, PlusIcon, TrashIcon, UserGroupIcon, ArrowsRightLeftIcon, XMarkIcon, SparklesIcon, IdentificationIcon, ScaleIcon, ArrowPathRoundedSquareIcon } from '@heroicons/react/24/solid';
 import { tournamentService, dealerService } from '../api/services';
 import ConfirmModal from './ConfirmModal';
 
@@ -44,7 +44,7 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
   const autoSeat = () => act(() => tournamentService.autoSeat(tId));
   // Re-sorteo: mueve a TODOS los activos, así que siempre con confirmación.
   const reshuffle = () => setConfirm({
-    title: '🎲 Re-sortear sillas',
+    title: 'Re-sortear sillas',
     message: 'Todos los jugadores activos cambiarán de mesa y silla. Los eliminados no participan.',
     confirmText: 'Sí, re-sortear',
     run: () => tournamentService.reshuffleSeats(tId),
@@ -137,14 +137,14 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
             <button type="button" onClick={reshuffle} disabled={busy}
               className="px-2.5 py-1 rounded-lg border border-violet-500/40 text-violet-300 hover:bg-violet-500/10 disabled:opacity-50 font-bold uppercase text-[10px] flex items-center gap-1"
               title="Volver a sortear todas las sillas (mueve a todos los activos)">
-              🎲 Re-sortear
+              <ArrowPathRoundedSquareIcon className="w-3.5 h-3.5" /> Re-sortear
             </button>
           )}
           {openTables.length >= 2 && (
             <button type="button" onClick={openPlan} disabled={busy || planLoading}
               className={`px-2.5 py-1 rounded-lg border disabled:opacity-50 font-bold uppercase text-[10px] flex items-center gap-1 ${needsBalance ? 'border-amber-500/60 bg-amber-500/15 text-amber-300 animate-pulse' : 'border-violet-500/40 text-violet-300 hover:bg-violet-500/10'}`}
               title={needsBalance ? 'Las mesas están desparejas o hay jugadores por sentar' : 'Nivelar mesas'}>
-              ⚖️ {planLoading ? '...' : 'Nivelar'}
+              <ScaleIcon className="w-3.5 h-3.5" /> {planLoading ? '...' : 'Nivelar'}
             </button>
           )}
           <span className="px-2 py-1 rounded-lg bg-gray-800 border border-gray-700 text-gray-300 font-mono">
@@ -309,7 +309,7 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/70" onClick={() => setPlan(null)}>
           <div className="bg-gray-900 border border-gray-700 rounded-2xl p-4 w-full max-w-sm max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
-              <h4 className="text-white text-sm font-bold flex items-center gap-1.5">⚖️ Nivelar mesas</h4>
+              <h4 className="text-white text-sm font-bold flex items-center gap-1.5"><ScaleIcon className="w-4 h-4 text-violet-400" /> Nivelar mesas</h4>
               <button type="button" onClick={() => setPlan(null)} className="text-gray-500 hover:text-white"><XMarkIcon className="w-5 h-5" /></button>
             </div>
             <p className="text-[11px] text-gray-400 mb-2">Se sugieren estos movimientos:</p>

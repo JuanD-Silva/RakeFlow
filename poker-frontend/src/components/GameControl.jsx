@@ -741,7 +741,7 @@ const handleCreateTournament = async (formData) => {
                    <button
                      key={t.id}
                      onClick={() => handleSwitchTournament(t.id)}
-                     className="group relative overflow-hidden w-full bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white font-bold text-lg py-4 px-8 rounded-xl shadow-[0_0_20px_rgba(124,58,237,0.4)] border-b-4 border-violet-900 active:border-b-0 active:translate-y-1 transition-all duration-150 flex items-center justify-between gap-4 uppercase tracking-wider animate-pulse-slow"
+                     className="group relative overflow-hidden w-full bg-violet-600 hover:bg-violet-500 text-white font-bold text-lg py-4 px-8 rounded-xl shadow-[0_0_20px_rgba(124,58,237,0.4)] border-b-4 border-violet-900 active:border-b-0 active:translate-y-1 transition-all duration-150 flex items-center justify-between gap-4 uppercase tracking-wider animate-pulse-slow"
                    >
                      <div className="flex items-center gap-4 min-w-0">
                        <div className="bg-white/20 p-2 rounded-lg shrink-0"><TrophyIcon className="w-6 h-6 text-white" /></div>

@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { tournamentService } from '../api/services';
 import {
-  PlayIcon, PauseIcon, ChevronLeftIcon, ChevronRightIcon, PencilSquareIcon,
+  PlayIcon, PauseIcon, ChevronLeftIcon, ChevronRightIcon, PencilSquareIcon, TvIcon, CheckIcon, ClockIcon,
 } from '@heroicons/react/24/solid';
 import Modal from './Modal';
 import BlindStructureEditor, { DEFAULT_BLINDS } from './BlindStructureEditor';
@@ -144,7 +144,7 @@ export default function TournamentClock({ tournament }) {
   const levelOver = remaining <= 0;
 
   const statusPill = running
-    ? { txt: '● En vivo', cls: 'bg-emerald-500/15 text-emerald-300 ring-emerald-500/30' }
+    ? { txt: '● En vivo', cls: 'bg-violet-500/15 text-violet-300 ring-violet-500/30' }
     : clock?.clock_status === 'PAUSED'
       ? { txt: '⏸ Pausado', cls: 'bg-amber-500/15 text-amber-300 ring-amber-500/30' }
       : { txt: '■ Detenido', cls: 'bg-gray-600/20 text-gray-300 ring-gray-500/30' };
@@ -154,7 +154,7 @@ export default function TournamentClock({ tournament }) {
       isBreak ? 'border-sky-500/40 bg-sky-950/30' : 'border-violet-500/40 bg-gradient-to-b from-violet-950/40 to-gray-900/60'
     }`}>
       <div className="flex items-center justify-between mb-3">
-        <span className="text-[11px] font-black uppercase tracking-[0.25em] text-violet-300">⏱ Reloj del torneo</span>
+        <span className="text-[11px] font-black uppercase tracking-[0.25em] text-violet-300 flex items-center gap-1.5"><ClockIcon className="w-3.5 h-3.5" /> Reloj del torneo</span>
         <div className="flex items-center gap-2">
           <button
             onClick={openEdit}
@@ -167,13 +167,13 @@ export default function TournamentClock({ tournament }) {
             <button
               onClick={shareTv}
               title="Copiar link de la pantalla TV (para proyectar)"
-              className={`text-[10px] font-bold uppercase px-2.5 py-1 rounded-full border transition-colors ${
+              className={`text-[10px] font-bold uppercase px-2.5 py-1 rounded-full border transition-colors flex items-center gap-1 ${
                 copiedTv
                   ? 'border-emerald-500/40 text-emerald-300 bg-emerald-500/10'
                   : 'border-violet-500/40 text-violet-300 hover:bg-violet-500/10'
               }`}
             >
-              {copiedTv ? '✓ Link TV' : '📺 Compartir TV'}
+              {copiedTv ? <><CheckIcon className="w-3 h-3" /> Link TV</> : <><TvIcon className="w-3 h-3" /> Compartir TV</>}
             </button>
           )}
           <span className={`text-[10px] font-bold uppercase px-2.5 py-1 rounded-full ring-1 ${statusPill.cls}`}>{statusPill.txt}</span>
@@ -183,7 +183,7 @@ export default function TournamentClock({ tournament }) {
 
       {noStructure ? (
         <div className="text-center py-10">
-          <p className="text-5xl mb-3">🎚️</p>
+          <PencilSquareIcon className="w-12 h-12 text-violet-400/60 mx-auto mb-3" />
           <p className="font-bold text-white">Sin estructura de blinds</p>
           <p className="text-sm text-gray-400 mt-1">Toca <span className="text-violet-300 font-bold">Editar</span> para configurar los niveles del reloj.</p>
         </div>
@@ -212,7 +212,7 @@ export default function TournamentClock({ tournament }) {
         <div className="md:w-px md:h-20 md:bg-gray-700/60 hidden md:block" />
         <div className="flex-1">
           {isBreak ? (
-            <p className="text-center md:text-left text-sky-300 font-bold text-lg">☕ Descanso</p>
+            <p className="text-center md:text-left text-sky-300 font-bold text-lg">Descanso</p>
           ) : (
             <>
               <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400 mb-1">Blinds</p>
@@ -228,7 +228,7 @@ export default function TournamentClock({ tournament }) {
             <p className="text-[11px] text-gray-500 mt-2">
               Sigue:{' '}
               {clock.next_level.is_break
-                ? '☕ Descanso'
+                ? 'Descanso'
                 : `${cop(clock.next_level.small_blind)}/${cop(clock.next_level.big_blind)}`}
             </p>
           )}
