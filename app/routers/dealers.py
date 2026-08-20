@@ -1035,6 +1035,13 @@ async def create_payout(
     if not dealer:
         raise HTTPException(status_code=404, detail="Dealer no encontrado")
 
+    # El periodo viene completo o no viene: un payout con un solo extremo no
+    # cae en ninguna rama del ledger (/stats/dealer-payments) y desaparece.
+    if (data.period_start is None) != (data.period_end is None):
+        raise HTTPException(status_code=400, detail="El periodo del pago necesita inicio y fin (o ninguno).")
+    if data.period_start and data.period_end and data.period_end < data.period_start:
+        raise HTTPException(status_code=400, detail="El fin del periodo no puede ser antes del inicio.")
+
     # Si viene session_id, validar que la mesa sea de este club (no confiar en
     # el payload). NULL = pago general por rango, como hasta ahora.
     session_id = None

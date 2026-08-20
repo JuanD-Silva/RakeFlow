@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import func, desc, or_
+from sqlalchemy import func, desc, or_, and_
 from typing import List
 from datetime import datetime, timedelta, time
 from zoneinfo import ZoneInfo
@@ -168,9 +168,13 @@ async def get_dashboard_stats(
             "weekly_profit": 0
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error("Error dashboard: %s", e)
-        return {}
+        # NUNCA devolver {} con 200: el frontend lo pintaba como "$0 · 0h · 0
+        # sesiones" y el dueno se iba creyendo que no hubo actividad.
+        logger.exception("Error dashboard: %s", e)
+        raise HTTPException(status_code=500, detail="No se pudieron calcular los indicadores. Intenta de nuevo.")
 
 # ---------------------------------------------------------
 # 2. DISTRIBUCIÓN SEMANAL (CASCADA: META -> SOCIOS) 🌊
@@ -208,7 +212,13 @@ async def get_weekly_distribution(
             models.Session.end_time >= start_dt,
             models.Session.end_time <= end_dt,
         )
-        expenses_week = float((await db.execute(exp_stmt)).scalar() or 0)
+        expenses_cash = float((await db.execute(exp_stmt)).scalar() or 0)
+        # 2c. Dealers de TORNEO: el rake de torneos ya suma al bruto (2), asi que
+        #     su costo de dealers tiene que restar aqui — si no, el neto que se
+        #     reparte a socios "olvida" esos turnos y solo cuadra en clubes sin
+        #     torneos. Misma funcion que usa /dealer-payments.
+        expenses_tourney = await services.tournament_dealer_cost_in_range(db, current_club.id, start_dt, end_dt)
+        expenses_week = expenses_cash + expenses_tourney
         net_rake_week = net_profit_week - expenses_week
 
         # 3. Lógica de Cascada — se reparte sobre el rake NETO (igual que el cierre:
@@ -539,17 +549,42 @@ async def get_dealer_payments(
     )
     tips_by_dealer = {d_id: float(total or 0) for d_id, total in (await db.execute(tips_stmt)).all()}
 
-    # 3b. Liquidaciones (pagos ya hechos) del club en el rango, por dealer.
-    payouts_stmt = (
-        select(models.DealerPayout.dealer_id, func.sum(models.DealerPayout.amount))
-        .where(
+    # 3b. Liquidaciones (pagos ya hechos) por dealer. Misma semantica que el
+    #     ledger de socios:
+    #     - Pago CON periodo (Liquidar desde Reportes): cuenta solo si su periodo
+    #       esta CONTENIDO en el rango visto. Asi, pagar el lunes la semana
+    #       pasada deja esa semana en "Pagado" (antes, por paid_at, quedaba
+    #       "Pendiente" para siempre y el pago aparecia en una semana sin
+    #       devengo). Un pago que desborda el rango (registrado a nivel mes y
+    #       miramos la semana) no suma pero AVISA, para no re-registrarlo.
+    #     - Pago SIN periodo (pago en la mesa, session_id): por paid_at.
+    payouts_rows = (await db.execute(
+        select(models.DealerPayout).where(
             models.DealerPayout.club_id == current_club.id,
-            models.DealerPayout.paid_at >= start_dt,
-            models.DealerPayout.paid_at <= end_dt,
+            or_(
+                and_(
+                    models.DealerPayout.period_start.isnot(None),
+                    models.DealerPayout.period_end.isnot(None),
+                    models.DealerPayout.period_end >= start_dt,
+                    models.DealerPayout.period_start <= end_dt,
+                ),
+                and_(
+                    models.DealerPayout.period_start.is_(None),
+                    models.DealerPayout.paid_at >= start_dt,
+                    models.DealerPayout.paid_at <= end_dt,
+                ),
+            ),
         )
-        .group_by(models.DealerPayout.dealer_id)
-    )
-    paid_by_dealer = {d_id: float(total or 0) for d_id, total in (await db.execute(payouts_stmt)).all()}
+    )).scalars().all()
+    paid_by_dealer: dict = {}
+    external_by_dealer: set = set()
+    for p in payouts_rows:
+        if p.period_start is None:
+            paid_by_dealer[p.dealer_id] = paid_by_dealer.get(p.dealer_id, 0.0) + float(p.amount or 0)
+        elif p.period_start >= start_dt and p.period_end <= end_dt:
+            paid_by_dealer[p.dealer_id] = paid_by_dealer.get(p.dealer_id, 0.0) + float(p.amount or 0)
+        else:
+            external_by_dealer.add(p.dealer_id)
 
     # 4. Agregar por dealer. Usamos la MISMA función de pago que el cierre
     #    (services.shift_payment_breakdown, redondeo por turno) para que el mismo
@@ -604,7 +639,7 @@ async def get_dealer_payments(
 
     # Asegurar que dealers con propina o liquidación pero sin turno cerrado
     # aparezcan igual en el reporte.
-    for d_id in set(tips_by_dealer) | set(paid_by_dealer):
+    for d_id in set(tips_by_dealer) | set(paid_by_dealer) | external_by_dealer:
         if d_id not in dealers:
             dr = (await db.execute(
                 select(models.Dealer.name, models.Dealer.is_active).where(
@@ -628,8 +663,9 @@ async def get_dealer_payments(
         tips = round(tips_by_dealer.get(d["dealer_id"], 0))
         paid = round(paid_by_dealer.get(d["dealer_id"], 0))
         # Pendiente = lo que el club le debe (pago por turnos) - lo ya liquidado.
-        # Clamp a >=0: si se sobre-liquidó, no mostramos pendiente negativo.
-        pending = max(0, club_payment - paid)
+        # SIN clamp: si se liquido de mas, se dice (igual que el ledger de
+        # socios); esconderlo era un sobrepago silencioso.
+        pending = club_payment - paid
         hours = round(d["total_minutes"] / 60.0, 1)
         result.append({
             "dealer_id": d["dealer_id"],
@@ -646,13 +682,18 @@ async def get_dealer_payments(
             "grand_total": club_payment + tips,
             "paid": paid,
             "pending": pending,
+            # Tiene un pago registrado en un periodo que desborda este rango
+            # (ej. liquidado a nivel mes y miramos la semana): no suma, avisa.
+            "paid_external": d["dealer_id"] in external_by_dealer,
         })
         summary["total_hours"] += hours
         summary["club_payment"] += club_payment
         summary["tips"] += tips
         summary["grand_total"] += club_payment + tips
         summary["paid"] += paid
-        summary["pending"] += pending
+        # El resumen suma solo lo que de verdad se debe; el sobrepago de uno
+        # no "paga" la deuda de otro.
+        summary["pending"] += max(0, pending)
     summary["dealers_count"] = len(result)
     summary["total_hours"] = round(summary["total_hours"], 1)
 

@@ -73,11 +73,17 @@ export default function DealerPaymentsTable({ startISO, endISO }) {
   };
 
   const onLiquidated = () => { setLiquidating(null); setReloadKey(k => k + 1); };
-  const PaidBadge = ({ d }) => (
-    d.pending <= 0
-      ? <span className="text-[8px] bg-green-700/60 text-green-200 px-1.5 py-0.5 rounded-full uppercase font-bold whitespace-nowrap">✓ Pagado</span>
-      : <span className="text-[8px] bg-amber-700/60 text-amber-200 px-1.5 py-0.5 rounded-full uppercase font-bold whitespace-nowrap">Pendiente</span>
-  );
+  // Misma honestidad que el ledger de socios: el sobrepago se dice, y un pago
+  // registrado en un periodo que desborda este rango (ej. el mes) avisa para
+  // que no lo vuelvas a registrar.
+  const PaidBadge = ({ d }) => {
+    const base = "text-[11px] px-2 py-0.5 rounded-full uppercase font-bold whitespace-nowrap";
+    if (d.pending < 0) return <span className={`${base} bg-red-900/60 text-red-200`}>Pagado de más</span>;
+    if (d.pending === 0) return <span className={`${base} bg-green-700/60 text-green-200`}>✓ Pagado</span>;
+    if (d.paid_external) return <span className={`${base} bg-blue-900/60 text-blue-200`}>Registrado en otro periodo</span>;
+    return <span className={`${base} bg-amber-700/60 text-amber-200`}>Pendiente</span>;
+  };
+  const pendingClass = (v) => (v < 0 ? 'text-red-300' : 'text-orange-400');
 
   return (
     <div className="space-y-5">
@@ -127,10 +133,10 @@ export default function DealerPaymentsTable({ startISO, endISO }) {
               </div>
               <div className="bg-gray-900/40 p-2 rounded-lg">
                 <div className="text-gray-500 text-[9px] uppercase">Pendiente</div>
-                <div className="font-mono text-orange-400">{formatMoney(d.pending)}</div>
+                <div className={`font-mono ${pendingClass(d.pending)}`}>{formatMoney(d.pending)}</div>
               </div>
             </div>
-            {d.pending > 0 && (
+            {d.pending > 0 && !d.paid_external && (
               <button onClick={() => setLiquidating(d)} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-2 rounded-lg transition-colors">
                 Liquidar {formatMoney(d.pending)}
               </button>
@@ -167,15 +173,17 @@ export default function DealerPaymentsTable({ startISO, endISO }) {
                 <td className="p-4 text-right font-mono text-gray-300">{d.hours}h</td>
                 <td className="p-4 text-right font-mono text-white font-bold">{formatMoney(d.club_payment)}</td>
                 <td className="p-4 text-right font-mono text-green-400">{formatMoney(d.paid)}</td>
-                <td className="p-4 text-right font-mono text-orange-400 font-bold">{formatMoney(d.pending)}</td>
+                <td className={`p-4 text-right font-mono font-bold ${pendingClass(d.pending)}`}>{formatMoney(d.pending)}</td>
                 <td className="p-4 text-right font-mono text-yellow-400">{formatMoney(d.tips)}</td>
                 <td className="p-4 text-center">
-                  {d.pending > 0 ? (
+                  {d.pending > 0 && !d.paid_external ? (
                     <button onClick={() => setLiquidating(d)} className="bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap">
                       Liquidar
                     </button>
+                  ) : d.pending < 0 ? (
+                    <span className="text-[11px] text-red-300 font-bold" title="Hay liquidaciones registradas por más de lo devengado en este periodo">revisa</span>
                   ) : (
-                    <span className="text-[10px] text-green-500 font-bold">✓</span>
+                    <span className="text-[11px] text-green-500 font-bold">✓</span>
                   )}
                 </td>
               </tr>
@@ -198,6 +206,7 @@ export default function DealerPaymentsTable({ startISO, endISO }) {
       <p className="text-[10px] text-gray-600 text-center italic">
         El "Pago club" (horas + % del rake) ya se descontó de la utilidad de socios al cerrar cada mesa.
         Liquidar solo registra que ya le entregaste la plata al dealer. Las propinas son del dealer.
+        Los pagos cuentan en el periodo que liquidaste, no en el día que tocaste el botón.
       </p>
 
       {liquidating && (

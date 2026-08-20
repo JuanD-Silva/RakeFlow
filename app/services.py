@@ -80,6 +80,36 @@ def verify_integrity(
     return theoretical_remainder == physical_count
 
 
+async def tournament_dealer_cost_in_range(
+    db: AsyncSession, club_id: int, start, end
+) -> float:
+    """Costo de dealers de TORNEO (turnos cerrados cuyo end_time cae en [start, end]).
+
+    FUENTE UNICA: la usan el reparto semanal (stats.weekly-distribution, como
+    gasto que reduce el rake neto) y el reporte de pagos a dealers
+    (stats.dealer-payments, como devengado por dealer). Misma formula en ambos
+    lados (shift_payment_breakdown con tarifa de torneo, sin % de rake) para que
+    "cuanto le debo a los dealers" y "cuanto se resto del neto" sean el mismo
+    numero. El costo de dealers de CASH no pasa por aqui: queda persistido en
+    sessions.dealer_cost al cerrar la mesa.
+    """
+    rows = (await db.execute(
+        select(models.TournamentDealerShift).where(
+            models.TournamentDealerShift.club_id == club_id,
+            models.TournamentDealerShift.end_time.isnot(None),
+            models.TournamentDealerShift.end_time >= start,
+            models.TournamentDealerShift.end_time <= end,
+        )
+    )).scalars().all()
+    total = 0.0
+    for shift in rows:
+        elapsed_min = max(0, int((shift.end_time - shift.start_time).total_seconds() // 60))
+        hours = round(elapsed_min / 60.0, 2)
+        bd = shift_payment_breakdown(hours, shift.tournament_hourly_rate_cop or 0, 0, None)
+        total += bd["club_payment"]
+    return float(total)
+
+
 async def tournament_rake_in_range(
     db: AsyncSession, club_id: int, start, end
 ) -> float:

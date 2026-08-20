@@ -1,5 +1,5 @@
 // src/components/KPIDashboard.jsx
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import api from '../api/axios';
 import { historyService } from '../api/services';
 import { formatMoney } from '../utils/formatters';
@@ -37,6 +37,10 @@ export default function KPIDashboard({ startDate, endDate, netPeriodo = null } =
   const [prevStats, setPrevStats] = useState(null);
   const [dealerPending, setDealerPending] = useState(null);
   const [error, setError] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  // Encadenar taps de ← dispara varios fetches: solo la respuesta del MÁS
+  // reciente puede pintar (patrón reqSeq de WeeklyReport/GameControl).
+  const fetchSeqRef = useRef(0);
 
   // Modal de "Horas operadas"
   const [showHoursModal, setShowHoursModal] = useState(false);
@@ -45,6 +49,8 @@ export default function KPIDashboard({ startDate, endDate, netPeriodo = null } =
 
   useEffect(() => {
     async function fetchStats() {
+      const myReq = ++fetchSeqRef.current;
+      setError(null);
       try {
         // Si recibimos rango (sincronizado con el periodo que el user navega
         // en WeeklyReport), lo pasamos al backend para que los KPIs reflejen
@@ -106,17 +112,19 @@ export default function KPIDashboard({ startDate, endDate, netPeriodo = null } =
           prevParams ? api.get(`/stats/dashboard${prevParams}`).catch(() => ({ data: null })) : Promise.resolve({ data: null }),
           curQuery ? api.get(`/stats/dealer-payments?${curQuery}`).catch(() => ({ data: null })) : Promise.resolve({ data: null }),
         ]);
+        if (myReq !== fetchSeqRef.current) return;
         setStats(dashRes.data);
         setQuota(quotaRes.data);
         setPrevStats(prevRes.data ? { ...prevRes.data, comparacion } : null);
         setDealerPending(dealersRes.data?.summary?.pending ?? null);
       } catch (e) {
+        if (myReq !== fetchSeqRef.current) return;
         console.error("Error KPIs", e);
-        setError("Error al cargar indicadores");
+        setError("No se pudieron cargar los indicadores");
       }
     }
     fetchStats();
-  }, [startDate, endDate]);
+  }, [startDate, endDate, reloadKey]);
 
   useEscape(() => setShowHoursModal(false), showHoursModal);
 
@@ -143,7 +151,15 @@ export default function KPIDashboard({ startDate, endDate, netPeriodo = null } =
     }
   };
 
-  if (error) return <div className="text-red-400 text-center py-6 bg-red-900/10 rounded-xl border border-red-500/20 mb-8">{error}</div>;
+  // "No pude cargar" nunca se disfraza de "$0": error visible con Reintentar
+  // (el backend ya no devuelve {} con 200 ante una excepción).
+  if (error) return (
+    <div className="text-center py-6 bg-red-900/10 rounded-xl border border-red-500/20 mb-8">
+      <p className="text-red-300 font-bold mb-1">{error}</p>
+      <p className="text-gray-400 text-sm mb-4">Esto NO significa que el periodo esté en cero — es un fallo de conexión.</p>
+      <button type="button" onClick={() => setReloadKey((k) => k + 1)} className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm uppercase tracking-wider">Reintentar</button>
+    </div>
+  );
   if (!stats) {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
