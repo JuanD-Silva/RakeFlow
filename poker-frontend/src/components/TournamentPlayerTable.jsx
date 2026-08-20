@@ -3,7 +3,7 @@ import {
     UserPlusIcon, BanknotesIcon, CheckBadgeIcon, XCircleIcon,
     BoltIcon, ArrowPathIcon, PlusCircleIcon, ChartBarIcon,
     TrophyIcon, UserIcon, HeartIcon, ExclamationTriangleIcon, CheckCircleIcon,
-    GiftIcon, MagnifyingGlassIcon, PhoneIcon
+    GiftIcon, MagnifyingGlassIcon, PhoneIcon, CircleStackIcon, TrashIcon
 } from '@heroicons/react/24/solid';
 import { tournamentService, playerService } from '../api/services';
 import { formatMoney } from '../utils/formatters';
@@ -263,7 +263,7 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
             {/* HUD */}
             <div className={`grid grid-cols-2 md:grid-cols-3 ${showAvgStack ? 'xl:grid-cols-6' : 'xl:grid-cols-5'} gap-4 animate-fade-in-up`}>
                 <StatCard icon={<UserIcon className="w-10 h-10 text-blue-500" />} label="Jugadores" value={`${activePlayersCount} / ${playersWithStats.length}`} sub="Activos / Total" color="blue" />
-                {showAvgStack && <StatCard icon={<span className="text-5xl">🪙</span>} label="Stack Prom." value={avgStack.toLocaleString('es-CO')} sub="Fichas ÷ activos" color="green" />}
+                {showAvgStack && <StatCard icon={<CircleStackIcon className="w-10 h-10 text-yellow-500" />} label="Stack Prom." value={avgStack.toLocaleString('es-CO')} sub="Fichas ÷ activos" color="green" />}
                 <StatCard icon={<BanknotesIcon className="w-10 h-10 text-green-500" />} label="Pozo Bruto" value={formatCurrency(totalPotRaw)} sub="Total Recaudado" color="green" />
                 <StatCard icon={<ChartBarIcon className="w-10 h-10 text-violet-500" />} label="Rake Club" value={formatCurrency(houseRake)} sub={`${prices.rake}%`} color="violet" />
                 <StatCard icon={<HeartIcon className="w-10 h-10 text-pink-500" />} label="Staff Bonus" value={formatCurrency(totalTipsCollected)} sub={`${totalTipsCount} tips (${playersWithTip}/${playersWithStats.length} jugadores)`} color="pink" />
@@ -976,7 +976,7 @@ function ActionModal({ player, playerName, onClose, onRebuy, onAddon, onUndo, on
 
                     {/* Quitar inscripción errada (borra registro + cobros; ≠ Eliminar/bust) */}
                     <button onClick={onUnregister} disabled={loading} className="w-full text-red-400 hover:text-red-300 hover:bg-red-900/20 border border-red-500/20 hover:border-red-500/40 py-3 rounded-xl text-[11px] font-bold uppercase tracking-wider transition-colors disabled:opacity-30">
-                        🗑️ Quitar del torneo (mal inscrito)
+                        <span className="inline-flex items-center gap-1.5"><TrashIcon className="w-4 h-4" /> Quitar del torneo (mal inscrito)</span>
                     </button>
 
                     {/* Cerrar */}

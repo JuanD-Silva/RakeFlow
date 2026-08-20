@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { tournamentService } from '../api/services';
 import {
-  PlayIcon, PauseIcon, ChevronLeftIcon, ChevronRightIcon, PencilSquareIcon,
+  PlayIcon, PauseIcon, ChevronLeftIcon, ChevronRightIcon, PencilSquareIcon, TvIcon, CheckIcon,
 } from '@heroicons/react/24/solid';
 import Modal from './Modal';
 import BlindStructureEditor, { DEFAULT_BLINDS } from './BlindStructureEditor';
@@ -144,7 +144,7 @@ export default function TournamentClock({ tournament }) {
   const levelOver = remaining <= 0;
 
   const statusPill = running
-    ? { txt: '● En vivo', cls: 'bg-emerald-500/15 text-emerald-300 ring-emerald-500/30' }
+    ? { txt: '● En vivo', cls: 'bg-violet-500/15 text-violet-300 ring-violet-500/30' }
     : clock?.clock_status === 'PAUSED'
       ? { txt: '⏸ Pausado', cls: 'bg-amber-500/15 text-amber-300 ring-amber-500/30' }
       : { txt: '■ Detenido', cls: 'bg-gray-600/20 text-gray-300 ring-gray-500/30' };
@@ -173,7 +173,7 @@ export default function TournamentClock({ tournament }) {
                   : 'border-violet-500/40 text-violet-300 hover:bg-violet-500/10'
               }`}
             >
-              {copiedTv ? '✓ Link TV' : '📺 Compartir TV'}
+              {copiedTv ? <><CheckIcon className="w-3.5 h-3.5" /> Link TV</> : <><TvIcon className="w-3.5 h-3.5" /> Compartir TV</>}
             </button>
           )}
           <span className={`text-[10px] font-bold uppercase px-2.5 py-1 rounded-full ring-1 ${statusPill.cls}`}>{statusPill.txt}</span>
@@ -212,7 +212,7 @@ export default function TournamentClock({ tournament }) {
         <div className="md:w-px md:h-20 md:bg-gray-700/60 hidden md:block" />
         <div className="flex-1">
           {isBreak ? (
-            <p className="text-center md:text-left text-sky-300 font-bold text-lg">☕ Descanso</p>
+            <p className="text-center md:text-left text-sky-300 font-bold text-lg">Descanso</p>
           ) : (
             <>
               <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400 mb-1">Blinds</p>
@@ -228,7 +228,7 @@ export default function TournamentClock({ tournament }) {
             <p className="text-[11px] text-gray-500 mt-2">
               Sigue:{' '}
               {clock.next_level.is_break
-                ? '☕ Descanso'
+                ? 'Descanso'
                 : `${cop(clock.next_level.small_blind)}/${cop(clock.next_level.big_blind)}`}
             </p>
           )}
