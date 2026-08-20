@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 import api from '../api/axios';
 import KPIDashboard from '../components/KPIDashboard';
+import { useToast, Toast } from './Toast';
+import { useEscape } from '../hooks/useEscape';
 import DealerPaymentsTable from './DealerPaymentsTable';
 import ExportMenu from './ExportMenu';
 import { statsService, historyService } from '../api/services';
@@ -23,6 +25,11 @@ export default function WeeklyReport() {
   // Default anti-"trampa del lunes": si la semana en curso lleva menos de un
   // día completo (lunes), arrancamos en la semana CERRADA — que es la que el
   // dueño viene a revisar. Navegar con → siempre permite volver a hoy.
+  // Ledger de pagos a socios del periodo visto
+  const [partnerPayouts, setPartnerPayouts] = useState([]);
+  const [payoutReload, setPayoutReload] = useState(0);
+  const [payoutFor, setPayoutFor] = useState(null); // item de distribución
+  const { toast, showToast, dismissToast } = useToast();
   const [referenceDate, setReferenceDate] = useState(() => {
     const hoy = new Date();
     if (hoy.getDay() === 1) { const d = new Date(hoy); d.setDate(d.getDate() - 7); return d; }
@@ -78,6 +85,18 @@ export default function WeeklyReport() {
   useEffect(() => {
     fetchData();
   }, [referenceDate, viewMode]);
+
+  useEffect(() => {
+    let vivo = true;
+    statsService.getPartnerPayouts(formatDateISO(range.start), formatDateISO(range.end))
+      .then((r) => { if (vivo) setPartnerPayouts(r || []); })
+      .catch(() => { if (vivo) setPartnerPayouts([]); });
+    return () => { vivo = false; };
+  }, [referenceDate, viewMode, payoutReload]);
+
+  const pagadoA = (nombre) => partnerPayouts
+    .filter((p) => p.beneficiary_name === nombre)
+    .reduce((acc, p) => acc + (p.amount || 0), 0);
 
   // Secuencia anti-respuestas-viejas: encadenar taps de ← dispara varios
   // fetches; solo la respuesta del MÁS reciente puede pintar (patrón reqSeq
@@ -403,6 +422,34 @@ export default function WeeklyReport() {
                       {formatMoney(item.total)}
                     </p>
                   </div>
+
+                  {/* LEDGER: el pago a socios deja de vivir en un cuaderno.
+                      "Registrar pago" solo apunta que la plata YA se entregó
+                      (como Liquidar de dealers) — no mueve la caja. */}
+                  {(isSocio(item) || isFondoItem(item)) && item.total > 0 && (() => {
+                    const pagado = pagadoA(item.name);
+                    const pendiente = Math.max(0, item.total - pagado);
+                    return (
+                      <div className="border-t border-gray-700/50 pt-3 flex items-center justify-between gap-3">
+                        {pendiente <= 0 ? (
+                          <span className="text-emerald-400 text-xs font-bold uppercase tracking-wider">✓ Pagado</span>
+                        ) : pagado > 0 ? (
+                          <span className="text-amber-300 text-xs font-bold">Pagado {formatMoney(pagado)} de {formatMoney(item.total)}</span>
+                        ) : (
+                          <span className="text-gray-400 text-xs font-bold uppercase tracking-wider">Sin registrar</span>
+                        )}
+                        {pendiente > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setPayoutFor({ ...item, pendiente })}
+                            className="px-3 py-2 rounded-lg bg-emerald-600/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-600/25 text-xs font-bold uppercase tracking-wider transition-colors"
+                          >
+                            Registrar pago
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Decoración inferior */}
@@ -435,6 +482,115 @@ export default function WeeklyReport() {
       </div>
 
       </>}
+
+      <Toast toast={toast} onDismiss={dismissToast} />
+
+      {payoutFor && (
+        <PartnerPayoutModal
+          item={payoutFor}
+          periodStart={formatDateISO(range.start)}
+          periodEnd={formatDateISO(range.end)}
+          onClose={() => setPayoutFor(null)}
+          onDone={(payout) => {
+            setPayoutFor(null);
+            setPayoutReload((k) => k + 1);
+            showToast(`Registraste ${formatMoney(payout.amount)} a ${payout.beneficiary_name}`, "success", {
+              label: "Deshacer",
+              onClick: async () => {
+                try {
+                  await statsService.deletePartnerPayout(payout.id);
+                  setPayoutReload((k) => k + 1);
+                  showToast("Registro deshecho");
+                } catch (e) {
+                  showToast(e.response?.data?.detail || "No se pudo deshacer el registro.", "error");
+                }
+              },
+            });
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Modal de registro de pago a socio (espejo del Liquidar de dealers): solo
+// LEDGER — apunta que la plata ya se entregó, no mueve la caja.
+function PartnerPayoutModal({ item, periodStart, periodEnd, onClose, onDone }) {
+  const [amount, setAmount] = useState(String(item.pendiente || item.total || ""));
+  const [method, setMethod] = useState("cash");
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  useEscape(onClose, !saving);
+
+  const submit = async () => {
+    const value = Number(amount);
+    if (!value || value <= 0) { setError("Ingresa un monto válido."); return; }
+    if (value > (item.pendiente || item.total)) {
+      setError(`El pendiente del periodo es ${formatMoney(item.pendiente || item.total)} — revisa el monto.`);
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const payout = await statsService.createPartnerPayout({
+        beneficiary_name: item.name,
+        period_start: periodStart,
+        period_end: periodEnd,
+        amount: value,
+        method,
+        note: note.trim() || null,
+      });
+      onDone(payout);
+    } catch (e) {
+      setError(e.response?.data?.detail || "No se pudo registrar el pago.");
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-fade-in" role="dialog" aria-modal="true" aria-label={`Registrar pago a ${item.name}`} onClick={onClose}>
+      <div className="bg-gray-900 rounded-2xl border border-emerald-500/30 shadow-2xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-white font-black text-lg uppercase tracking-tight mb-1">Registrar pago</h3>
+        <p className="text-gray-400 text-sm mb-4">{item.name} · pendiente del periodo: <span className="font-mono font-bold text-emerald-300">{formatMoney(item.pendiente || item.total)}</span></p>
+
+        <label className="block text-gray-400 text-xs font-bold uppercase tracking-wider mb-1">Monto entregado</label>
+        <input
+          type="text" inputMode="numeric" pattern="[0-9]*"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value.replace(/\D/g, ""))}
+          className="w-full bg-gray-800 text-white border border-gray-600 rounded-xl py-3 px-4 font-mono text-xl font-bold focus:border-emerald-500 outline-none mb-1"
+        />
+        {Number(amount) > 0 && <p className="text-center font-mono text-sm text-white/80 mb-3">= {formatMoney(Number(amount))}</p>}
+
+        <div className="flex gap-2 mb-3">
+          {[["cash", "Efectivo"], ["transfer", "Transferencia"]].map(([v, l]) => (
+            <button key={v} type="button" onClick={() => setMethod(v)}
+              className={`flex-1 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider border transition-colors ${method === v ? 'bg-emerald-600 border-emerald-500 text-white' : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white'}`}>
+              {l}
+            </button>
+          ))}
+        </div>
+
+        <input
+          type="text" value={note} onChange={(e) => setNote(e.target.value)}
+          placeholder="Nota (opcional)"
+          className="w-full bg-gray-800 text-white border border-gray-600 rounded-xl py-2.5 px-4 text-sm focus:border-emerald-500 outline-none mb-3 placeholder-gray-500"
+        />
+
+        <p className="text-[11px] text-gray-500 mb-4">Solo registra que ya entregaste la plata (como Liquidar de dealers). La utilidad ya se reconoció en el cierre — esto no mueve la caja.</p>
+
+        {error && <p className="text-red-300 text-sm mb-3 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{error}</p>}
+
+        <div className="flex gap-3">
+          <button type="button" onClick={onClose} disabled={saving}
+            className="flex-1 py-3 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white rounded-xl font-bold transition-colors">Cancelar</button>
+          <button type="button" onClick={submit} disabled={saving}
+            className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl font-bold transition-colors">
+            {saving ? "Guardando…" : "Registrar"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

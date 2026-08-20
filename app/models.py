@@ -1,5 +1,5 @@
 # app/models.py
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Boolean, Enum as SqEnum, JSON, Index, text
+from sqlalchemy import Column, Integer, String, Float, DateTime, Date, ForeignKey, Boolean, Enum as SqEnum, JSON, Index, text
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
@@ -233,6 +233,31 @@ class DealerShift(Base):
 
     dealer = relationship("Dealer", back_populates="shifts")
     session = relationship("Session")
+
+
+class PartnerPayout(Base):
+    """
+    Ledger del reparto a SOCIOS/fondos: registro de que la plata de la
+    distribución YA se entregó (espejo de DealerPayout). NO mueve la caja —
+    la utilidad ya se reconoció en el cierre; esto es solo "quién recibió qué
+    y cuándo", para que el pago a socios no viva en un cuaderno.
+    pendiente del periodo = total distribuido (weekly-distribution) − Σ payouts
+    del mismo beneficiario en ese periodo.
+    """
+    __tablename__ = "partner_payouts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False, index=True)
+    # Snapshot del nombre (la regla puede renombrarse/borrarse; el ledger no).
+    beneficiary_name = Column(String, nullable=False)
+    rule_id = Column(Integer, ForeignKey("distribution_rules.id"), nullable=True)
+    period_start = Column(Date, nullable=False, index=True)
+    period_end = Column(Date, nullable=False)
+    amount = Column(Integer, nullable=False)
+    method = Column(String, default="cash")  # cash | transfer
+    note = Column(String, nullable=True)
+    created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class DealerPayout(Base):

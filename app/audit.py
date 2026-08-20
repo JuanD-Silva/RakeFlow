@@ -51,6 +51,10 @@ def _json_safe(value: Any) -> Any:
 class AuditAction:
     """Constantes de acciones auditables. Mantener ordenadas por dominio."""
 
+    # Reparto a socios (ledger)
+    PARTNER_PAYOUT_CREATE = "PARTNER_PAYOUT_CREATE"
+    PARTNER_PAYOUT_DELETE = "PARTNER_PAYOUT_DELETE"
+
     # Auth
     LOGIN_SUCCESS = "LOGIN_SUCCESS"
     LOGIN_FAILED = "LOGIN_FAILED"
