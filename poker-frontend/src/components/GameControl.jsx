@@ -549,35 +549,17 @@ const handleCreateTournament = async (formData) => {
 {viewMode === "tournament" && activeTournament ? (
         <div className="animate-fade-in-up bg-gray-900/50 p-6 rounded-2xl border border-violet-500/30">
             
-            {/* HEADER: TÍTULO Y BOTONES DE CONTROL (DISEÑO MEJORADO) */}
-            <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-6 gap-4 border-b border-gray-700/50 pb-6">
-                
-                {/* LADO IZQUIERDO: VOLVER + TÍTULO */}
-                <div className="flex items-center gap-4 w-full xl:w-auto">
-                    {/* Botón Volver (Flecha) */}
-                    <button
-                        onClick={() => setViewMode("menu")}
-                        className="p-3 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white transition-all border border-gray-700 hover:border-gray-500 shadow-sm group"
-                        title="Volver al Menu Principal"
-                    >
-                        <ArrowLeftIcon className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
-                    </button>
-
-                    {/* Icono y Título */}
-                    <div className="flex items-center gap-3 overflow-hidden">
-                        <div className="bg-yellow-500/10 p-2 rounded-lg border border-yellow-500/20 shrink-0">
-                           <TrophyIcon className="w-8 h-8 text-yellow-400" />
-                        </div>
-                        <div className="min-w-0">
-                           <h2 className="text-xl md:text-2xl font-black text-white uppercase leading-none truncate md:whitespace-normal">
-                             {activeTournament.name}
-                           </h2>
-                           <span className="text-[10px] text-violet-400 font-mono font-medium tracking-wider block mt-1">
-                             PANEL DE CONTROL
-                           </span>
-                        </div>
-                    </div>
-                </div>
+            {/* VOLVER: fila mínima. El header de arriba ya muestra trofeo, nombre,
+                estado y conteo del torneo — repetirlos aquí costaba media pantalla
+                de celular antes de llegar al reloj. */}
+            <div className="mb-4">
+                <button
+                    onClick={() => setViewMode("menu")}
+                    className="flex items-center gap-2 px-4 py-3 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white transition-all border border-gray-700 hover:border-gray-500 shadow-sm group"
+                >
+                    <ArrowLeftIcon className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
+                    <span className="text-xs font-bold uppercase tracking-wider">Menú</span>
+                </button>
             </div>
 
             {/* RELOJ / NIVELES (T3). key: al cambiar de torneo (multi-torneo) el

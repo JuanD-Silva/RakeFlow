@@ -183,32 +183,32 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
                   <UserGroupIcon className="w-3.5 h-3.5" /> Mesa {t.table_number}
                 </span>
                 <div className="flex items-center gap-1.5">
-                  <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${t.seats_available > 0 ? 'bg-emerald-600/20 text-emerald-300' : 'bg-gray-800 text-gray-500'}`}>
+                  <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${t.seats_available > 0 ? 'bg-emerald-600/20 text-emerald-300' : 'bg-gray-800 text-gray-400'}`}>
                     {t.seated_count}/{t.max_seats}
                   </span>
                   <button type="button" onClick={() => delTable(t)} disabled={busy}
-                    className="p-1 text-gray-600 hover:text-red-400 disabled:opacity-40" title="Borrar mesa">
-                    <TrashIcon className="w-3.5 h-3.5" />
+                    className="p-3.5 -mx-2 -my-1.5 text-gray-500 hover:text-red-400 disabled:opacity-40" title="Borrar mesa" aria-label={`Borrar Mesa ${t.table_number}`}>
+                    <TrashIcon className="w-4 h-4" />
                   </button>
                 </div>
               </div>
               {/* Dealer de la mesa */}
               <button type="button" onClick={() => setDealerFor({ table_id: t.id, table_number: t.table_number, dealer_id: t.dealer_id })} disabled={busy}
-                className={`w-full mb-1.5 flex items-center gap-1.5 text-[11px] px-2 py-1 rounded-lg border ${t.dealer_id ? 'border-amber-500/30 bg-amber-950/20 text-amber-200' : 'border-dashed border-gray-700 text-gray-500 hover:text-amber-300 hover:border-amber-500/40'}`}>
+                className={`w-full mb-1.5 flex items-center gap-1.5 text-[11px] px-2 py-1 rounded-lg border ${t.dealer_id ? 'border-amber-500/30 bg-amber-950/20 text-amber-200' : 'border-dashed border-gray-700 text-gray-400 hover:text-amber-300 hover:border-amber-500/40'}`}>
                 <IdentificationIcon className="w-3.5 h-3.5 shrink-0" />
                 <span className="truncate">{t.dealer_name || 'Sin dealer — asignar'}</span>
               </button>
               {t.players.length === 0 ? (
                 <p className="text-gray-600 text-[11px] italic py-1">Vacía</p>
               ) : (
-                <div className="space-y-1">
+                <div className="space-y-3">
                   {t.players.map((p) => (
                     <div key={p.player_id} className="flex items-center gap-2 text-xs">
-                      <span className="shrink-0 w-5 text-center text-[10px] font-black text-gray-500 font-mono">{p.seat_number ?? '·'}</span>
+                      <span className="shrink-0 w-5 text-center text-[10px] font-black text-gray-400 font-mono">{p.seat_number ?? '·'}</span>
                       <span className="flex-1 text-gray-200 truncate">{p.name}</span>
                       <button type="button" onClick={() => setMoveFor({ player_id: p.player_id, name: p.name })} disabled={busy}
-                        className="p-1 text-gray-500 hover:text-violet-300 disabled:opacity-40" title="Mover de mesa">
-                        <ArrowsRightLeftIcon className="w-3.5 h-3.5" />
+                        className="p-3.5 -mx-2 -my-1 text-gray-400 hover:text-violet-300 disabled:opacity-40" title="Mover de mesa" aria-label={`Mover a ${p.name}`}>
+                        <ArrowsRightLeftIcon className="w-4 h-4" />
                       </button>
                     </div>
                   ))}
@@ -233,7 +233,7 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
 
       {/* CREAR MESA */}
       <div className="mt-3 flex items-center gap-2 pt-2.5 border-t border-gray-700/50">
-        <label className="text-[10px] text-gray-500 uppercase font-bold">Cupos</label>
+        <label className="text-[10px] text-gray-400 uppercase font-bold">Cupos</label>
         <input type="number" min="2" max="12" value={newSeats} onChange={(e) => setNewSeats(e.target.value)}
           className="w-14 bg-gray-800 border border-gray-600 focus:border-violet-500 rounded p-1 text-center text-white text-sm font-mono outline-none" />
         <button type="button" onClick={createTable} disabled={busy}
@@ -301,7 +301,7 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
       )}
 
       {closedCount > 0 && (
-        <p className="mt-2 text-[10px] text-gray-600 text-center">{closedCount} mesa{closedCount === 1 ? '' : 's'} cerrada{closedCount === 1 ? '' : 's'} por consolidación.</p>
+        <p className="mt-2 text-[10px] text-gray-500 text-center">{closedCount} mesa{closedCount === 1 ? '' : 's'} cerrada{closedCount === 1 ? '' : 's'} por consolidación.</p>
       )}
 
       {/* MODAL: previsualización del balanceo (sugerir + aplicar) */}
@@ -320,13 +320,13 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
                   <span className="text-gray-500 font-mono shrink-0">{m.from_table_number != null ? `M${m.from_table_number}` : 'Espera'} <ArrowsRightLeftIcon className="w-3 h-3 inline text-violet-400" /> M{m.to_table_number}</span>
                 </div>
               ))}
-              {plan.moves.length === 0 && <p className="text-[11px] text-gray-600 italic">Sin movimientos de jugadores.</p>}
+              {plan.moves.length === 0 && <p className="text-[11px] text-gray-500 italic">Sin movimientos de jugadores.</p>}
             </div>
             {plan.close_tables.length > 0 && (
               <p className="text-[11px] text-amber-300 mb-3">Se cerrará{plan.close_tables.length === 1 ? '' : 'n'} la{plan.close_tables.length === 1 ? '' : 's'} mesa{plan.close_tables.length === 1 ? '' : 's'} {plan.close_tables.map((c) => c.table_number).join(', ')} (consolidación).</p>
             )}
             {(plan.still_waiting || []).length > 0 && (
-              <p className="text-[11px] text-gray-500 mb-3">Quedan en espera: {plan.still_waiting.map((w) => w.player_name).join(', ')} (se abre otra mesa con 2+ esperando).</p>
+              <p className="text-[11px] text-gray-400 mb-3">Quedan en espera: {plan.still_waiting.map((w) => w.player_name).join(', ')} (se abre otra mesa con 2+ esperando).</p>
             )}
             <div className="flex gap-2">
               <button type="button" onClick={() => setPlan(null)} className="flex-1 text-[11px] font-bold uppercase py-2.5 rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700">Cancelar</button>
