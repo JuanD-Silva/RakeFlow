@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 // 👇 MANTENEMOS TUS IMPORTS ORIGINALES QUE SÍ FUNCIONAN
 import { transactionService, playerService, sessionService, dealerService } from '../api/services';
+import api from '../api/axios';
+import { formatMoney } from '../utils/formatters';
 import { 
   UserIcon, 
   MagnifyingGlassIcon, 
@@ -18,6 +20,18 @@ export default function TransactionForm({ type, onSuccess, sessionId, createSess
   const [players, setPlayers] = useState([]);
   const [playerId, setPlayerId] = useState("");
   const [amount, setAmount] = useState("");
+  // Contexto del jugador EN MESA para el cashout: plata que sale de la caja
+  // no se paga a ciegas — balance, entradas y fiado a la vista.
+  const [sessionStats, setSessionStats] = useState(null);
+  useEffect(() => {
+    if (type !== 'cashout' || !sessionId) return;
+    api.get(`/sessions/${sessionId}/players-stats`)
+      .then((r) => setSessionStats(Array.isArray(r.data) ? r.data : (r.data.players || [])))
+      .catch(() => {}); // sin stats el form sigue funcionando, solo sin el chip
+  }, [type, sessionId]);
+  const statsDelJugador = type === 'cashout' && playerId
+    ? sessionStats?.find((p) => String(p.player_id) === String(playerId))
+    : null;
   const [paymentMethod, setPaymentMethod] = useState("CASH");
   const [bonusAll, setBonusAll] = useState(false); // bono para toda la mesa
 
@@ -211,28 +225,39 @@ export default function TransactionForm({ type, onSuccess, sessionId, createSess
 
       const pId = type === 'tip' ? null : parseInt(finalPlayerId);
 
+      let r = null;
       switch (type) {
         case 'buyin':
-            await transactionService.buyin(pId, amt, paymentMethod, activeSessionId);
+            r = await transactionService.buyin(pId, amt, paymentMethod, activeSessionId);
             break;
         case 'cashout':
-            await transactionService.cashout(pId, amt, activeSessionId);
+            r = await transactionService.cashout(pId, amt, activeSessionId);
             break;
         case 'spend':
-            await transactionService.spend(pId, amt, activeSessionId);
+            r = await transactionService.spend(pId, amt, activeSessionId);
             break;
         case 'bonus':
-            await transactionService.bonus(pId, amt, activeSessionId);
+            r = await transactionService.bonus(pId, amt, activeSessionId);
             break;
         case 'jackpot-payout':
-            await transactionService.jackpotPayout(pId, amt, activeSessionId);
+            r = await transactionService.jackpotPayout(pId, amt, activeSessionId);
             break;
         case 'tip':
-            await transactionService.tip(pId, amt, activeSessionId, tipDealerId);
+            r = await transactionService.tip(pId, amt, activeSessionId, tipDealerId);
             break;
         default: throw new Error("Tipo desconocido");
       }
-      onSuccess(createdSessionId ? { newSessionId: createdSessionId } : undefined);
+      // Deshacer de un toque: el tx recién creado se puede borrar (DELETE) desde
+      // el toast del padre — la red que ya existe en torneo, portada a cash.
+      const createdTx = r?.data;
+      const nombre = type === 'tip'
+        ? null
+        : (isCreatingNew ? newPlayerName.trim() : (players.find((pl) => String(pl.id) === String(finalPlayerId))?.name || 'jugador'));
+      const verbo = { buyin: 'Buy-in', cashout: 'Cashout', spend: 'Consumo', bonus: 'Bono', 'jackpot-payout': 'Jackpot', tip: 'Propina' }[type] || 'Movimiento';
+      const undo = createdTx?.id
+        ? { txId: createdTx.id, label: `${verbo} de ${formatMoney(amt)}${nombre ? ` — ${nombre}` : ''}` }
+        : null;
+      onSuccess({ ...(createdSessionId ? { newSessionId: createdSessionId } : {}), ...(undo ? { undo } : {}) });
 
     } catch (err) {
       console.error(err);
@@ -456,6 +481,18 @@ export default function TransactionForm({ type, onSuccess, sessionId, createSess
         </div>
       )}
 
+      {/* Contexto del jugador EN MESA (solo cashout): la plata que sale no se
+          paga a ciegas. Datos de players-stats de esta mesa. */}
+      {statsDelJugador && (
+        <div className="bg-red-950/30 border border-red-500/30 rounded-2xl px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+          <span className="text-gray-300">Entró <span className="font-mono font-bold text-emerald-300">{formatMoney(statsDelJugador.total_buyin)}</span></span>
+          <span className="text-gray-300">Ya cobró <span className="font-mono font-bold text-red-300">{formatMoney(statsDelJugador.total_cashout)}</span></span>
+          {statsDelJugador.has_pending_payment && (
+            <span className="text-red-300 font-bold text-xs uppercase bg-red-500/15 border border-red-500/40 rounded-lg px-2 py-0.5">Debe entradas</span>
+          )}
+        </div>
+      )}
+
       {/* --- SECCIÓN 3: MONTO --- */}
       <div className="bg-black/20 p-5 rounded-2xl border border-gray-700/50">
         <label className="flex justify-between text-gray-400 text-xs font-bold uppercase tracking-wider mb-3">
@@ -477,6 +514,13 @@ export default function TransactionForm({ type, onSuccess, sessionId, createSess
             autoFocus={type === 'tip'}
           />
         </div>
+        {/* El monto formateado EN VIVO: a las 2am, $2.000.000 y $200.000 se
+            diferencian por un cero — que los puntos de miles lo canten. */}
+        {Number(amount) > 0 && (
+          <p className="text-center font-mono font-bold text-lg text-white/90 -mt-1 mb-3" aria-live="polite">
+            = {formatMoney(Number(amount))}
+          </p>
+        )}
 
         {/* Atajos (Chips) */}
         <div className="flex flex-wrap gap-2 justify-center">
