@@ -335,7 +335,7 @@ const handleCreateTournament = async (formData) => {
             refresh();
             showAppToast("Movimiento deshecho");
           } catch (e) {
-            showNotice(e.response?.data?.detail || "No se pudo deshacer. Corrígelo tocando el nombre del jugador.");
+            showNotice(e.response?.data?.detail || "No se pudo deshacer. Un manager puede corregirlo desde el nombre del jugador.");
           }
         },
       });
