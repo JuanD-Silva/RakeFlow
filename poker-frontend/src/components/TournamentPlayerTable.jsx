@@ -227,7 +227,7 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
     // Quitar inscripción ERRADA: borra el registro y sus cobros del torneo
     // (distinto de Eliminar, que es el bust y conserva la plata en el pozo).
     const handleUnregister = (pid, name) => {
-        setConfirmModal({ isOpen: true, title: "Quitar del torneo", message: `¿Quitar a ${name} del torneo?`, subMessage: "Se borra la inscripción y TODOS sus cobros (entrada, tips, rebuys, add-ons). Usalo solo si se inscribió por error. Si quebró jugando, usá Eliminar.", type: "danger", onConfirm: async () => {
+        setConfirmModal({ isOpen: true, title: "Quitar del torneo", message: `¿Quitar a ${name} del torneo?`, subMessage: "Se borra la inscripción y TODOS sus cobros (entrada, tips, rebuys, add-ons). Úsalo solo si se inscribió por error. Si quebró jugando, usa Eliminar.", type: "danger", onConfirm: async () => {
             setLoading(true);
             try { await tournamentService.unregisterPlayer(tournament.id, pid); setActionPlayer(null); onUpdate(); showToast("Inscripción quitada"); } catch(e){ showToast(e.response?.data?.detail || "Error al quitar","error"); } finally { setLoading(false); setConfirmModal(prev=>({...prev,isOpen:false})); }
         }});
@@ -328,7 +328,7 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
                 {/* MOVIL: cards apiladas (la tabla en horizontal es ilegible en pantallas chicas) */}
                 <div className="md:hidden divide-y divide-gray-700">
                     {playersWithStats.length === 0 && (
-                        <div className="p-6 text-center text-gray-500 text-sm italic">Aun no hay jugadores inscritos.</div>
+                        <div className="p-6 text-center text-gray-500 text-sm italic">Aún no hay jugadores inscritos.</div>
                     )}
                     {visiblePlayers.map((p) => (
                         <div
@@ -344,7 +344,7 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
                                         {p.status === 'ELIMINATED' && <span className="text-red-500 text-[10px] font-black">OUT</span>}
                                     </div>
                                     <div className="text-green-400 font-mono font-bold text-xl mt-1">{formatCurrency(p.totalPaid)}</div>
-                                    <div className="text-[10px] text-gray-500 uppercase tracking-wider">Inversion total</div>
+                                    <div className="text-[10px] text-gray-500 uppercase tracking-wider">Inversión total</div>
                                 </div>
                                 {p.status === 'ACTIVE' && tournament.status !== 'COMPLETED' && (
                                     <button
@@ -371,22 +371,22 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
                                 </button>
                                 {p.singleRebuys > 0 && (
                                     <span className="px-2 py-1 rounded bg-blue-900/20 border border-blue-500/30 text-[10px] font-bold text-blue-300 uppercase tracking-wide">
-                                        Rebuy Sgl x{p.singleRebuys}
+                                        Rebuy sencillo ×{p.singleRebuys}
                                     </span>
                                 )}
                                 {p.doubleRebuys > 0 && (
                                     <span className="px-2 py-1 rounded bg-blue-600/20 border border-blue-400 text-[10px] font-black text-blue-200 uppercase tracking-wide">
-                                        Rebuy Dbl x{p.doubleRebuys}
+                                        Rebuy doble ×{p.doubleRebuys}
                                     </span>
                                 )}
                                 {p.singleAddons > 0 && (
                                     <span className="px-2 py-1 rounded bg-orange-900/20 border border-orange-500/30 text-[10px] font-bold text-orange-300 uppercase tracking-wide">
-                                        Add Sgl x{p.singleAddons}
+                                        Add-on sencillo ×{p.singleAddons}
                                     </span>
                                 )}
                                 {p.doubleAddons > 0 && (
                                     <span className="px-2 py-1 rounded bg-orange-600/20 border border-orange-400 text-[10px] font-black text-orange-200 uppercase tracking-wide">
-                                        Add Dbl x{p.doubleAddons}
+                                        Add-on doble ×{p.doubleAddons}
                                     </span>
                                 )}
                                 {(p.tips_count || 0) > 0 && (
@@ -420,7 +420,7 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
                                 <th className="px-4 py-3 text-center">Rebuys</th>
                                 <th className="px-4 py-3 text-center">Addons</th>
                                 <th className="px-4 py-3 text-center text-pink-400">Tip</th>
-                                <th className="px-4 py-3 text-right text-green-400">Inversion</th>
+                                <th className="px-4 py-3 text-right text-green-400">Inversión</th>
                                 <th className="px-4 py-3 text-center">Acciones</th>
                                 <th className="px-4 py-3"></th>
                             </tr>
@@ -450,15 +450,15 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
                                     </td>
                                     <td className="px-4 py-3 text-center">
                                          <div className="flex flex-col items-center justify-center gap-1.5">
-                                            {p.singleRebuys > 0 && <span className="inline-flex items-center justify-center w-16 py-0.5 rounded bg-blue-900/20 border border-blue-500/30 text-[10px] font-bold text-blue-300 uppercase tracking-wide">Sgl: {p.singleRebuys}</span>}
-                                            {p.doubleRebuys > 0 && <span className="inline-flex items-center justify-center w-16 py-0.5 rounded bg-blue-600/20 border border-blue-400 text-[10px] font-black text-blue-200 uppercase tracking-wide">Dbl: {p.doubleRebuys}</span>}
+                                            {p.singleRebuys > 0 && <span className="inline-flex items-center justify-center px-2 py-0.5 rounded bg-blue-900/20 border border-blue-500/30 text-[10px] font-bold text-blue-300 uppercase tracking-wide">Senc: {p.singleRebuys}</span>}
+                                            {p.doubleRebuys > 0 && <span className="inline-flex items-center justify-center px-2 py-0.5 rounded bg-blue-600/20 border border-blue-400 text-[10px] font-black text-blue-200 uppercase tracking-wide">Doble: {p.doubleRebuys}</span>}
                                             {p.rebuys_count === 0 && <span className="text-gray-700 text-xs">-</span>}
                                         </div>
                                     </td>
                                     <td className="px-4 py-3 text-center">
                                         <div className="flex flex-col items-center justify-center gap-1.5">
-                                            {p.singleAddons > 0 && <span className="inline-flex items-center justify-center w-16 py-0.5 rounded bg-orange-900/20 border border-orange-500/30 text-[10px] font-bold text-orange-300 uppercase tracking-wide">Sgl: {p.singleAddons}</span>}
-                                            {p.doubleAddons > 0 && <span className="inline-flex items-center justify-center w-16 py-0.5 rounded bg-orange-600/20 border border-orange-400 text-[10px] font-black text-orange-200 uppercase tracking-wide">Dbl: {p.doubleAddons}</span>}
+                                            {p.singleAddons > 0 && <span className="inline-flex items-center justify-center px-2 py-0.5 rounded bg-orange-900/20 border border-orange-500/30 text-[10px] font-bold text-orange-300 uppercase tracking-wide">Senc: {p.singleAddons}</span>}
+                                            {p.doubleAddons > 0 && <span className="inline-flex items-center justify-center px-2 py-0.5 rounded bg-orange-600/20 border border-orange-400 text-[10px] font-black text-orange-200 uppercase tracking-wide">Doble: {p.doubleAddons}</span>}
                                             {p.addons_count === 0 && <span className="text-gray-700 text-xs">-</span>}
                                         </div>
                                     </td>
@@ -546,7 +546,7 @@ function GlobalLoader() {
                     <div className="absolute inset-0 border-4 border-violet-500 rounded-full border-t-transparent animate-spin"></div>
                 </div>
                 <p className="text-violet-200 font-bold text-lg animate-pulse">Procesando...</p>
-                <p className="text-gray-500 text-xs mt-2">Por favor espere</p>
+                <p className="text-gray-500 text-xs mt-2">Un momento…</p>
             </div>
         </div>
     );
@@ -607,7 +607,7 @@ function PayoutModal({ tournament, netPot, players, onClose, onRequestFinalize, 
                             <TrophyIcon className="w-7 h-7 text-yellow-500" />
                         </div>
                         <div>
-                            <h3 className="text-white font-black text-lg uppercase tracking-tight">Premiacion</h3>
+                            <h3 className="text-white font-black text-lg uppercase tracking-tight">Premiación</h3>
                             <p className="text-yellow-500/70 text-[10px] font-bold uppercase tracking-widest">Asignar ganadores</p>
                         </div>
                     </div>
@@ -809,7 +809,7 @@ function RegisterModal({ onClose, onConfirm, activeTab, setActiveTab, availableP
                              </div>
                              <div className="relative">
                                  <PhoneIcon className="absolute left-3 top-3.5 w-5 h-5 text-gray-500" />
-                                 <input type="text" value={newPlayerPhone} onChange={(e) => setNewPlayerPhone(e.target.value)} className="w-full bg-gray-900/50 text-white border border-gray-600 rounded-xl py-3 pl-10 pr-4 focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none transition-all placeholder-gray-600" placeholder="Telefono (Opcional)" />
+                                 <input type="text" value={newPlayerPhone} onChange={(e) => setNewPlayerPhone(e.target.value)} className="w-full bg-gray-900/50 text-white border border-gray-600 rounded-xl py-3 pl-10 pr-4 focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none transition-all placeholder-gray-600" placeholder="Teléfono (opcional)" />
                              </div>
                          </div>
                      )}
