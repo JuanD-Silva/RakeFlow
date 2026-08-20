@@ -153,6 +153,11 @@ useEffect(() => {
             if (selId && !liveTs.some(t => t.id === selId)) {
                 selectTournament(null);
                 setViewMode((v) => (v === "tournament" ? "menu" : v));
+                // Bajar el confirm de Terminar si estaba abierto: sin esto la
+                // bandera queda en true y el modal reaparecería solo al entrar
+                // a OTRO torneo (el guard de activeTournament solo lo esconde).
+                setShowEndTournamentModal(false);
+                setEndAck(false);
             }
             // Si la mesa cash actual ya no esta abierta, ir a menu
             if (currentTableId && !openTables.some(t => t.id === currentTableId)) {
@@ -554,8 +559,6 @@ const handleCreateTournament = async (formData) => {
                         </div>
                     </div>
                 </div>
-                
-                {/* LADO DERECHO: ACCIÓN DESTRUCTIVA (Terminar) */}
             </div>
 
             {/* RELOJ / NIVELES (T3). key: al cambiar de torneo (multi-torneo) el
