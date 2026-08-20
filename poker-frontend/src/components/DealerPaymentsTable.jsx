@@ -216,7 +216,7 @@ export default function DealerPaymentsTable({ startISO, endISO }) {
   );
 }
 
-function LiquidarModal({ dealer, startISO, endISO, onClose, onDone }) {
+export function LiquidarModal({ dealer, startISO, endISO, onClose, onDone }) {
   const [amount, setAmount] = useState(String(Math.max(0, dealer.pending || 0)));
   const [method, setMethod] = useState('cash');
   const [note, setNote] = useState('');
@@ -230,14 +230,14 @@ function LiquidarModal({ dealer, startISO, endISO, onClose, onDone }) {
     setError(null);
     setLoading(true);
     try {
-      await dealerService.createPayout(dealer.dealer_id, {
+      const payout = await dealerService.createPayout(dealer.dealer_id, {
         amount: value,
         method,
         note: note.trim() || null,
         period_start: startISO,
         period_end: endISO,
       });
-      onDone();
+      onDone({ amount: value, dealer, payout });
     } catch (err) {
       setError(err.response?.data?.detail || 'No se pudo registrar el pago.');
     } finally {
