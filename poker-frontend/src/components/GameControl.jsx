@@ -323,6 +323,23 @@ const handleCreateTournament = async (formData) => {
       selectTable(info.newSessionId);
       setViewMode("cash");
     }
+    // Deshacer de un toque para el cobro recién hecho (patrón de torneo):
+    // borra el tx por id — la corrección deja de ser "editar el historial".
+    if (info && info.undo) {
+      const { txId, label } = info.undo;
+      showAppToast(label, "success", {
+        label: "Deshacer",
+        onClick: async () => {
+          try {
+            await api.delete(`/transactions/${txId}`);
+            refresh();
+            showAppToast("Movimiento deshecho");
+          } catch (e) {
+            showNotice(e.response?.data?.detail || "No se pudo deshacer. Un manager puede corregirlo desde el nombre del jugador.");
+          }
+        },
+      });
+    }
     refresh();
   };
 

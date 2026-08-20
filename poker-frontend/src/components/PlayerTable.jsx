@@ -3,6 +3,7 @@ import { ChevronDownIcon, ChevronUpIcon, ClockIcon } from '@heroicons/react/24/s
 import api from '../api/axios';
 import { formatMoney } from '../utils/formatters';
 import { norm } from '../utils/text';
+import { useToast, Toast } from './Toast';
 import { transactionService, playerService } from '../api/services';
 import { useAuth } from '../context/AuthContext';
 import PlayerAppAccount from './PlayerAppAccount';
@@ -14,6 +15,7 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
   const [totals, setTotals] = useState({ buyin: 0, cashout: 0, balance: 0 });
   const [tableBonus, setTableBonus] = useState(0); // bono de mesa (sin jugador)
   const [expandedPlayerId, setExpandedPlayerId] = useState(null);
+  const { toast, showToast, dismissToast } = useToast();
   const [search, setSearch] = useState('');
   const { isOwner, isManager } = useAuth();
   const canManageApp = isOwner || isManager; // invitar / desbloquear histórico
@@ -95,6 +97,9 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
     } catch (err) {
       console.error(err);
       setPlayers(prevSnapshot);
+      // Rollback AVISADO: es el fiado — si el "ya me pagó" vuelve a "Debe"
+      // en silencio, la deuda fantasma es la peor traición posible.
+      showToast(err.response?.data?.detail || "No se pudo cambiar el pago. Reintenta.", "error");
     }
   };
 
@@ -112,6 +117,7 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
     } catch (err) {
       console.error(err);
       setPlayers(prevSnapshot);
+      showToast(err.response?.data?.detail || "No se pudo cambiar el estado de quiebra. Reintenta.", "error");
     }
   };
 
@@ -138,6 +144,7 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
     } catch (err) {
       console.error(err);
       setPlayers(prevSnapshot);
+      showToast(err.response?.data?.detail || "No se pudo cambiar el pago de esa entrada. Reintenta.", "error");
     }
   };
 
@@ -167,6 +174,7 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
 
   return (
     <div className="bg-gray-800 rounded-xl shadow-2xl border border-gray-700 overflow-hidden mt-6 animate-fade-in">
+      <Toast toast={toast} onDismiss={dismissToast} />
       {error && (
         <div className="text-amber-300 text-xs text-center py-1.5 bg-amber-900/20 border-b border-amber-500/20">
           ⚠ Reconectando… mostrando últimos datos

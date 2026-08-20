@@ -219,7 +219,9 @@ async def delete_transaction(
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_club: models.Club = Depends(get_current_club),
-    _: models.User = Depends(require_role(_EDIT_TX_ROLES)),
+    current_user: models.User = Depends(require_role([
+        models.UserRole.OWNER, models.UserRole.MANAGER, models.UserRole.CASHIER,
+    ])),
 ):
     # Buscar la transacción Y CARGAR LA SESIÓN
     stmt = (
@@ -239,6 +241,14 @@ async def delete_transaction(
 
     if tx.session.status == models.SessionStatus.CLOSED:
         raise HTTPException(status_code=400, detail="No se pueden borrar transacciones de sesiones cerradas")
+
+    # VENTANA DEL CAJERO: el "Deshacer" del toast (borrar el cobro que ACABA de
+    # registrar) sí es del cajero; borrar historial viejo sigue siendo de
+    # OWNER/MANAGER. 5 minutos = la ventana del toast con margen.
+    if current_user.role == models.UserRole.CASHIER:
+        edad = datetime.utcnow() - (tx.timestamp or datetime.utcnow())
+        if edad.total_seconds() > 300:
+            raise HTTPException(status_code=403, detail="Como cajero solo puedes deshacer movimientos recientes (5 min). Pide a un manager borrar este.")
 
     snapshot = {
         "id": tx.id, "type": str(tx.type.value if hasattr(tx.type, "value") else tx.type),
