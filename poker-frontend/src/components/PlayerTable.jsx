@@ -527,11 +527,11 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
                     <td className="p-4 text-center">
                       {onQuickAction && (
                         <div className="flex items-center justify-center gap-1.5">
-                          <button onClick={() => onQuickAction('buyin', p)}
+                          <button onClick={(e) => { e.stopPropagation(); onQuickAction('buyin', p); }}
                             className="px-3 py-2 rounded-lg bg-emerald-600/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-600/25 text-xs font-bold uppercase tracking-wider transition-colors active:scale-95">
                             + Entrada
                           </button>
-                          <button onClick={() => onQuickAction('cashout', p)}
+                          <button onClick={(e) => { e.stopPropagation(); onQuickAction('cashout', p); }}
                             className="px-3 py-2 rounded-lg bg-red-600/15 border border-red-500/40 text-red-300 hover:bg-red-600/25 text-xs font-bold uppercase tracking-wider transition-colors active:scale-95">
                             Cobrar
                           </button>

@@ -59,8 +59,11 @@ export default function TransactionForm({ type, onSuccess, sessionId, createSess
 
   // 1. CARGA INICIAL
   useEffect(() => {
-    setPlayerId("");
-    setSearchTerm("");
+    // Reset al PRESELECCIONADO, no a vacío: este efecto corre también en el
+    // montaje (el Modal desmonta/monta el form) y con "" pisaba el atajo por
+    // fila — el título decía "Pedro" y el form exigía elegir jugador.
+    setPlayerId(preselectedPlayer ? String(preselectedPlayer.id) : "");
+    setSearchTerm(preselectedPlayer ? preselectedPlayer.name : "");
     setIsCreatingNew(false);
     setAmount("");
     setPaymentMethod("CASH");
@@ -172,7 +175,7 @@ export default function TransactionForm({ type, onSuccess, sessionId, createSess
   const config = getConfig();
 
   const handleSelectPlayer = (player) => {
-    setPlayerId(player.id);
+    setPlayerId(String(player.id));
     setSearchTerm(player.name);
     setShowDropdown(false);
     setError(null);
