@@ -995,7 +995,7 @@ const handleCreateTournament = async (formData) => {
 
       {/* TOAST de GameControl (reemplaza los alert() nativos) */}
       {notice && (
-        <div className={`fixed top-4 left-4 right-4 sm:left-auto sm:right-5 sm:top-5 z-[110] px-6 py-4 rounded-xl shadow-2xl border font-bold animate-fade-in-up ${notice.type === 'success' ? 'bg-emerald-900/90 border-emerald-500 text-white' : 'bg-red-900/90 border-red-500 text-white'}`} role="status" aria-live="polite">
+        <div className={`fixed bottom-6 left-4 right-4 sm:bottom-auto sm:top-5 sm:left-auto sm:right-5 z-[110] px-6 py-4 rounded-xl shadow-2xl border font-bold animate-fade-in-up ${notice.type === 'success' ? 'bg-emerald-900/90 border-emerald-500 text-white' : 'bg-red-900/90 border-red-500 text-white'}`} role="status" aria-live="polite">
           {notice.message}
         </div>
       )}
