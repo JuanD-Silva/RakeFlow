@@ -41,9 +41,13 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
 
     const getPlayerName = (id) => allPlayers.find(p => p.id === id)?.name || `Jugador #${id}`;
     
-    const showToast = (msg, type = "success") => { 
-        setNotification({ show: true, message: msg, type }); 
-        setTimeout(() => setNotification({ show: false, message: "", type: "success" }), 3000); 
+    // action opcional: { label, onClick } — botón dentro del toast (ej. Deshacer).
+    // El timer se guarda para que un toast nuevo no muera por el timeout del viejo.
+    const toastTimer = useRef(null);
+    const showToast = (msg, type = "success", action = null) => {
+        if (toastTimer.current) clearTimeout(toastTimer.current);
+        setNotification({ show: true, message: msg, type, action });
+        toastTimer.current = setTimeout(() => setNotification({ show: false, message: "", type: "success", action: null }), action ? 5000 : 3000);
     };
 
     // --- CÁLCULOS FINANCIEROS ---
@@ -174,12 +178,27 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
     };
 
     const handleTogglePaid = async (pid) => {
+        // Es plata (el fiado): un roce en el badge lo cambia, así que el toast
+        // trae "Deshacer" 5s en vez de un confirm que estorbe al cajero.
+        const estabaDebiendo = tournament.players?.find(x => x.player_id === pid)?.is_buyin_paid === false;
         try {
             await tournamentService.toggleBuyinPaid(tournament.id, pid);
             onUpdate();
+            showToast(estabaDebiendo ? "Marcado como pagado" : "Marcado como pendiente", "success", {
+                label: "Deshacer",
+                onClick: async () => {
+                    try {
+                        await tournamentService.toggleBuyinPaid(tournament.id, pid);
+                        onUpdate();
+                        showToast("Revertido");
+                    } catch (e) {
+                        showToast(e.response?.data?.detail || "No se pudo revertir. Toca el badge de pago para corregirlo.", "error");
+                    }
+                },
+            });
         } catch (e) {
             console.error(e);
-            showToast(e.response?.data?.detail || "Error al cambiar estado", "error");
+            showToast(e.response?.data?.detail || "No se pudo cambiar el estado de pago. Inténtalo de nuevo.", "error");
         }
     };
 
@@ -212,9 +231,17 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
 
             {/* NOTIFICACIONES (TOASTS) */}
             {notification.show && (
-                <div className={`fixed top-4 left-4 right-4 sm:left-auto sm:right-5 sm:top-5 z-[100] px-6 py-4 rounded-xl shadow-2xl border flex items-center gap-3 animate-fade-in-up ${notification.type === 'error' ? 'bg-red-900/90 border-red-500 text-white' : 'bg-emerald-900/90 border-emerald-500 text-white'}`}>
+                <div className={`fixed top-4 left-4 right-4 sm:left-auto sm:right-5 sm:top-5 z-[100] px-6 py-4 rounded-xl shadow-2xl border flex items-center gap-3 animate-fade-in-up ${notification.type === 'error' ? 'bg-red-900/90 border-red-500 text-white' : 'bg-emerald-900/90 border-emerald-500 text-white'}`} role="status" aria-live="polite">
                     {notification.type === 'error' ? <XCircleIcon className="w-6 h-6"/> : <CheckCircleIcon className="w-6 h-6"/>}
                     <span className="font-bold">{notification.message}</span>
+                    {notification.action && (
+                        <button
+                            onClick={() => { const a = notification.action; setNotification({ show: false, message: "", type: "success", action: null }); a.onClick(); }}
+                            className="ml-2 shrink-0 px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 border border-white/30 font-black uppercase text-xs tracking-wider"
+                        >
+                            {notification.action.label}
+                        </button>
+                    )}
                 </div>
             )}
 
@@ -472,12 +499,16 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
                             </p>
                         )}
                         <div className="flex gap-3 w-full mt-4">
-                            <button onClick={() => setConfirmModal({...confirmModal, isOpen: false})} className="flex-1 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-xl font-bold transition-colors">Cancelar</button>
-                            <button onClick={confirmModal.onConfirm} className={`flex-1 py-3 text-white rounded-xl font-bold shadow-lg transition-colors ${
-                                confirmModal.type === 'danger' ? 'bg-red-600 hover:bg-red-500' : 
-                                confirmModal.type === 'success' ? 'bg-yellow-600 hover:bg-yellow-500 text-black' : 
-                                'bg-blue-600 hover:bg-blue-500'
-                            }`}>Confirmar</button>
+                            <button onClick={() => setConfirmModal({...confirmModal, isOpen: false})} disabled={loading} className="flex-1 py-3 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white rounded-xl font-bold transition-colors">Cancelar</button>
+                            {/* disabled con loading: el GlobalLoader monta un frame tarde y
+                                un doble-tap nervioso podía disparar dos cobros. El color del
+                                texto vive en la variante (no mezclar text-white base con
+                                text-black condicional: el resultado dependía del orden CSS). */}
+                            <button onClick={confirmModal.onConfirm} disabled={loading} className={`flex-1 py-3 rounded-xl font-bold shadow-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                                confirmModal.type === 'danger' ? 'bg-red-600 hover:bg-red-500 text-white' :
+                                confirmModal.type === 'success' ? 'bg-yellow-600 hover:bg-yellow-500 text-black' :
+                                'bg-blue-600 hover:bg-blue-500 text-white'
+                            }`}>{loading ? 'Procesando…' : 'Confirmar'}</button>
                         </div>
                     </div>
                 </div>

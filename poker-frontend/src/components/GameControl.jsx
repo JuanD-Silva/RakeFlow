@@ -103,6 +103,17 @@ export default function GameControl() {
   // Ceremonia de premios: vive AQUÍ (no en TournamentPlayerTable) para
   // sobrevivir a que el torneo salga de la lista de vivos tras finalizar.
   const [ceremony, setCeremony] = useState(null);
+  // Toast propio: el canal de errores era alert() nativo (se ve roto en la
+  // PWA y viola el principio "destructivo/feedback con UI propia").
+  const [notice, setNotice] = useState(null); // { message, type }
+  const noticeTimer = useRef(null);
+  const showNotice = (message, type = "error") => {
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    setNotice({ message, type });
+    noticeTimer.current = setTimeout(() => setNotice(null), 4500);
+  };
+  // Confirmación propia para borrar un torneo programado (era window.confirm)
+  const [scheduledToDelete, setScheduledToDelete] = useState(null); // objeto torneo
   const [isLoading, setIsLoading] = useState(false);
   
   // ESTADOS DE AUDITORÍA
@@ -253,7 +264,7 @@ const handleCreateTournament = async (formData) => {
           // 3. Cerrar Modal
           setIsModalOpen(false);
       } catch (error) {
-          alert("Error al crear el torneo");
+          showNotice(error.response?.data?.detail || "No se pudo crear el torneo. Revisa los datos e inténtalo de nuevo.");
           console.error(error);
       }
   };
@@ -266,17 +277,21 @@ const handleCreateTournament = async (formData) => {
           selectTournament(opened.id);
           setViewMode("tournament");
       } catch (error) {
-          alert(error.response?.data?.detail || "No se pudo abrir el torneo programado");
+          showNotice(error.response?.data?.detail || "No se pudo abrir el torneo programado. Inténtalo de nuevo.");
       }
   };
 
-  const handleDeleteScheduled = async (id) => {
-      if (!window.confirm("¿Eliminar este torneo programado?")) return;
+  const confirmDeleteScheduled = async () => {
+      const t = scheduledToDelete;
+      if (!t) return;
       try {
-          await tournamentService.deleteTournament(id);
-          setScheduledTournaments((prev) => prev.filter((t) => t.id !== id));
+          await tournamentService.deleteTournament(t.id);
+          setScheduledTournaments((prev) => prev.filter((x) => x.id !== t.id));
+          showNotice(`"${t.name}" eliminado de la agenda.`, "success");
       } catch (error) {
-          alert(error.response?.data?.detail || "No se pudo eliminar");
+          showNotice(error.response?.data?.detail || "No se pudo eliminar el torneo programado.");
+      } finally {
+          setScheduledToDelete(null);
       }
   };
 
@@ -309,7 +324,7 @@ const handleCreateTournament = async (formData) => {
       setShowAuditModal(true);
     } catch (error) {
       console.error("Error auditar:", error);
-      alert("No se pudo auditar.");
+      showNotice("No se pudo cargar la auditoría. Revisa la conexión e inténtalo de nuevo.");
     }
   };
 
@@ -336,7 +351,7 @@ const handleCreateTournament = async (formData) => {
         setShowDeleteConfirm(false);
      } catch (error) {
         console.error(error);
-        alert(error.response?.data?.detail || "Error al eliminar");
+        showNotice(error.response?.data?.detail || "No se pudo eliminar la mesa. Inténtalo de nuevo.");
      } finally {
         setIsDeletingSession(false);
      }
@@ -361,7 +376,7 @@ const handleCreateTournament = async (formData) => {
       refresh();
     } catch (error) {
       console.error(error);
-      alert("Error al terminar torneo");
+      showNotice("No se pudo terminar el torneo. Inténtalo de nuevo.");
     }finally {
             setIsLoading(false); // 🔓 2. Desactivar bloqueo
             setShowEndTournamentModal(false); // 3. Cerrar modal
@@ -768,7 +783,7 @@ const handleCreateTournament = async (formData) => {
                        </div>
                        <div className="flex gap-1.5 shrink-0">
                          <button onClick={() => handleOpenScheduled(t.id)} className="text-[10px] font-bold uppercase px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-colors">Abrir</button>
-                         <button onClick={() => handleDeleteScheduled(t.id)} className="text-[10px] font-bold uppercase px-2.5 py-1.5 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors">✕</button>
+                         <button onClick={() => setScheduledToDelete(t)} aria-label={`Eliminar ${t.name}`} className="text-[10px] font-bold uppercase px-3 py-1.5 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors">Eliminar</button>
                        </div>
                      </div>
                    ))}
@@ -982,6 +997,22 @@ const handleCreateTournament = async (formData) => {
       {ceremony && (
         <TournamentCeremony ceremony={ceremony} onClose={() => { setCeremony(null); refresh(); }} />
       )}
+
+      {/* TOAST de GameControl (reemplaza los alert() nativos) */}
+      {notice && (
+        <div className={`fixed top-4 left-4 right-4 sm:left-auto sm:right-5 sm:top-5 z-[110] px-6 py-4 rounded-xl shadow-2xl border font-bold animate-fade-in-up ${notice.type === 'success' ? 'bg-emerald-900/90 border-emerald-500 text-white' : 'bg-red-900/90 border-red-500 text-white'}`} role="status" aria-live="polite">
+          {notice.message}
+        </div>
+      )}
+
+      <ConfirmModal
+        isOpen={!!scheduledToDelete}
+        onClose={() => setScheduledToDelete(null)}
+        onConfirm={confirmDeleteScheduled}
+        title="Eliminar torneo programado"
+        message={scheduledToDelete ? `"${scheduledToDelete.name}" se eliminará de la agenda. Esta acción no se puede deshacer.` : ''}
+        confirmText="Sí, eliminar"
+      />
 
       {selectedPlayerForHistory && (
         <TransactionManager player={selectedPlayerForHistory} onClose={() => setSelectedPlayerForHistory(null)} onUpdate={refresh} />
