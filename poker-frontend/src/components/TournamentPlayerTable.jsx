@@ -229,6 +229,39 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
         }
     };
 
+    // REBUY RÁPIDO: la transacción más frecuente de la noche a UN toque desde
+    // la fila, con Deshacer 5s en vez de confirm previo — mismo criterio que el
+    // fiado: la reversa existe y está probada. Solo rebuy SENCILLO; dobles y
+    // add-ons siguen en Gestionar.
+    const quickRebuyEnabled = !rebuysClosed && prices.rebuyS > 0 && !['FINISHED', 'COMPLETED'].includes(tournament.status);
+    // Guard con REF, no con loading: setLoading montaría el GlobalLoader
+    // (pantallazo negro por cobro) — mismo criterio que togglingPaidRef.
+    const quickRebuyRef = useRef(false);
+    const handleQuickRebuy = async (pid, name) => {
+        if (quickRebuyRef.current || loading) return;
+        quickRebuyRef.current = true;
+        try {
+            await tournamentService.addRebuy(tournament.id, pid, "SINGLE");
+            onUpdate();
+            showToast(`Rebuy a ${name} — ${formatCurrency(prices.rebuyS)}`, "success", {
+                label: "Deshacer",
+                onClick: async () => {
+                    try {
+                        await tournamentService.undoAction(tournament.id, pid, "rebuy", "SINGLE");
+                        onUpdate();
+                        showToast("Rebuy deshecho");
+                    } catch (e) {
+                        showToast(e.response?.data?.detail || "No se pudo deshacer. Usa Gestionar → Deshacer.", "error");
+                    }
+                },
+            });
+        } catch (e) {
+            showToast(e.response?.data?.detail || "No se pudo cobrar el rebuy.", "error");
+        } finally {
+            quickRebuyRef.current = false;
+        }
+    };
+
     const handleEliminate = (pid, name) => {
         // Quedarán N activos tras eliminarlo — dato para el momento de riesgo.
         const quedan = Math.max(0, activePlayersCount - 1);
@@ -282,13 +315,13 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
 
             {/* NOTIFICACIONES (TOASTS) */}
             {notification.show && (
-                <div className={`fixed top-4 left-4 right-4 sm:left-auto sm:right-5 sm:top-5 z-[100] px-6 py-4 rounded-xl shadow-2xl border flex items-center gap-3 animate-fade-in-up ${notification.type === 'error' ? 'bg-red-900/90 border-red-500 text-white' : 'bg-emerald-900/90 border-emerald-500 text-white'}`} role="status" aria-live="polite">
+                <div className={`pointer-events-none fixed bottom-6 left-4 right-4 sm:bottom-auto sm:top-5 sm:left-auto sm:right-5 z-[100] px-6 py-4 rounded-xl shadow-2xl border flex items-center gap-3 animate-fade-in-up ${notification.type === 'error' ? 'bg-red-900/90 border-red-500 text-white' : 'bg-emerald-900/90 border-emerald-500 text-white'}`} role="status" aria-live="polite">
                     {notification.type === 'error' ? <XCircleIcon className="w-6 h-6"/> : <CheckCircleIcon className="w-6 h-6"/>}
                     <span className="font-bold">{notification.message}</span>
                     {notification.action && (
                         <button
                             onClick={() => { const a = notification.action; setNotification({ show: false, message: "", type: "success", action: null }); a.onClick(); }}
-                            className="ml-2 shrink-0 px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 border border-white/30 font-black uppercase text-xs tracking-wider"
+                            className="pointer-events-auto ml-2 shrink-0 px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 border border-white/30 font-black uppercase text-xs tracking-wider"
                         >
                             {notification.action.label}
                         </button>
@@ -453,15 +486,27 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
                                 )}
                             </div>
 
-                            {/* GESTIONAR (target grande para touch) */}
+                            {/* REBUY RÁPIDO + GESTIONAR (targets grandes para touch) */}
                             {p.status === 'ACTIVE' && tournament.status !== 'COMPLETED' && (
-                                <button
-                                    onClick={() => setActionPlayer(p)}
-                                    className="w-full bg-violet-600 hover:bg-violet-500 text-white py-3 rounded-lg text-sm font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-colors active:scale-[0.98]"
-                                >
-                                    <PlusCircleIcon className="w-5 h-5" />
-                                    Gestionar
-                                </button>
+                                <div className="flex gap-2">
+                                    {quickRebuyEnabled && (
+                                        <button
+                                            onClick={() => handleQuickRebuy(p.player_id, getPlayerName(p.player_id))}
+                                            disabled={loading}
+                                            className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white py-2 rounded-lg font-bold uppercase tracking-wider flex flex-col items-center justify-center transition-colors active:scale-[0.98]"
+                                        >
+                                            <span className="flex items-center gap-1 text-sm"><BoltIcon className="w-4 h-4" /> Rebuy</span>
+                                            <span className="text-[10px] font-mono tracking-normal">{formatCurrency(prices.rebuyS)}</span>
+                                        </button>
+                                    )}
+                                    <button
+                                        onClick={() => setActionPlayer(p)}
+                                        className="flex-1 bg-violet-600 hover:bg-violet-500 text-white py-3 rounded-lg text-sm font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-colors active:scale-[0.98]"
+                                    >
+                                        <PlusCircleIcon className="w-5 h-5" />
+                                        Gestionar
+                                    </button>
+                                </div>
                             )}
                         </div>
                     ))}
@@ -533,10 +578,18 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
                                     <td className="px-4 py-3 text-right font-mono font-bold text-green-400">{formatCurrency(p.totalPaid)}</td>
                                     <td className="px-4 py-3 text-center">
                                         {p.status === 'ACTIVE' && tournament.status !== 'COMPLETED' && (
-                                            <button onClick={() => setActionPlayer(p)} className="bg-violet-600 hover:bg-violet-500 text-white px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 mx-auto transition-colors active:scale-95">
-                                                <PlusCircleIcon className="w-4 h-4" />
-                                                Gestionar
-                                            </button>
+                                            <div className="flex items-center justify-center gap-1.5">
+                                                {quickRebuyEnabled && (
+                                                    <button onClick={() => handleQuickRebuy(p.player_id, getPlayerName(p.player_id))} disabled={loading} className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-1 transition-colors active:scale-95" title={`Cobrar rebuy sencillo (${formatCurrency(prices.rebuyS)})`}>
+                                                        <BoltIcon className="w-4 h-4" />
+                                                        Rebuy
+                                                    </button>
+                                                )}
+                                                <button onClick={() => setActionPlayer(p)} className="bg-violet-600 hover:bg-violet-500 text-white px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors active:scale-95">
+                                                    <PlusCircleIcon className="w-4 h-4" />
+                                                    Gestionar
+                                                </button>
+                                            </div>
                                         )}
                                     </td>
                                     <td className="px-4 py-3 text-right">
