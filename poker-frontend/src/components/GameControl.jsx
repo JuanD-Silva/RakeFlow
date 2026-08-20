@@ -13,6 +13,7 @@ import PlayerTable from './PlayerTable';
 import api from '../api/axios';
 import ConfirmModal from './ConfirmModal';
 import { useToast, Toast } from './Toast';
+import { shareCardImage } from '../utils/shareImage';
 import TournamentPlayerTable from './TournamentPlayerTable';
 import TournamentClock from './TournamentClock';
 import TournamentTables from './TournamentTables';
@@ -47,6 +48,7 @@ import {
   TableCellsIcon,
   UserGroupIcon,
   TrophyIcon,
+  ShareIcon,
   ArrowLeftIcon,
   ArrowRightIcon,
   ExclamationTriangleIcon,
@@ -1045,7 +1047,31 @@ function ActionButton({ color, label, onClick }) {
 // torneo finalizado salga de la lista de vivos. Un solo momento de motion:
 // la ráfaga de confetti al montar (mismo lenguaje que los logros del panel).
 function TournamentCeremony({ ceremony, onClose }) {
-  useEscape(onClose, true);
+  // Compartir el podio como IMAGEN (mismo mecanismo que las tarjetas-trofeo del
+  // panel del jugador): Web Share nativo → WhatsApp; fallback descarga el PNG.
+  const podiumRef = useRef(null);
+  const [shareState, setShareState] = useState(null); // null|'sharing'|'shared'|'downloaded'|'error'
+  // Escape apagado mientras se genera la imagen: cerrar a mitad de captura
+  // descargaba el PNG "fantasma" con la ceremonia ya cerrada (y la ceremonia
+  // es de un solo tiro). Convención del propio useEscape.
+  useEscape(onClose, shareState !== 'sharing');
+  const shareText = `🏆 ${ceremony.tournamentName}: así quedó el podio. ¡Nos vemos en el próximo torneo!`;
+  const fileSlug = (ceremony.tournamentName || 'torneo').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'torneo';
+  const sharePodium = async () => {
+    if (shareState === 'sharing') return;
+    setShareState('sharing');
+    try {
+      const result = await shareCardImage(podiumRef.current, {
+        shareText,
+        fileName: `podio-${fileSlug}.png`,
+      });
+      setShareState(result);
+    } catch (e) {
+      if (e?.name === 'AbortError') { setShareState(null); return; }
+      console.error(e);
+      setShareState('error');
+    }
+  };
   useEffect(() => {
     const bursts = [
       setTimeout(() => confetti({ particleCount: 120, spread: 75, origin: { y: 0.7 } }), 150),
@@ -1065,32 +1091,54 @@ function TournamentCeremony({ ceremony, onClose }) {
     : 'border-violet-500/40 text-violet-300 bg-violet-500/10';
   return (
     <div className="fixed inset-0 z-[120] bg-gray-950/95 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in" role="dialog" aria-modal="true" aria-label="Ceremonia de premios">
-      <div className="w-full max-w-sm bg-gradient-to-b from-violet-950/80 to-gray-900 border border-yellow-500/30 rounded-3xl shadow-2xl shadow-violet-900/40 p-6 text-center max-h-[90vh] overflow-y-auto">
-        <div className="bg-yellow-500/15 border border-yellow-500/30 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
-          <TrophyIcon className="w-11 h-11 text-yellow-400" />
-        </div>
-        <h2 className="text-white text-2xl font-black uppercase leading-tight">{ceremony.tournamentName}</h2>
-        <p className="text-violet-200 text-sm mt-1 mb-5">Pozo repartido: <span className="font-mono font-bold text-yellow-300">{ceremony.potLabel}</span></p>
+      <div className="w-full max-w-sm border border-yellow-500/30 rounded-3xl shadow-2xl shadow-violet-900/40 max-h-[90vh] overflow-y-auto overflow-x-hidden">
+        {/* Lo que viaja en la imagen: el ref envuelve SOLO el podio (los botones
+            quedan fuera del PNG). Fondo sólido propio para la captura. */}
+        <div ref={podiumRef} className="bg-gradient-to-b from-violet-950 to-gray-900 p-6 text-center">
+          <div className="bg-yellow-500/15 border border-yellow-500/30 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
+            <TrophyIcon className="w-11 h-11 text-yellow-400" />
+          </div>
+          <h2 className="text-white text-2xl font-black uppercase leading-tight">{ceremony.tournamentName}</h2>
+          <p className="text-violet-200 text-sm mt-1 mb-5">Pozo repartido: <span className="font-mono font-bold text-yellow-300">{ceremony.potLabel}</span></p>
 
-        <div className="space-y-2 mb-6">
-          {ceremony.winners.map((w) => (
-            <div key={w.rank}
-              className={`flex items-center justify-between gap-3 rounded-xl px-4 ${w.rank === 1
-                ? 'bg-yellow-500/15 border border-yellow-500/40 py-4'
-                : 'bg-gray-800/70 border border-gray-700 py-2.5'}`}>
-              <div className="flex items-center gap-3 min-w-0">
-                <span className={`shrink-0 w-8 h-8 rounded-full border-2 flex items-center justify-center font-black font-mono ${w.rank === 1 ? 'text-base' : 'text-sm'} ${rankStyle(w.rank)}`}>{w.rank}</span>
-                <span className={`truncate font-bold ${w.rank === 1 ? 'text-yellow-100 text-lg' : 'text-gray-200 text-sm'}`}>{w.name}</span>
+          <div className="space-y-2">
+            {ceremony.winners.map((w) => (
+              <div key={w.rank}
+                className={`flex items-center justify-between gap-3 rounded-xl px-4 ${w.rank === 1
+                  ? 'bg-yellow-500/15 border border-yellow-500/40 py-4'
+                  : 'bg-gray-800/70 border border-gray-700 py-2.5'}`}>
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className={`shrink-0 w-8 h-8 rounded-full border-2 flex items-center justify-center font-black font-mono ${w.rank === 1 ? 'text-base' : 'text-sm'} ${rankStyle(w.rank)}`}>{w.rank}</span>
+                  <span className={`truncate font-bold ${w.rank === 1 ? 'text-yellow-100 text-lg' : 'text-gray-200 text-sm'}`}>{w.name}</span>
+                </div>
+                <span className={`font-mono font-black shrink-0 ${w.rank === 1 ? 'text-yellow-300 text-lg' : 'text-violet-200 text-sm'}`}>{w.prizeLabel}</span>
               </div>
-              <span className={`font-mono font-black shrink-0 ${w.rank === 1 ? 'text-yellow-300 text-lg' : 'text-violet-200 text-sm'}`}>{w.prizeLabel}</span>
-            </div>
-          ))}
+            ))}
+          </div>
+          <p className="mt-4 text-[10px] font-bold uppercase tracking-widest text-violet-300/70">rakeflow.site</p>
         </div>
 
-        <button onClick={onClose}
-          className="w-full bg-violet-600 hover:bg-violet-500 text-white font-black uppercase tracking-wider py-3.5 rounded-xl shadow-lg shadow-violet-900/40 transition-colors">
-          Cerrar la noche
-        </button>
+        <div className="bg-gray-900 p-6 pt-4 space-y-2.5">
+          <button onClick={sharePodium} disabled={shareState === 'sharing'}
+            className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-black uppercase tracking-wider py-3.5 rounded-xl shadow-lg shadow-emerald-900/30 transition-colors flex items-center justify-center gap-2">
+            <ShareIcon className="w-4 h-4" />
+            {shareState === 'sharing' ? 'Generando imagen…'
+              : shareState === 'shared' ? '✓ Compartido'
+              : shareState === 'downloaded' ? 'Imagen descargada'
+              : shareState === 'error' ? 'No se pudo — reintentar'
+              : 'Compartir podio'}
+          </button>
+          {shareState === 'downloaded' && (
+            <p className="text-xs text-gray-400 text-center">
+              Imagen descargada — adjúntala en tu chat.{' '}
+              <a href={`https://wa.me/?text=${encodeURIComponent(shareText)}`} target="_blank" rel="noreferrer" className="text-emerald-400 font-bold underline">Abrir WhatsApp</a>
+            </p>
+          )}
+          <button onClick={onClose}
+            className="w-full bg-violet-600 hover:bg-violet-500 text-white font-black uppercase tracking-wider py-3.5 rounded-xl shadow-lg shadow-violet-900/40 transition-colors">
+            Cerrar la noche
+          </button>
+        </div>
       </div>
     </div>
   );
