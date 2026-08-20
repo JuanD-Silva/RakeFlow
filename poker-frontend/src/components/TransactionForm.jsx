@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { transactionService, playerService, sessionService, dealerService } from '../api/services';
 import api from '../api/axios';
 import { formatMoney } from '../utils/formatters';
+import { norm } from '../utils/text';
 import { 
   UserIcon, 
   MagnifyingGlassIcon, 
@@ -15,10 +16,10 @@ import {
   CheckBadgeIcon
 } from '@heroicons/react/24/outline';
 
-export default function TransactionForm({ type, onSuccess, sessionId, createSessionFirst = false, pendingTableName = null, pendingMaxPlayers = null }) {
+export default function TransactionForm({ type, onSuccess, sessionId, createSessionFirst = false, pendingTableName = null, pendingMaxPlayers = null, preselectedPlayer = null }) {
   // --- ESTADOS DE DATOS ---
   const [players, setPlayers] = useState([]);
-  const [playerId, setPlayerId] = useState("");
+  const [playerId, setPlayerId] = useState(preselectedPlayer ? String(preselectedPlayer.id) : "");
   const [amount, setAmount] = useState("");
   // Contexto del jugador EN MESA para el cashout: plata que sale de la caja
   // no se paga a ciegas — balance, entradas y fiado a la vista.
@@ -36,7 +37,7 @@ export default function TransactionForm({ type, onSuccess, sessionId, createSess
   const [bonusAll, setBonusAll] = useState(false); // bono para toda la mesa
 
   // --- ESTADOS DEL BUSCADOR ---
-  const [searchTerm, setSearchTerm] = useState("");
+  const [searchTerm, setSearchTerm] = useState(preselectedPlayer ? preselectedPlayer.name : "");
   const [showDropdown, setShowDropdown] = useState(false);
   const [filteredPlayers, setFilteredPlayers] = useState([]); // Agregamos estado para filtrar
   
@@ -111,7 +112,7 @@ export default function TransactionForm({ type, onSuccess, sessionId, createSess
   useEffect(() => {
     if (players.length > 0) {
       const filtered = players.filter(player =>
-        player.name.toLowerCase().includes(searchTerm.toLowerCase())
+        norm(player.name).includes(norm(searchTerm))
       );
       setFilteredPlayers(filtered);
     }
@@ -511,7 +512,7 @@ export default function TransactionForm({ type, onSuccess, sessionId, createSess
             className={`w-full bg-gray-900 text-white border border-gray-600 rounded-xl py-4 pl-10 pr-4 focus:ring-2 ${config.ring} focus:border-transparent outline-none font-mono text-3xl font-bold placeholder-gray-700 shadow-inner`}
             placeholder="0"
             required
-            autoFocus={type === 'tip'}
+            autoFocus={type === 'tip' || !!preselectedPlayer}
           />
         </div>
         {/* El monto formateado EN VIVO: a las 2am, $2.000.000 y $200.000 se
@@ -528,7 +529,7 @@ export default function TransactionForm({ type, onSuccess, sessionId, createSess
             <button
               key={val}
               type="button"
-              onClick={() => setAmount(val)}
+              onClick={() => setAmount((prev) => String((Number(prev) || 0) + val))}
               className="bg-gray-700/50 hover:bg-gray-600 text-gray-300 hover:text-white text-xs font-mono py-1.5 px-4 rounded-full border border-gray-600 hover:border-gray-500 transition-all"
             >
               +{(val >= 1000 ? (val / 1000) + 'k' : val)}
