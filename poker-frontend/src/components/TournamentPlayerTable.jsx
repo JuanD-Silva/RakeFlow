@@ -226,6 +226,7 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
     // Guard con REF, no con loading: setLoading montaría el GlobalLoader
     // (pantallazo negro por cobro) — mismo criterio que togglingPaidRef.
     const quickRebuyRef = useRef(false);
+    const togglingPaidRef = useRef(false); // guard anti doble-flip del fiado
     const handleQuickRebuy = async (pid, name) => {
         if (quickRebuyRef.current || loading) return;
         quickRebuyRef.current = true;
@@ -664,7 +665,7 @@ function PayoutModal({ tournament, netPot, players, onClose, onRequestFinalize, 
 
     return (
         <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[80] backdrop-blur-sm p-4 animate-fade-in" onClick={() => setOpenDropdown(null)} role="dialog" aria-modal="true" aria-label="Premiación">
-            <div className="bg-gray-800 rounded-2xl border border-yellow-600/30 shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-gray-800 rounded-2xl border border-yellow-600/30 shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh] overflow-hidden" onClick={(e) => { e.stopPropagation(); setOpenDropdown(null); }}>
 
                 {/* HEADER */}
                 <div className="bg-gray-900 p-5 border-b border-gray-700 flex justify-between items-center">
@@ -726,7 +727,7 @@ function PayoutModal({ tournament, netPot, players, onClose, onRequestFinalize, 
                                             </button>
                                         </div>
                                     ) : (
-                                        <div className="relative">
+                                        <div className="relative" onClick={(e) => e.stopPropagation()}>
                                             <MagnifyingGlassIcon className="absolute left-3 top-3.5 w-5 h-5 text-gray-500" />
                                             <input
                                                 type="text"
