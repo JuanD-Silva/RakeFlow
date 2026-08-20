@@ -3,7 +3,7 @@ import api from '../api/axios';
 import KPIDashboard from '../components/KPIDashboard';
 import { useToast, Toast } from './Toast';
 import { useEscape } from '../hooks/useEscape';
-import DealerPaymentsTable from './DealerPaymentsTable';
+import DealerPaymentsTable, { LiquidarModal } from './DealerPaymentsTable';
 import ExportMenu from './ExportMenu';
 import { statsService, historyService } from '../api/services';
 import { useAuth } from '../context/AuthContext';
@@ -29,6 +29,10 @@ export default function WeeklyReport() {
   const [partnerPayouts, setPartnerPayouts] = useState([]);
   const [payoutReload, setPayoutReload] = useState(0);
   const [payoutFor, setPayoutFor] = useState(null); // item de distribución
+  const [liquidarFor, setLiquidarFor] = useState(null); // dealer (lista "a quién le debo")
+  // Dealers del periodo: alimentan la lista "A quién le debo" junto a los
+  // socios. Si falla, la lista lo DICE (no finge "nadie pendiente").
+  const [dealersDue, setDealersDue] = useState({ rows: [], error: false });
   const { toast, showToast, dismissToast } = useToast();
   const [referenceDate, setReferenceDate] = useState(() => {
     const hoy = new Date();
@@ -92,6 +96,21 @@ export default function WeeklyReport() {
       .then((r) => { if (vivo) setPartnerPayouts(r || []); })
       .catch(() => { if (vivo) setPartnerPayouts([]); });
     return () => { vivo = false; };
+  }, [referenceDate, viewMode, payoutReload]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await statsService.getDealerPayments(formatDateISO(range.start), formatDateISO(range.end));
+        if (!cancelled) setDealersDue({ rows: res?.dealers || [], error: false });
+      } catch (e) {
+        console.error("Error cargando dealers del periodo", e);
+        if (!cancelled) setDealersDue({ rows: [], error: true });
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [referenceDate, viewMode, payoutReload]);
 
   // Suman solo los pagos CONTENIDOS en el rango visto; un pago que lo
@@ -195,6 +214,43 @@ export default function WeeklyReport() {
   const cajaEgresos = data.expenses_week || 0;
   const cajaNeto = data.net_week ?? (cajaIngresos - cajaEgresos);
 
+  // "A quién le debo": socios/fondos con pendiente (sin pago externo) + dealers
+  // con pendiente positivo. Un sobrepago NO resta la deuda de otro.
+  const deudas = [
+    ...data.distribution
+      .filter((item) => (isSocio(item) || isFondoItem(item)) && item.total > 0)
+      .map((item) => {
+        const pagado = pagadoA(item.name);
+        const pendiente = item.total - pagado;
+        if (pendiente <= 0 || pagoExterno(item.name)) return null;
+        const fondo = isFondoItem(item);
+        return {
+          key: `p-${item.name}`,
+          kind: fondo ? 'Fondo' : 'Socio',
+          kindCls: fondo ? 'bg-purple-500/15 text-purple-300' : 'bg-blue-500/15 text-blue-300',
+          name: item.name,
+          sub: pagado > 0 ? `Pagado ${formatMoney(pagado)} de ${formatMoney(item.total)}` : (fondo ? 'Reparto del neto' : `${item.percent}% del neto`),
+          amount: pendiente,
+          cta: 'Registrar pago',
+          onPay: () => setPayoutFor({ ...item, pendiente }),
+        };
+      })
+      .filter(Boolean),
+    ...dealersDue.rows
+      .filter((d) => d.pending > 0 && !d.paid_external)
+      .map((d) => ({
+        key: `d-${d.dealer_id}`,
+        kind: 'Dealer',
+        kindCls: 'bg-amber-500/15 text-amber-300',
+        name: d.name,
+        sub: `${d.hours}h del periodo${d.paid > 0 ? ` · pagado ${formatMoney(d.paid)} de ${formatMoney(d.club_payment)}` : ''}`,
+        amount: d.pending,
+        cta: 'Liquidar',
+        onPay: () => setLiquidarFor(d),
+      })),
+  ].sort((a, b) => b.amount - a.amount);
+  const totalDeudas = deudas.reduce((acc, d) => acc + d.amount, 0);
+
   // Arma el modelo de exportación según la pestaña activa. Dealers se trae al
   // momento (su data vive en el componente hijo); distribución ya está en `data`.
   const buildExportModel = async () => {
@@ -211,7 +267,16 @@ export default function WeeklyReport() {
 
   return (
     <div className={`transition-opacity ${loading ? "opacity-60" : ""} max-w-5xl mx-auto p-6 space-y-8 animate-fade-in`}>
-      {reportTab === 'distribution' && <KPIDashboard startDate={range.start} endDate={range.end} netPeriodo={data.net_week ?? null} />}
+      {reportTab === 'distribution' && (
+        <KPIDashboard
+          startDate={range.start}
+          endDate={range.end}
+          netPeriodo={cajaNeto}
+          rakeBruto={cajaIngresos}
+          egresos={cajaEgresos}
+          refreshKey={payoutReload}
+        />
+      )}
 
       {/* TABS: Distribución / Dealers  +  Exportar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -283,33 +348,52 @@ export default function WeeklyReport() {
       {/* ===== TAB DISTRIBUCIÓN ===== */}
       {reportTab === 'distribution' && <>
 
-      {/* ===== LA CUENTA DEL PERIODO: ingresos − egresos = neto a repartir.
-             Un solo vocabulario en toda la caja (pantalla y export): INGRESOS
-             (rake bruto), EGRESOS (dealers + cortesías) y NETO A REPARTIR. ===== */}
-      <div className="space-y-3">
-        <p className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em]">Caja del periodo</p>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="bg-gradient-to-br from-green-900/20 to-transparent border border-green-500/20 p-5 rounded-2xl">
-            <p className="text-[10px] font-bold text-green-500 uppercase tracking-widest mb-1">💵 Ingresos · Rake bruto</p>
-            <p className="text-3xl font-black text-white font-mono">{formatMoney(cajaIngresos)}</p>
-          </div>
-          <div className="bg-gradient-to-br from-red-900/15 to-transparent border border-red-500/20 p-5 rounded-2xl">
-            <p className="text-[10px] font-bold text-red-400 uppercase tracking-widest mb-1">📤 Egresos · Dealers y cortesías</p>
-            <p className="text-3xl font-black text-white font-mono">{cajaEgresos > 0 ? `− ${formatMoney(cajaEgresos)}` : formatMoney(0)}</p>
-          </div>
-          <div className="bg-gradient-to-br from-emerald-900/20 to-transparent border border-emerald-500/20 p-5 rounded-2xl">
-            {/* La semana que se pierde se dice de frente: nada de celebrar un
-                monto negativo con un checkmark. */}
-            <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${cajaNeto < 0 ? 'text-red-400' : 'text-emerald-400'}`}>
-              {cajaNeto < 0 ? '⚠ Pérdida del periodo' : '✅ Neto a repartir'}
-            </p>
-            <p className={`text-3xl font-black font-mono ${cajaNeto < 0 ? 'text-red-300' : 'text-white'}`}>{formatMoney(cajaNeto)}</p>
-            {cajaNeto < 0 && (
-              <p className="text-red-300/80 text-xs mt-1">Los gastos (dealers y cortesías) superaron el rake. Revisa la pestaña Dealers.</p>
-            )}
-          </div>
+      {/* ===== A QUIÉN LE DEBO: la pregunta del lunes en UNA lista. Socios y
+             fondos (del reparto) + dealers (devengado del periodo), ordenados
+             por monto, cada uno con su botón de pago. La cuenta del periodo
+             (rake − gastos = neto) vive arriba, en el hero. ===== */}
+      <section aria-labelledby="deudas-titulo" className="space-y-3">
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 id="deudas-titulo" className="text-sm font-bold text-white">A quién le debo</h2>
+          {deudas.length > 0 && (
+            <p className="text-sm text-gray-400 tabular-nums">Total <span className="font-mono font-bold text-amber-300">{formatMoney(totalDeudas)}</span></p>
+          )}
         </div>
-      </div>
+        {dealersDue.error && (
+          <p className="text-xs text-red-300 bg-red-900/10 border border-red-500/20 rounded-lg px-3 py-2">
+            No pude cargar lo pendiente a dealers — la lista puede estar incompleta. <button type="button" onClick={() => setPayoutReload((k) => k + 1)} className="underline font-bold">Reintentar</button>
+          </p>
+        )}
+        {deudas.length === 0 ? (
+          <p className={`rounded-2xl border px-4 py-4 text-sm ${dealersDue.error ? 'border-gray-700 text-gray-400' : 'border-emerald-500/30 bg-emerald-500/5 text-emerald-300'}`}>
+            {dealersDue.error ? 'Sin pendientes a socios en este periodo.' : 'Al día: no le debes a nadie en este periodo.'}
+          </p>
+        ) : (
+          <ul className="rounded-2xl border border-gray-700 bg-gray-800 divide-y divide-gray-700/70 overflow-hidden">
+            {/* Móvil: dos líneas (quién / cuánto + botón); desktop: una fila
+                con columnas alineadas. */}
+            {deudas.map((d) => (
+              <li key={d.key} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
+                <div className="flex items-center gap-3 min-w-0 basis-full sm:basis-auto sm:flex-1">
+                  <span className={`shrink-0 text-[11px] font-bold uppercase tracking-wider rounded-md px-1.5 py-0.5 ${d.kindCls}`}>{d.kind}</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-white font-bold truncate">{d.name}</p>
+                    {d.sub && <p className="text-xs text-gray-400 truncate">{d.sub}</p>}
+                  </div>
+                </div>
+                <p className="ml-auto sm:ml-0 font-mono font-bold text-white tabular-nums whitespace-nowrap sm:min-w-[7.5rem] sm:text-right">{formatMoney(d.amount)}</p>
+                <button
+                  type="button"
+                  onClick={d.onPay}
+                  className="shrink-0 min-h-11 px-3 sm:min-w-[10rem] rounded-lg bg-emerald-600/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-600/25 text-xs font-bold uppercase tracking-wider transition-colors"
+                >
+                  {d.cta}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       {/* ===== REPARTO DEL NETO: a dónde va la plata (ni ingreso ni egreso:
              asignación del neto según las reglas del club). Solo aparece si el
@@ -497,6 +581,20 @@ export default function WeeklyReport() {
       </>}
 
       <Toast toast={toast} onDismiss={dismissToast} />
+
+      {liquidarFor && (
+        <LiquidarModal
+          dealer={liquidarFor}
+          startISO={formatDateISO(range.start)}
+          endISO={formatDateISO(range.end)}
+          onClose={() => setLiquidarFor(null)}
+          onDone={({ amount, dealer }) => {
+            setLiquidarFor(null);
+            setPayoutReload((k) => k + 1);
+            showToast(`Liquidaste ${formatMoney(amount)} a ${dealer.name}`, "success");
+          }}
+        />
+      )}
 
       {payoutFor && (
         <PartnerPayoutModal
