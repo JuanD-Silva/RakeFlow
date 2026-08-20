@@ -250,6 +250,9 @@ export default function WeeklyReport() {
       })),
   ].sort((a, b) => b.amount - a.amount);
   const totalDeudas = deudas.reduce((acc, d) => acc + d.amount, 0);
+  // Dealers con un pago registrado a otro nivel de periodo (ej. el mes): no
+  // entran a la lista, pero el KPI sí los cuenta — se explica, no se esconde.
+  const dealersExternos = dealersDue.rows.filter((d) => d.pending > 0 && d.paid_external).length;
 
   // Arma el modelo de exportación según la pestaña activa. Dealers se trae al
   // momento (su data vive en el componente hijo); distribución ya está en `data`.
@@ -392,6 +395,11 @@ export default function WeeklyReport() {
               </li>
             ))}
           </ul>
+        )}
+        {dealersExternos > 0 && (
+          <p className="text-xs text-blue-300/90">
+            {dealersExternos === 1 ? 'Un dealer tiene' : `${dealersExternos} dealers tienen`} un pago registrado en otro periodo (ej. el mes): no aparece{dealersExternos === 1 ? '' : 'n'} aquí para que no lo repitas.
+          </p>
         )}
       </section>
 
