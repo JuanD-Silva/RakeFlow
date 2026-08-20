@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import confetti from 'canvas-confetti';
 import TransactionManager from './TransactionManager';
 import { sessionService, tournamentService } from '../api/services';
 import CreateTournamentForm from './CreateTournamentForm';
@@ -97,6 +98,11 @@ export default function GameControl() {
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showEndTournamentModal, setShowEndTournamentModal] = useState(false);
+  // Doble confirmación al terminar con activos sin premiar (se resetea al abrir)
+  const [endAck, setEndAck] = useState(false);
+  // Ceremonia de premios: vive AQUÍ (no en TournamentPlayerTable) para
+  // sobrevivir a que el torneo salga de la lista de vivos tras finalizar.
+  const [ceremony, setCeremony] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   
   // ESTADOS DE AUDITORÍA
@@ -332,6 +338,7 @@ const handleCreateTournament = async (formData) => {
   };
 
   const handleEndTournament = async () => {
+    setEndAck(false);
     setShowEndTournamentModal(true);
   };
 
@@ -549,15 +556,6 @@ const handleCreateTournament = async (formData) => {
                 </div>
                 
                 {/* LADO DERECHO: ACCIÓN DESTRUCTIVA (Terminar) */}
-                <div className="w-full xl:w-auto flex justify-end">
-                    <button 
-                        onClick={handleEndTournament}
-                        className="bg-red-600/90 hover:bg-red-500 text-white px-5 py-2.5 rounded-lg font-bold text-xs uppercase tracking-widest shadow-lg shadow-red-900/20 transition-all border border-red-500/50 flex items-center gap-2"
-                    >
-                        <TrashIcon className="w-4 h-4" />
-                        Terminar Torneo
-                    </button>
-                </div>
             </div>
 
             {/* RELOJ / NIVELES (T3). key: al cambiar de torneo (multi-torneo) el
@@ -578,7 +576,18 @@ const handleCreateTournament = async (formData) => {
                 key={`players-${activeTournament.id}`}
                 tournament={activeTournament}
                 onUpdate={refresh}
+                onFinalized={(data) => { setCeremony(data); refresh(); }}
             />
+
+            {/* TERMINAR (destructivo): al FONDO, como "Cerrar Sesión" en cash.
+                Terminar ≠ premiar — el paso feliz es "Repartir el pozo" arriba. */}
+            <button
+                onClick={handleEndTournament}
+                className="w-full mt-6 bg-gray-800 hover:bg-red-900/60 text-red-300 font-bold py-3 rounded-xl border border-red-900/50 transition-colors text-xs uppercase tracking-widest flex items-center justify-center gap-2"
+            >
+                <TrashIcon className="w-4 h-4" />
+                Terminar torneo (archivar sin repartir)
+            </button>
         </div>
 
   ) : viewMode === "cash" && activeSession ? (
@@ -913,33 +922,63 @@ const handleCreateTournament = async (formData) => {
            </div>
         </div>
       )}
-      {showEndTournamentModal && (
+      {showEndTournamentModal && activeTournament && (() => {
+        // Datos duros en el momento de más riesgo: el director debe VER qué
+        // está a punto de archivar (activos + pozo sin repartir) antes del sí.
+        const endActivos = (activeTournament.players || []).filter(p => p.status === 'ACTIVE').length;
+        const endSinPremiar = !(activeTournament.players || []).some(p => (p.prize_collected || 0) > 0);
+        const needsAck = endActivos > 0 && endSinPremiar;
+        return (
     <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[70] backdrop-blur-sm p-4 animate-fade-in">
          <div className="bg-gray-800 rounded-2xl border border-red-500/50 shadow-2xl w-full max-w-sm max-h-[90vh] overflow-y-auto p-6 text-center">
              <div className="bg-red-500/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
                  <ExclamationTriangleIcon className="w-8 h-8 text-red-500" />
              </div>
-             <h3 className="text-xl font-bold text-white mb-2">¿Terminar Torneo?</h3>
-             <p className="text-gray-400 mb-6 text-sm">
-                 Esta acción cerrará el torneo permanentemente y archivará los resultados. No se puede deshacer.
+             <h3 className="text-xl font-bold text-white mb-2">¿Terminar "{activeTournament.name}"?</h3>
+             <p className="text-gray-400 mb-3 text-sm">
+                 El torneo se archiva permanentemente. No se puede deshacer.
              </p>
+             {endActivos > 0 && (
+                 <p className="text-amber-300 text-sm font-bold mb-2">
+                     Quedan {endActivos} jugador{endActivos === 1 ? '' : 'es'} activo{endActivos === 1 ? '' : 's'}.
+                 </p>
+             )}
+             {endSinPremiar && (
+                 <p className="text-red-300 text-sm mb-4 bg-red-500/10 border border-red-500/30 rounded-lg p-3">
+                     El pozo <strong>no se ha repartido</strong>: se archiva sin premios.
+                     Para premiar, usa "Repartir el pozo".
+                 </p>
+             )}
+             {needsAck && (
+                 <label className="flex items-start gap-2 text-left text-sm text-gray-300 mb-4 cursor-pointer select-none">
+                     <input type="checkbox" checked={endAck} onChange={(e) => setEndAck(e.target.checked)}
+                         className="mt-0.5 w-4 h-4 accent-red-500" />
+                     Entiendo: se archiva sin repartir premios.
+                 </label>
+             )}
              <div className="flex gap-3">
-                 <button 
+                 <button
                      onClick={() => setShowEndTournamentModal(false)}
                      className="flex-1 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-xl font-bold"
                  >
                      Cancelar
                  </button>
-                 <button 
+                 <button
                      onClick={confirmEndTournament}
-                     className="flex-1 py-3 bg-red-600 hover:bg-red-500 text-white rounded-xl font-bold shadow-lg shadow-red-900/30"
+                     disabled={isLoading || (needsAck && !endAck)}
+                     className="flex-1 py-3 bg-red-600 hover:bg-red-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl font-bold shadow-lg shadow-red-900/30"
                  >
-                     Sí, Terminar
+                     Sí, terminar
                  </button>
              </div>
          </div>
     </div>
-    )}
+        );
+      })()}
+
+      {ceremony && (
+        <TournamentCeremony ceremony={ceremony} onClose={() => { setCeremony(null); refresh(); }} />
+      )}
 
       {selectedPlayerForHistory && (
         <TransactionManager player={selectedPlayerForHistory} onClose={() => setSelectedPlayerForHistory(null)} onUpdate={refresh} />
@@ -979,5 +1018,59 @@ function ActionButton({ color, label, onClick }) {
     <button onClick={onClick} className={`${colors[color]} text-white font-bold py-6 px-4 rounded-xl shadow-lg border-b-4 active:border-b-0 active:translate-y-1 active:shadow-none transition-all cursor-pointer text-lg flex flex-col items-center justify-center gap-1`}>
       {label}
     </button>
+  );
+}
+// CEREMONIA DE PREMIOS: el clímax de la noche merece más que un toast de 3s.
+// Vive en GameControl (no en TournamentPlayerTable) para sobrevivir a que el
+// torneo finalizado salga de la lista de vivos. Un solo momento de motion:
+// la ráfaga de confetti al montar (mismo lenguaje que los logros del panel).
+function TournamentCeremony({ ceremony, onClose }) {
+  useEffect(() => {
+    const bursts = [
+      setTimeout(() => confetti({ particleCount: 120, spread: 75, origin: { y: 0.7 } }), 150),
+      setTimeout(() => confetti({ particleCount: 60, angle: 60, spread: 55, origin: { x: 0, y: 0.8 } }), 500),
+      setTimeout(() => confetti({ particleCount: 60, angle: 120, spread: 55, origin: { x: 1, y: 0.8 } }), 700),
+    ];
+    return () => bursts.forEach(clearTimeout);
+  }, []);
+
+  // Badges de rango dibujados (nada de emoji): oro/plata/bronce por borde+texto.
+  const rankStyle = (rank) => rank === 1
+    ? 'border-yellow-400/70 text-yellow-300 bg-yellow-500/10'
+    : rank === 2
+    ? 'border-gray-300/50 text-gray-200 bg-gray-400/10'
+    : rank === 3
+    ? 'border-orange-400/50 text-orange-300 bg-orange-500/10'
+    : 'border-violet-500/40 text-violet-300 bg-violet-500/10';
+  return (
+    <div className="fixed inset-0 z-[120] bg-gray-950/95 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
+      <div className="w-full max-w-sm bg-gradient-to-b from-violet-950/80 to-gray-900 border border-yellow-500/30 rounded-3xl shadow-2xl shadow-violet-900/40 p-6 text-center max-h-[90vh] overflow-y-auto">
+        <div className="bg-yellow-500/15 border border-yellow-500/30 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
+          <TrophyIcon className="w-11 h-11 text-yellow-400" />
+        </div>
+        <h2 className="text-white text-2xl font-black uppercase leading-tight">{ceremony.tournamentName}</h2>
+        <p className="text-violet-200 text-sm mt-1 mb-5">Pozo repartido: <span className="font-mono font-bold text-yellow-300">{ceremony.potLabel}</span></p>
+
+        <div className="space-y-2 mb-6">
+          {ceremony.winners.map((w) => (
+            <div key={w.rank}
+              className={`flex items-center justify-between gap-3 rounded-xl px-4 ${w.rank === 1
+                ? 'bg-yellow-500/15 border border-yellow-500/40 py-4'
+                : 'bg-gray-800/70 border border-gray-700 py-2.5'}`}>
+              <div className="flex items-center gap-3 min-w-0">
+                <span className={`shrink-0 w-8 h-8 rounded-full border-2 flex items-center justify-center font-black font-mono ${w.rank === 1 ? 'text-base' : 'text-sm'} ${rankStyle(w.rank)}`}>{w.rank}</span>
+                <span className={`truncate font-bold ${w.rank === 1 ? 'text-yellow-100 text-lg' : 'text-gray-200 text-sm'}`}>{w.name}</span>
+              </div>
+              <span className={`font-mono font-black shrink-0 ${w.rank === 1 ? 'text-yellow-300 text-lg' : 'text-violet-200 text-sm'}`}>{w.prizeLabel}</span>
+            </div>
+          ))}
+        </div>
+
+        <button onClick={onClose}
+          className="w-full bg-violet-600 hover:bg-violet-500 text-white font-black uppercase tracking-wider py-3.5 rounded-xl shadow-lg shadow-violet-900/40 transition-colors">
+          Cerrar la noche
+        </button>
+      </div>
+    </div>
   );
 }
