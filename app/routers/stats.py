@@ -285,6 +285,7 @@ async def get_weekly_distribution(
                         "total": int(amount),
                         "percent": r.value,
                         "type": "PARTNER",
+                        "rule_id": r.id,
                     })
             else:
                 distribution.append({"name": "Fondo Club", "total": int(remaining_pool), "percent": 100, "type": "FUND"})
@@ -659,3 +660,131 @@ async def get_dealer_payments(
     result.sort(key=lambda x: x["grand_total"], reverse=True)
 
     return {"summary": summary, "dealers": result}
+
+
+# ---------------------------------------------------------------------------
+# LEDGER DEL REPARTO A SOCIOS (espejo de la liquidación de dealers): registrar
+# que la plata de la distribución YA se entregó. No mueve la caja — la utilidad
+# se reconoció en el cierre; esto es "quién recibió qué y cuándo".
+# ---------------------------------------------------------------------------
+from pydantic import BaseModel as _BaseModel
+from fastapi import Request as _Request
+from ..audit import log_action as _log_action, AuditAction as _AuditAction
+
+
+def _parse_fecha(v: str):
+    try:
+        return datetime.strptime(v, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Fechas inválidas: usa YYYY-MM-DD.")
+
+
+class PartnerPayoutCreate(_BaseModel):
+    beneficiary_name: str
+    rule_id: int | None = None
+    period_start: str  # YYYY-MM-DD (el rango que el dueño está viendo)
+    period_end: str
+    amount: int
+    method: str = "cash"  # cash | transfer
+    note: str | None = None
+
+
+@router.get("/partner-payouts")
+async def list_partner_payouts(
+    start_date: str,
+    end_date: str,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+    _: models.User = Depends(require_role(_REPORT_ROLES)),
+):
+    """Pagos a socios que SOLAPAN el rango visto. El front suma los CONTENIDOS
+    en el rango y usa los que lo desbordan (ej. un pago a nivel mes visto desde
+    la semana) como AVISO para no re-registrar."""
+    try:
+        s = datetime.strptime(start_date, "%Y-%m-%d").date()
+        e = datetime.strptime(end_date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Fechas inválidas: usa YYYY-MM-DD.")
+    rows = (await db.execute(
+        select(models.PartnerPayout)
+        .where(models.PartnerPayout.club_id == current_club.id)
+        .where(models.PartnerPayout.period_end >= s)
+        .where(models.PartnerPayout.period_start <= e)
+        .order_by(models.PartnerPayout.created_at.desc())
+    )).scalars().all()
+    return [{
+        "id": p.id, "beneficiary_name": p.beneficiary_name, "amount": p.amount,
+        "method": p.method, "note": p.note,
+        "period_start": p.period_start.isoformat(), "period_end": p.period_end.isoformat(),
+        "created_at": p.created_at.isoformat() if p.created_at else None,
+    } for p in rows]
+
+
+@router.post("/partner-payouts", status_code=201)
+async def create_partner_payout(
+    data: PartnerPayoutCreate,
+    request: _Request,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+    current_user: models.User = Depends(require_role(_REPORT_ROLES)),
+):
+    if data.amount <= 0:
+        raise HTTPException(status_code=400, detail="El monto debe ser mayor a 0.")
+    if data.method not in ("cash", "transfer"):
+        raise HTTPException(status_code=400, detail="Método inválido: usa cash o transfer.")
+    if data.rule_id is not None:
+        regla = (await db.execute(
+            select(models.DistributionRule)
+            .where(models.DistributionRule.id == data.rule_id)
+            .where(models.DistributionRule.club_id == current_club.id)
+        )).scalars().first()
+        if not regla:
+            raise HTTPException(status_code=404, detail="Regla de distribución no encontrada.")
+    payout = models.PartnerPayout(
+        club_id=current_club.id,
+        beneficiary_name=data.beneficiary_name.strip(),
+        rule_id=data.rule_id,
+        period_start=_parse_fecha(data.period_start),
+        period_end=_parse_fecha(data.period_end),
+        amount=data.amount,
+        method=data.method,
+        note=(data.note or None),
+        created_by_user_id=current_user.id,
+    )
+    db.add(payout)
+    await db.flush()
+    await _log_action(
+        db, request=request, club=current_club, action=_AuditAction.PARTNER_PAYOUT_CREATE,
+        entity_type="PartnerPayout", entity_id=payout.id,
+        meta={"beneficiary": payout.beneficiary_name, "amount": payout.amount,
+              "period": f"{data.period_start}..{data.period_end}", "by": current_user.email},
+    )
+    await db.commit()
+    await db.refresh(payout)
+    return {"id": payout.id, "beneficiary_name": payout.beneficiary_name, "amount": payout.amount}
+
+
+@router.delete("/partner-payouts/{payout_id}")
+async def delete_partner_payout(
+    payout_id: int,
+    request: _Request,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+    current_user: models.User = Depends(require_role(_REPORT_ROLES)),
+):
+    """Deshacer un registro erróneo (es ledger: borrar el registro, no plata)."""
+    payout = (await db.execute(
+        select(models.PartnerPayout)
+        .where(models.PartnerPayout.id == payout_id)
+        .where(models.PartnerPayout.club_id == current_club.id)
+    )).scalars().first()
+    if not payout:
+        raise HTTPException(status_code=404, detail="Registro no encontrado.")
+    await _log_action(
+        db, request=request, club=current_club, action=_AuditAction.PARTNER_PAYOUT_DELETE,
+        entity_type="PartnerPayout", entity_id=payout.id,
+        meta={"beneficiary": payout.beneficiary_name, "amount": payout.amount, "by": current_user.email},
+    )
+    await db.delete(payout)
+    await db.commit()
+    return {"message": "Registro eliminado"}

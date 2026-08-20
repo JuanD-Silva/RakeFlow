@@ -251,6 +251,13 @@ export const transactionService = {
 
 // --- ESTADÍSTICAS Y CONFIGURACIÓN ---
 export const statsService = {
+    // Ledger del reparto a socios (registrar que la plata YA se entregó)
+    getPartnerPayouts: async (startDate, endDate) =>
+        (await api.get(`/stats/partner-payouts?start_date=${startDate}&end_date=${endDate}`)).data,
+    createPartnerPayout: async (payload) =>
+        (await api.post('/stats/partner-payouts', payload)).data,
+    deletePartnerPayout: async (id) =>
+        (await api.delete(`/stats/partner-payouts/${id}`)).data,
     getGlobalJackpot: async () => {
         const response = await api.get('/stats/jackpot-global');
         return response.data.total_jackpot;
