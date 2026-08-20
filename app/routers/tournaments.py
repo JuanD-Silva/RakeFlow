@@ -1750,7 +1750,9 @@ async def finalize_tournament(
             p.status = "WINNER"
             p.rank = rank
             # round, no truncar: int() a secas se comía pesos del pozo repartido
-            p.prize_collected = int(round(prize))
+            # Half-up (no banker's): paridad exacta con el Math.round del recap
+            # y la ceremonia en el frontend (round() de Python difiere en .5).
+            p.prize_collected = int(prize + 0.5)
         else:
             # Si no está en la lista de ganadores, es eliminado automáticamente
             p.status = "ELIMINATED"
