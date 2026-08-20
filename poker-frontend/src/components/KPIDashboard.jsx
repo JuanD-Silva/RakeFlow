@@ -59,9 +59,15 @@ export default function KPIDashboard({ startDate, endDate, netPeriodo = null } =
           };
           params = `?start_date=${fmt(startDate)}&end_date=${fmt(endDate)}`;
         }
-        // Periodo ANTERIOR de la misma duración (para el KPI "vs anterior")
+        // Periodo ANTERIOR para el KPI "vs anterior". Dos reglas de honestidad:
+        // (1) si el periodo actual está EN CURSO, se compara la MISMA fracción
+        //     transcurrida del anterior (martes: 2 días vs 2 días, no 2 vs 7 —
+        //     si no, el KPI da rojo casi siempre a mitad de periodo);
+        // (2) en vista mensual el anterior es el mes CALENDARIO, no "misma
+        //     duración" (que metía días de dos meses).
         let prevParams = '';
         let curQuery = '';
+        let comparacion = null;
         if (startDate && endDate) {
           const fmt2 = (d) => {
             const y = d.getFullYear();
@@ -69,9 +75,28 @@ export default function KPIDashboard({ startDate, endDate, netPeriodo = null } =
             const day2 = String(d.getDate()).padStart(2, '0');
             return `${y}-${m2}-${day2}`;
           };
-          const dur = Math.round((endDate - startDate) / 86400000) + 1;
-          const prevEnd = new Date(startDate); prevEnd.setDate(prevEnd.getDate() - 1);
-          const prevStart = new Date(prevEnd); prevStart.setDate(prevStart.getDate() - dur + 1);
+          const dia = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
+          const hoy = dia(new Date());
+          const startD = dia(startDate);
+          const endD = dia(endDate);
+          const dur = Math.round((endD - startD) / 86400000) + 1;
+          const esMes = startD.getDate() === 1 && startD.getMonth() === endD.getMonth()
+            && endD.getDate() === new Date(endD.getFullYear(), endD.getMonth() + 1, 0).getDate();
+          let prevStart, prevEndCompleto;
+          if (esMes) {
+            prevStart = new Date(startD.getFullYear(), startD.getMonth() - 1, 1);
+            prevEndCompleto = new Date(startD.getFullYear(), startD.getMonth(), 0);
+          } else {
+            prevStart = new Date(startD); prevStart.setDate(prevStart.getDate() - dur);
+            prevEndCompleto = new Date(startD); prevEndCompleto.setDate(prevEndCompleto.getDate() - 1);
+          }
+          const transcurridos = endD > hoy
+            ? Math.max(1, Math.round((Math.min(+hoy, +endD) - startD) / 86400000) + 1)
+            : dur;
+          const parcial = transcurridos < dur;
+          let prevEnd = new Date(prevStart); prevEnd.setDate(prevEnd.getDate() + transcurridos - 1);
+          if (prevEnd > prevEndCompleto) prevEnd = prevEndCompleto;
+          comparacion = { parcial, transcurridos };
           prevParams = `?start_date=${fmt2(prevStart)}&end_date=${fmt2(prevEnd)}`;
           curQuery = `start_date=${fmt2(startDate)}&end_date=${fmt2(endDate)}`;
         }
@@ -83,7 +108,7 @@ export default function KPIDashboard({ startDate, endDate, netPeriodo = null } =
         ]);
         setStats(dashRes.data);
         setQuota(quotaRes.data);
-        setPrevStats(prevRes.data);
+        setPrevStats(prevRes.data ? { ...prevRes.data, comparacion } : null);
         setDealerPending(dealersRes.data?.summary?.pending ?? null);
       } catch (e) {
         console.error("Error KPIs", e);
@@ -183,7 +208,9 @@ export default function KPIDashboard({ startDate, endDate, netPeriodo = null } =
         <Card
           title="Vs periodo anterior"
           value={deltaPct != null ? `${delta >= 0 ? '+' : ''}${deltaPct}%` : (delta != null ? `${delta >= 0 ? '+' : ''}${formatMoney(delta)}` : '—')}
-          sub={rakePrevio != null ? `Rake bruto: ${formatMoney(rakeActual || 0)} vs ${formatMoney(rakePrevio)}` : 'Sin datos del periodo anterior'}
+          sub={rakePrevio != null
+            ? `${prevStats?.comparacion?.parcial ? `Mismos ${prevStats.comparacion.transcurridos} días del anterior · ` : ''}${formatMoney(rakeActual || 0)} vs ${formatMoney(rakePrevio)}`
+            : 'Sin datos del periodo anterior'}
           Icon={delta != null && delta < 0 ? ArrowTrendingDownIcon : ArrowTrendingUpIcon}
           border={delta != null && delta < 0 ? 'border-red-500/40' : 'border-blue-500/30'}
           iconColor={delta != null && delta < 0 ? 'text-red-400' : 'text-blue-400'}
@@ -193,7 +220,7 @@ export default function KPIDashboard({ startDate, endDate, netPeriodo = null } =
         <Card
           title="Pendiente a dealers"
           value={dealerPending != null ? formatMoney(dealerPending) : '—'}
-          sub={dealerPending > 0 ? 'Liquida en la pestaña Dealers' : dealerPending === 0 ? 'Al día con el equipo' : 'Sin datos'}
+          sub={dealerPending > 0 ? 'Del periodo — liquida en la pestaña Dealers' : dealerPending === 0 ? 'Al día con el equipo (este periodo)' : 'Sin datos'}
           Icon={dealerPending > 0 ? ExclamationTriangleIcon : CheckCircleIcon}
           border={dealerPending > 0 ? 'border-amber-500/40' : 'border-gray-700'}
           iconColor={dealerPending > 0 ? 'text-amber-400' : 'text-gray-500'}

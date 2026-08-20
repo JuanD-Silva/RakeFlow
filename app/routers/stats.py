@@ -69,13 +69,16 @@ async def get_dashboard_stats(
         # usamos eso. Si no, default = mes en curso hora Colombia. Esto evita
         # el desfase entre el rango que el user esta viendo y los KPIs.
         if start_date and end_date:
+            # Rango EXPLÍCITO (el dashboard financiero navegando periodos): sin
+            # clamp de rankings_reset_at — weekly-distribution tampoco clampa y
+            # el desfase hacía que el neto pudiera superar al bruto en pantalla.
             range_start = datetime.combine(datetime.strptime(start_date, "%Y-%m-%d").date(), time.min)
             range_end = datetime.combine(datetime.strptime(end_date, "%Y-%m-%d").date(), time.max)
         else:
             range_start = _start_of_month_col_as_utc()
             range_end = now
-        if current_club.rankings_reset_at and current_club.rankings_reset_at > range_start:
-            range_start = current_club.rankings_reset_at
+            if current_club.rankings_reset_at and current_club.rankings_reset_at > range_start:
+                range_start = current_club.rankings_reset_at
 
         # A. TOTAL SESIONES Y HORAS DEL RANGO (Cash + Torneos)
         stmt_cash = select(models.Session).where(
