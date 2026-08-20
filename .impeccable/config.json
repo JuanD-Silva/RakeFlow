@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "gray-on-color",
+        "value": "*",
+        "files": [
+          "poker-frontend/src/components/GameControl.jsx"
+        ],
+        "createdAt": "2026-08-20T09:05:00.554Z",
+        "reason": "Assessment B del critique 2026-08-20 verificó línea por línea: ternarios y overlays hover al 5-10%, el gris nunca se renderiza sobre el fondo de color"
+      }
+    ]
+  }
+}

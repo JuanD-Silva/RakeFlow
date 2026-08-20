@@ -9,7 +9,7 @@ import { tournamentService, playerService } from '../api/services';
 import { formatMoney } from '../utils/formatters';
 import { norm } from '../utils/text';
 
-export default function TournamentPlayerTable({ tournament, onUpdate }) {
+export default function TournamentPlayerTable({ tournament, onUpdate, onFinalized }) {
     const [allPlayers, setAllPlayers] = useState([]);
     
     // --- ESTADOS DE MODALES ---
@@ -144,9 +144,24 @@ export default function TournamentPlayerTable({ tournament, onUpdate }) {
                 setLoading(true);
                 try {
                     await tournamentService.finalize(tournament.id, winnersList);
-                    setIsPayoutOpen(false); 
-                    onUpdate(); 
-                    showToast("🏆 ¡Torneo Finalizado!", "success");
+                    setIsPayoutOpen(false);
+                    // La CEREMONIA la muestra GameControl (sobrevive a que este
+                    // componente se desmonte cuando el torneo sale de la lista
+                    // de vivos). Fallback: toast de siempre si no hay prop.
+                    if (onFinalized) {
+                        const payoutMap = tournament.payout_structure || [];
+                        const winners = [...winnersList]
+                            .sort((a, b) => a.rank - b.rank)
+                            .map((w) => ({
+                                rank: w.rank,
+                                name: getPlayerName(w.player_id),
+                                prizeLabel: formatCurrency(Math.round(netPot * ((payoutMap[w.rank - 1] || 0) / 100))),
+                            }));
+                        onFinalized({ tournamentName: tournament.name, potLabel: formatCurrency(netPot), winners });
+                    } else {
+                        onUpdate();
+                        showToast("🏆 ¡Torneo Finalizado!", "success");
+                    }
                 } catch (error) {
                     console.error(error);
                     showToast("Error al finalizar", "error");
@@ -239,8 +254,8 @@ export default function TournamentPlayerTable({ tournament, onUpdate }) {
                     >
                         <GiftIcon className="w-6 h-6 text-yellow-100 group-hover:rotate-12 transition-transform" />
                         <div className="text-left">
-                            <span className="block text-[10px] font-bold text-yellow-100 uppercase tracking-widest">Torneo Finalizado</span>
-                            <span className="block text-lg font-black leading-none">ASIGNAR PREMIOS</span>
+                            <span className="block text-[10px] font-bold text-yellow-100 uppercase tracking-widest">Paso final de la noche</span>
+                            <span className="block text-lg font-black leading-none">REPARTIR EL POZO</span>
                         </div>
                     </button>
                 )}
