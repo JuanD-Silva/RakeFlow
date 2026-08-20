@@ -307,7 +307,7 @@ async def my_table_move(
         await db.commit()
     except IntegrityError:
         await db.rollback()
-        raise HTTPException(status_code=409, detail="El asiento se ocupó al mismo tiempo. Reintentá.")
+        raise HTTPException(status_code=409, detail="El asiento se ocupó al mismo tiempo. Reintenta.")
     return {"action": "moved", "player_id": data.player_id, "to_table_id": dest.id, "seat_number": seat}
 
 

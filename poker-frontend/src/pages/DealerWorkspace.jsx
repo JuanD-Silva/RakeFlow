@@ -338,7 +338,7 @@ function TournamentTableView({ data, error, reload }) {
       {/* Reloj del nivel */}
       <div className="bg-gradient-to-b from-violet-900/30 to-gray-900/40 border border-violet-500/30 rounded-2xl p-4 text-center">
         <p className="text-[10px] text-violet-300/70 font-bold uppercase tracking-widest">
-          {lvl.is_break ? 'Break' : `Nivel ${clock.current_level || 1}`}
+          {lvl.is_break ? 'Descanso' : `Nivel ${clock.current_level || 1}`}
           {clock.total_levels ? <span className="text-gray-600"> / {clock.total_levels}</span> : null}
         </p>
         <p className={`text-5xl font-black font-mono my-1 ${running ? 'text-white' : 'text-gray-500'}`}>{fmtClock(remaining)}</p>

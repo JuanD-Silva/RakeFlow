@@ -185,7 +185,7 @@ export default function TournamentClock({ tournament }) {
         <div className="text-center py-10">
           <p className="text-5xl mb-3">🎚️</p>
           <p className="font-bold text-white">Sin estructura de blinds</p>
-          <p className="text-sm text-gray-400 mt-1">Tocá <span className="text-violet-300 font-bold">Editar</span> para configurar los niveles del reloj.</p>
+          <p className="text-sm text-gray-400 mt-1">Toca <span className="text-violet-300 font-bold">Editar</span> para configurar los niveles del reloj.</p>
         </div>
       ) : (
       <>
@@ -193,7 +193,7 @@ export default function TournamentClock({ tournament }) {
         {/* Contador grande */}
         <div className="flex-1 text-center md:text-left">
           <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">
-            {isBreak ? 'Break' : `Nivel ${clock?.current_level}`}
+            {isBreak ? 'Descanso' : `Nivel ${clock?.current_level}`}
             <span className="text-gray-600"> / {clock?.total_levels}</span>
           </p>
           <p className={`font-mono font-black leading-none tabular-nums mt-1 text-6xl md:text-7xl ${
@@ -228,7 +228,7 @@ export default function TournamentClock({ tournament }) {
             <p className="text-[11px] text-gray-500 mt-2">
               Sigue:{' '}
               {clock.next_level.is_break
-                ? '☕ Break'
+                ? '☕ Descanso'
                 : `${cop(clock.next_level.small_blind)}/${cop(clock.next_level.big_blind)}`}
             </p>
           )}
@@ -242,7 +242,7 @@ export default function TournamentClock({ tournament }) {
           disabled={busy || clock?.current_level <= 1}
           className="flex items-center justify-center gap-1.5 py-3 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-200 font-bold text-xs uppercase tracking-wider border border-gray-700 disabled:opacity-40 transition-all active:scale-[0.98]"
         >
-          <ChevronLeftIcon className="w-4 h-4" /> Nivel
+          <ChevronLeftIcon className="w-4 h-4" /> Anterior
         </button>
         <button
           onClick={() => control(running ? tournamentService.clockPause : tournamentService.clockStart)}
@@ -260,7 +260,7 @@ export default function TournamentClock({ tournament }) {
           disabled={busy || clock?.current_level >= clock?.total_levels}
           className="flex items-center justify-center gap-1.5 py-3 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-200 font-bold text-xs uppercase tracking-wider border border-gray-700 disabled:opacity-40 transition-all active:scale-[0.98]"
         >
-          Nivel <ChevronRightIcon className="w-4 h-4" />
+          Siguiente <ChevronRightIcon className="w-4 h-4" />
         </button>
       </div>
       </>
@@ -269,7 +269,7 @@ export default function TournamentClock({ tournament }) {
       <Modal isOpen={editOpen} onClose={() => setEditOpen(false)} title="Editar estructura de blinds">
         <div className="space-y-4">
           <p className="text-[11px] text-gray-500">
-            Editar mientras corre el torneo no reinicia el reloj. Si recortás la
+            Editar mientras corre el torneo no reinicia el reloj. Si recortas la
             estructura, el nivel actual se acota al último disponible.
           </p>
           <div>

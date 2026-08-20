@@ -528,7 +528,7 @@ const handleCreateTournament = async (formData) => {
               </div>
               <div>
                 <h1 className="text-gray-300 font-black text-xl tracking-tight uppercase leading-none">Sistema en Espera</h1>
-                <p className="text-gray-500 text-xs font-bold uppercase tracking-[0.15em] mt-1.5">Seleccione una opción</p>
+                <p className="text-gray-500 text-xs font-bold uppercase tracking-[0.15em] mt-1.5">Elige una opción</p>
               </div>
             </div>
           )}

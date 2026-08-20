@@ -533,7 +533,7 @@ async def update_tournament_table(
         # No permitir achicar por debajo de los que ya están sentados.
         seated = (await _active_counts_by_table(db, tournament_id)).get(table_id, 0)
         if data.max_seats < seated:
-            raise HTTPException(status_code=400, detail=f"Hay {seated} jugadores sentados; no podés bajar los cupos por debajo.")
+            raise HTTPException(status_code=400, detail=f"Hay {seated} jugadores sentados; no puedes bajar los cupos por debajo.")
         table.max_seats = data.max_seats
     if data.status in ("OPEN", "CLOSED"):
         table.status = data.status
@@ -608,7 +608,7 @@ async def auto_seat_players(
         .order_by(models.TournamentTable.table_number)
     )).scalars().all()
     if not tables:
-        raise HTTPException(status_code=400, detail="Creá al menos una mesa antes de auto-sentar.")
+        raise HTTPException(status_code=400, detail="Crea al menos una mesa antes de auto-sentar.")
     unseated = (await db.execute(
         select(models.TournamentPlayer)
         .where(models.TournamentPlayer.tournament_id == tournament_id)
@@ -628,7 +628,7 @@ async def auto_seat_players(
     except IntegrityError:
         # Carrera con otro registro/movimiento. Reintentá (los asientos se recalculan).
         await db.rollback()
-        raise HTTPException(status_code=409, detail="Hubo movimiento simultáneo de asientos. Reintentá.")
+        raise HTTPException(status_code=409, detail="Hubo movimiento simultáneo de asientos. Reintenta.")
     return await _tables_response(db, tournament_id)
 
 
@@ -653,7 +653,7 @@ async def reshuffle_seats(
         .order_by(models.TournamentTable.table_number)
     )).scalars().all()
     if not tables:
-        raise HTTPException(status_code=400, detail="Creá al menos una mesa antes de sortear.")
+        raise HTTPException(status_code=400, detail="Crea al menos una mesa antes de sortear.")
     players = (await db.execute(
         select(models.TournamentPlayer)
         .where(models.TournamentPlayer.tournament_id == tournament_id)
@@ -690,7 +690,7 @@ async def reshuffle_seats(
         await db.commit()
     except IntegrityError:
         await db.rollback()
-        raise HTTPException(status_code=409, detail="Hubo movimiento simultáneo de asientos. Reintentá.")
+        raise HTTPException(status_code=409, detail="Hubo movimiento simultáneo de asientos. Reintenta.")
     return await _tables_response(db, tournament_id)
 
 
@@ -736,7 +736,7 @@ async def move_player_to_table(
     except IntegrityError:
         # Carrera: otro movimiento tomó el asiento (índice único). Reintentá.
         await db.rollback()
-        raise HTTPException(status_code=409, detail="El asiento se ocupó al mismo tiempo. Reintentá.")
+        raise HTTPException(status_code=409, detail="El asiento se ocupó al mismo tiempo. Reintenta.")
     return await _tables_response(db, tournament_id)
 
 
@@ -830,7 +830,7 @@ async def rebalance_apply(
             # No debería pasar (el plan garantiza cupo), pero no persistimos un
             # asiento nulo: abortamos y el director reintenta.
             await db.rollback()
-            raise HTTPException(status_code=409, detail="No hay asiento libre al balancear. Reintentá.")
+            raise HTTPException(status_code=409, detail="No hay asiento libre al balancear. Reintenta.")
         tp.table_id = m["to_id"]
         tp.seat_number = seat
         used[m["to_id"]].add(seat)
@@ -859,7 +859,7 @@ async def rebalance_apply(
         await db.commit()
     except IntegrityError:
         await db.rollback()
-        raise HTTPException(status_code=409, detail="Hubo movimiento simultáneo. Reintentá el balanceo.")
+        raise HTTPException(status_code=409, detail="Hubo movimiento simultáneo. Reintenta el balanceo.")
     return await _tables_response(db, tournament_id)
 
 
@@ -895,7 +895,7 @@ async def assign_table_dealer(
         .where(models.TournamentDealerShift.table_id != table_id)
     )).scalars().first()
     if other and not data.force:
-        raise HTTPException(status_code=409, detail="El dealer ya está en otra mesa de torneo. Usá 'force' para moverlo.")
+        raise HTTPException(status_code=409, detail="El dealer ya está en otra mesa de torneo.")
     now = datetime.utcnow()
     if other:
         other.end_time = now
@@ -924,7 +924,7 @@ async def assign_table_dealer(
     except IntegrityError:
         # Índice único (mesa o dealer abiertos): hubo asignación simultánea.
         await db.rollback()
-        raise HTTPException(status_code=409, detail="Hubo una asignación simultánea de dealer. Reintentá.")
+        raise HTTPException(status_code=409, detail="Hubo una asignación simultánea de dealer. Reintenta.")
     return await _tables_response(db, tournament_id)
 
 

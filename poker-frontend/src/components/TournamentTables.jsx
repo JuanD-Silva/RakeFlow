@@ -173,7 +173,7 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
 
       {/* MESAS (solo OPEN; las cerradas por consolidación no se muestran) */}
       {openTables.length === 0 ? (
-        <p className="text-gray-600 text-xs text-center py-3 italic">Sin mesas. Creá una para sentar a los jugadores.</p>
+        <p className="text-gray-600 text-xs text-center py-3 italic">Sin mesas. Crea una para sentar a los jugadores.</p>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
           {openTables.map((t) => (
@@ -280,7 +280,7 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
             </div>
             {err && <p className="text-red-400 text-xs font-bold mb-2">{err}</p>}
             <div className="max-h-[40vh] overflow-y-auto space-y-1.5">
-              {dealers.length === 0 && <p className="text-gray-600 text-xs italic py-2">No hay dealers. Creá uno en Configuración.</p>}
+              {dealers.length === 0 && <p className="text-gray-600 text-xs italic py-2">No hay dealers. Crea uno en Configuración.</p>}
               {dealers.map((d) => (
                 <button key={d.id} type="button" disabled={busy} onClick={() => assignDealer(dealerFor.table_id, d.id)}
                   className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl border text-left ${dealerFor.dealer_id === d.id ? 'border-amber-500/50 bg-amber-950/30 text-amber-200' : 'border-gray-700 text-white hover:bg-amber-500/10'}`}>
