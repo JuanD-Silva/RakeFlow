@@ -187,7 +187,7 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
                     {t.seated_count}/{t.max_seats}
                   </span>
                   <button type="button" onClick={() => delTable(t)} disabled={busy}
-                    className="p-3 -m-1.5 text-gray-500 hover:text-red-400 disabled:opacity-40" title="Borrar mesa" aria-label={`Borrar Mesa ${t.table_number}`}>
+                    className="p-3.5 -mx-2 -my-1.5 text-gray-500 hover:text-red-400 disabled:opacity-40" title="Borrar mesa" aria-label={`Borrar Mesa ${t.table_number}`}>
                     <TrashIcon className="w-4 h-4" />
                   </button>
                 </div>
@@ -201,13 +201,13 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
               {t.players.length === 0 ? (
                 <p className="text-gray-600 text-[11px] italic py-1">Vacía</p>
               ) : (
-                <div className="space-y-1">
+                <div className="space-y-3">
                   {t.players.map((p) => (
                     <div key={p.player_id} className="flex items-center gap-2 text-xs">
                       <span className="shrink-0 w-5 text-center text-[10px] font-black text-gray-400 font-mono">{p.seat_number ?? '·'}</span>
                       <span className="flex-1 text-gray-200 truncate">{p.name}</span>
                       <button type="button" onClick={() => setMoveFor({ player_id: p.player_id, name: p.name })} disabled={busy}
-                        className="p-3 -m-1.5 text-gray-400 hover:text-violet-300 disabled:opacity-40" title="Mover de mesa" aria-label={`Mover a ${p.name}`}>
+                        className="p-3.5 -mx-2 -my-1 text-gray-400 hover:text-violet-300 disabled:opacity-40" title="Mover de mesa" aria-label={`Mover a ${p.name}`}>
                         <ArrowsRightLeftIcon className="w-4 h-4" />
                       </button>
                     </div>
