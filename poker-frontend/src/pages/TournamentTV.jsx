@@ -155,7 +155,7 @@ export default function TournamentTV() {
             </div>
 
             {isBreak ? (
-              <p className="text-3xl md:text-6xl font-black text-sky-300 mt-2">☕ BREAK</p>
+              <p className="text-3xl md:text-6xl font-black text-sky-300 mt-2">DESCANSO</p>
             ) : (
               <div className="text-center mt-1 md:mt-2">
                 <p className="text-xs md:text-xl font-bold uppercase tracking-[0.3em] text-gray-500 mb-1 md:mb-2">Blinds</p>
@@ -192,7 +192,7 @@ export default function TournamentTV() {
         <StatCard label="Siguiente" emoji="⏭"
           value={noStructure || !clock.next_level
             ? '—'
-            : (clock.next_level.is_break ? '☕ Break' : `${cop(clock.next_level.small_blind)}/${cop(clock.next_level.big_blind)}`)} />
+            : (clock.next_level.is_break ? 'Descanso' : `${cop(clock.next_level.small_blind)}/${cop(clock.next_level.big_blind)}`)} />
       </footer>
     </div>
   );

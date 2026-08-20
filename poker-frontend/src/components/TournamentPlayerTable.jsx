@@ -263,7 +263,7 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
             {/* HUD */}
             <div className={`grid grid-cols-2 md:grid-cols-3 ${showAvgStack ? 'xl:grid-cols-6' : 'xl:grid-cols-5'} gap-4 animate-fade-in-up`}>
                 <StatCard icon={<UserIcon className="w-10 h-10 text-blue-500" />} label="Jugadores" value={`${activePlayersCount} / ${playersWithStats.length}`} sub="Activos / Total" color="blue" />
-                {showAvgStack && <StatCard icon={<CircleStackIcon className="w-10 h-10 text-yellow-500" />} label="Stack Prom." value={avgStack.toLocaleString('es-CO')} sub="Fichas ÷ activos" color="green" />}
+                {showAvgStack && <StatCard icon={<CircleStackIcon className="w-10 h-10 text-green-500" />} label="Stack Prom." value={avgStack.toLocaleString('es-CO')} sub="Fichas ÷ activos" color="green" />}
                 <StatCard icon={<BanknotesIcon className="w-10 h-10 text-green-500" />} label="Pozo Bruto" value={formatCurrency(totalPotRaw)} sub="Total Recaudado" color="green" />
                 <StatCard icon={<ChartBarIcon className="w-10 h-10 text-violet-500" />} label="Rake Club" value={formatCurrency(houseRake)} sub={`${prices.rake}%`} color="violet" />
                 <StatCard icon={<HeartIcon className="w-10 h-10 text-pink-500" />} label="Staff Bonus" value={formatCurrency(totalTipsCollected)} sub={`${totalTipsCount} tips (${playersWithTip}/${playersWithStats.length} jugadores)`} color="pink" />
@@ -317,7 +317,7 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
                             type="search"
                             value={listSearch}
                             onChange={(e) => setListSearch(e.target.value)}
-                            placeholder="🔍 Buscar inscrito..."
+                            placeholder="Buscar inscrito..."
                             className="w-full bg-gray-900 text-white border border-gray-600 rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 placeholder-gray-500"
                         />
                     </div>
