@@ -465,7 +465,9 @@ async def create_bonus_all(
         meta={"type": "BONUS_TABLE", "amount": float(tx_data.amount), "session_id": session.id},
     )
     await db.commit()
-    return {"amount": float(tx_data.amount)}
+    # id: el toast del cajero lo usa para Deshacer (DELETE) — la misma red que
+    # tienen los cobros por jugador.
+    return {"id": new_tx.id, "amount": float(tx_data.amount)}
 
 
 # ---------------------------------------------------------
