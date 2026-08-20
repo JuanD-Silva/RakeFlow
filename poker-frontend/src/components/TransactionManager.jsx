@@ -11,7 +11,7 @@ import {
 } from '@heroicons/react/24/outline';
 
 export default function TransactionManager({ player, onClose, onUpdate }) {
-  useEscape(onClose, true);
+  useEscape(onClose, !loading);
   // 1. ESTADO LOCAL: Copiamos las transacciones para manipularlas al instante
   const [localTransactions, setLocalTransactions] = useState([]);
   
@@ -156,7 +156,7 @@ export default function TransactionManager({ player, onClose, onUpdate }) {
                         autoFocus
                         className="w-full bg-gray-900 border border-blue-500 text-white text-right px-2 py-1 rounded font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
                         value={editAmount}
-                        onChange={(e) => setEditAmount(e.target.value)}
+                        onChange={(e) => setEditAmount(e.target.value.replace(/\D/g, ""))}
                         onKeyDown={(e) => e.key === 'Enter' && handleSave(tx.id)}
                       />
                     ) : (

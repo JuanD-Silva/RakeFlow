@@ -840,7 +840,7 @@ const handleCreateTournament = async (formData) => {
         onConfirm={executeDeleteSession}
         isDeleting={isDeletingSession}
         title="¿Eliminar Mesa Activa?"
-        message={`${activeSession?.name || `Mesa #${activeSession?.id}`}: ${activeSession?.players_count ?? '?'} jugador${(activeSession?.players_count ?? 0) === 1 ? '' : 'es'} y ${formatMoney(activeSession?.total_buyin || 0)} en entradas.\nSe borra TODO su movimiento. Esto es irreversible.`}
+        message={`${activeSession?.name || `Mesa #${activeSession?.id}`}: ${activeSession?.players_count ?? '?'} jugador${(activeSession?.players_count ?? 0) === 1 ? '' : 'es'} y ${activeSession?.total_buyin != null ? formatMoney(activeSession.total_buyin) : '?'} en entradas.\nSe borra TODO su movimiento. Esto es irreversible.`}
       />
 
       <ConfirmModal

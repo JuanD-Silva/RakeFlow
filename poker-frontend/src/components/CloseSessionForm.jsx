@@ -313,6 +313,11 @@ export default function CloseSessionForm({ sessionId, onSuccess }) {
             className="mt-0.5 w-4 h-4 accent-red-500" />
           Entiendo: cierro con una diferencia de {auditMismatch.difference > 0 ? "+" : ""}$ {auditMismatch.difference?.toLocaleString()} que quedará registrada.
         </label>
+        {error && (
+          <div className="bg-red-500/20 text-red-200 p-3 rounded text-sm text-center border border-red-500">
+            {error}
+          </div>
+        )}
         <div className="flex gap-3 mt-3">
           <button
             type="button"
@@ -367,7 +372,7 @@ export default function CloseSessionForm({ sessionId, onSuccess }) {
           <input
             type="text" inputMode="numeric" pattern="[0-9]*"
             value={declaredRake}
-            onChange={(e) => setDeclaredRake(e.target.value)}
+            onChange={(e) => setDeclaredRake(e.target.value.replace(/\D/g, ""))}
             className="w-full bg-gray-800 text-white border border-gray-600 rounded-lg p-3 pl-8 focus:outline-none focus:border-green-500 transition-colors font-mono text-xl"
             placeholder="Ej: 500000"
             required
@@ -411,7 +416,7 @@ export default function CloseSessionForm({ sessionId, onSuccess }) {
           <input
             type="text" inputMode="numeric" pattern="[0-9]*"
             value={declaredJackpot}
-            onChange={(e) => setDeclaredJackpot(e.target.value)}
+            onChange={(e) => setDeclaredJackpot(e.target.value.replace(/\D/g, ""))}
             className="w-full bg-gray-800 text-white border border-gray-600 rounded-lg p-3 pl-8 focus:outline-none focus:border-purple-500 transition-colors font-mono text-xl"
             placeholder="Ej: 0"
           />
