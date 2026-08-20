@@ -127,6 +127,7 @@ export default function GameControl() {
   // evalúa en cada render y leer un const antes de su línea es TDZ = crash).
   useEscape(() => setShowEndTournamentModal(false), showEndTournamentModal && !isLoading);
   useEscape(() => setShowAuditModal(false), showAuditModal);
+  useEscape(() => setShowNewTableModal(false), showNewTableModal);
 
   // 1. CARGAR SESIÓN Y TORNEO ACTIVO
 useEffect(() => {
@@ -658,7 +659,7 @@ const handleCreateTournament = async (formData) => {
                 className="w-full bg-gray-700 hover:bg-red-900/80 text-red-200 font-bold py-3 rounded-lg border border-red-900/50 transition-colors cursor-pointer"
                 onClick={() => setShowCloseConfirm(true)}
               >
-                🔒 Cerrar Sesión Definitivamente
+                🔒 Cerrar la mesa y repartir
               </button>
               
               <div className="pt-4 flex justify-center gap-6">
@@ -839,7 +840,7 @@ const handleCreateTournament = async (formData) => {
         onConfirm={executeDeleteSession}
         isDeleting={isDeletingSession}
         title="¿Eliminar Mesa Activa?"
-        message={`Estás a punto de borrar la Sesión #${activeSession?.id}.\n\n⚠️ ESTO ES IRREVERSIBLE.`}
+        message={`${activeSession?.name || `Mesa #${activeSession?.id}`}: ${activeSession?.players_count ?? '?'} jugador${(activeSession?.players_count ?? 0) === 1 ? '' : 'es'} y ${formatMoney(activeSession?.total_buyin || 0)} en entradas.\nSe borra TODO su movimiento. Esto es irreversible.`}
       />
 
       <ConfirmModal
@@ -870,7 +871,7 @@ const handleCreateTournament = async (formData) => {
 
       {/* MODAL NUEVA MESA */}
       {showNewTableModal && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[60] backdrop-blur-md p-4 animate-fade-in">
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[60] backdrop-blur-md p-4 animate-fade-in" role="dialog" aria-modal="true" aria-label="Nueva mesa">
           <div className="bg-gray-900 rounded-2xl border border-emerald-500/30 shadow-2xl w-full max-w-sm max-h-[90vh] overflow-y-auto">
             <div className="bg-gray-800 p-4 border-b border-gray-700 flex items-center gap-3">
               <TableCellsIcon className="w-6 h-6 text-emerald-400" />
@@ -891,7 +892,7 @@ const handleCreateTournament = async (formData) => {
                   maxLength={100}
                   autoFocus
                 />
-                <p className="text-xs text-gray-500 mt-2">Si lo dejas vacio se mostrara como "Mesa #ID". El siguiente paso registra el primer jugador.</p>
+                <p className="text-xs text-gray-500 mt-2">Si lo dejas vacío se mostrará como "Mesa #ID". El siguiente paso registra el primer jugador.</p>
               </div>
               <div>
                 <label className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-2 block">

@@ -280,7 +280,7 @@ export default function TransactionForm({ type, onSuccess, sessionId, createSess
       
       {/* MENSAJE DE ERROR */}
       {error && (
-        <div className="bg-red-500/10 border border-red-500/50 text-red-200 p-4 rounded-xl text-sm flex items-center gap-3 animate-pulse">
+        <div className="bg-red-500/10 border border-red-500/50 text-red-200 p-4 rounded-xl text-sm flex items-center gap-3">
           <ExclamationTriangleIcon className="w-5 h-5 text-red-500" />
           <span>{error}</span>
         </div>
@@ -376,7 +376,7 @@ export default function TransactionForm({ type, onSuccess, sessionId, createSess
                   placeholder={loadingPlayers ? "Cargando base de datos..." : "Buscar por nombre..."}
                   disabled={loadingPlayers}
                 />
-                {playerId && <CheckBadgeIcon className="absolute right-4 top-4 w-6 h-6 text-emerald-500 animate-bounce" />}
+                {playerId && <CheckBadgeIcon className="absolute right-4 top-4 w-6 h-6 text-emerald-500" />}
               </div>
 
               {/* DROPDOWN FLOTANTE */}

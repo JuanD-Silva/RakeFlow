@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import confetti from 'canvas-confetti';
 import { sessionService } from '../api/services';
 import { formatMoney } from '../utils/formatters';
 
@@ -24,7 +25,17 @@ export default function CloseSessionForm({ sessionId, onSuccess }) {
   
   // Estados para controlar el flujo visual
   const [auditMismatch, setAuditMismatch] = useState(null); // Alerta Roja
+  const [forceAck, setForceAck] = useState(false); // ack para forzar con descuadre
   const [isSuccess, setIsSuccess] = useState(false);        // Factura Verde
+  useEffect(() => {
+    if (!isSuccess) return undefined;
+    const bursts = [
+      setTimeout(() => confetti({ particleCount: 100, spread: 70, origin: { y: 0.7 } }), 150),
+      setTimeout(() => confetti({ particleCount: 50, angle: 60, spread: 55, origin: { x: 0, y: 0.8 } }), 450),
+      setTimeout(() => confetti({ particleCount: 50, angle: 120, spread: 55, origin: { x: 1, y: 0.8 } }), 650),
+    ];
+    return () => bursts.forEach(clearTimeout);
+  }, [isSuccess]);
   const [closureReport, setClosureReport] = useState(null); // Datos finales
 
 
@@ -251,10 +262,10 @@ export default function CloseSessionForm({ sessionId, onSuccess }) {
         </div>
 
         <button
-          onClick={onSuccess} 
-          className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-8 rounded-lg shadow-lg transition-transform transform hover:scale-105"
+          onClick={onSuccess}
+          className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black uppercase tracking-wider py-3.5 px-8 rounded-xl shadow-lg shadow-emerald-900/40 transition-colors"
         >
-          Finalizar y Salir
+          Cerrar la noche
         </button>
       </div>
     );
@@ -266,7 +277,7 @@ export default function CloseSessionForm({ sessionId, onSuccess }) {
   if (auditMismatch) {
     return (
       <div className="space-y-5 animate-fade-in">
-        <div className="bg-red-900/20 border-l-4 border-red-500 p-4 rounded-r">
+        <div className="bg-red-900/20 border border-red-500/40 p-4 rounded-xl">
           <div className="flex items-center gap-2">
             <span className="text-2xl">⚠️</span>
             <h3 className="text-red-400 font-bold uppercase tracking-wider">¡Descuadre Detectado!</h3>
@@ -294,24 +305,34 @@ export default function CloseSessionForm({ sessionId, onSuccess }) {
           </div>
         </div>
 
-        <div className="flex gap-3 mt-4">
+        {/* Forzar con descuadre = decisión grave: ack explícito y jerarquía
+            invertida — el camino recomendado (Corregir) es el prominente; el
+            destructivo NO late (el pulse atraía el ojo justo a donde no era). */}
+        <label className="flex items-start gap-2 text-left text-sm text-gray-300 mt-4 cursor-pointer select-none">
+          <input type="checkbox" checked={forceAck} onChange={(e) => setForceAck(e.target.checked)}
+            className="mt-0.5 w-4 h-4 accent-red-500" />
+          Entiendo: cierro con una diferencia de {auditMismatch.difference > 0 ? "+" : ""}$ {auditMismatch.difference?.toLocaleString()} que quedará registrada.
+        </label>
+        <div className="flex gap-3 mt-3">
           <button
             type="button"
             onClick={() => {
                setAuditMismatch(null);
+               setForceAck(false);
                setError(null);
-            }} 
-            className="flex-1 bg-gray-600 hover:bg-gray-500 text-white py-3 rounded-lg font-bold transition-colors"
+            }}
+            className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-lg font-bold transition-colors"
           >
-            🔙 Corregir
+            Corregir la declaración
           </button>
-          
+
           <button
             type="button"
-            onClick={(e) => handleSubmit(e, true)} 
-            className="flex-1 bg-red-600 hover:bg-red-500 text-white py-3 rounded-lg font-bold shadow-lg shadow-red-900/50 transition-colors animate-pulse"
+            onClick={(e) => handleSubmit(e, true)}
+            disabled={!forceAck || loading}
+            className="flex-1 bg-gray-800 hover:bg-red-900/60 disabled:opacity-40 disabled:cursor-not-allowed text-red-300 border border-red-900/60 py-3 rounded-lg font-bold transition-colors"
           >
-            🚨 FORZAR CIERRE
+            Forzar cierre
           </button>
         </div>
       </div>
@@ -331,7 +352,7 @@ export default function CloseSessionForm({ sessionId, onSuccess }) {
       </div>
 
       {error && (
-        <div className="bg-red-500/20 text-red-200 p-3 rounded text-sm text-center border border-red-500 animate-pulse">
+        <div className="bg-red-500/20 text-red-200 p-3 rounded text-sm text-center border border-red-500">
           {error}
         </div>
       )}
@@ -344,7 +365,7 @@ export default function CloseSessionForm({ sessionId, onSuccess }) {
         <div className="relative">
           <span className="absolute left-3 top-3 text-green-500 font-bold">$</span>
           <input
-            type="number"
+            type="text" inputMode="numeric" pattern="[0-9]*"
             value={declaredRake}
             onChange={(e) => setDeclaredRake(e.target.value)}
             className="w-full bg-gray-800 text-white border border-gray-600 rounded-lg p-3 pl-8 focus:outline-none focus:border-green-500 transition-colors font-mono text-xl"
@@ -388,7 +409,7 @@ export default function CloseSessionForm({ sessionId, onSuccess }) {
         <div className="relative">
           <span className="absolute left-3 top-3 text-purple-500 font-bold">$</span>
           <input
-            type="number"
+            type="text" inputMode="numeric" pattern="[0-9]*"
             value={declaredJackpot}
             onChange={(e) => setDeclaredJackpot(e.target.value)}
             className="w-full bg-gray-800 text-white border border-gray-600 rounded-lg p-3 pl-8 focus:outline-none focus:border-purple-500 transition-colors font-mono text-xl"

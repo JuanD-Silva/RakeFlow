@@ -1,6 +1,7 @@
 // src/components/TransactionManager.jsx
 import { useState, useEffect } from 'react';
 import api from '../api/axios';
+import { useEscape } from '../hooks/useEscape';
 import { 
   PencilSquareIcon, 
   TrashIcon, 
@@ -10,6 +11,7 @@ import {
 } from '@heroicons/react/24/outline';
 
 export default function TransactionManager({ player, onClose, onUpdate }) {
+  useEscape(onClose, true);
   // 1. ESTADO LOCAL: Copiamos las transacciones para manipularlas al instante
   const [localTransactions, setLocalTransactions] = useState([]);
   
@@ -99,12 +101,12 @@ export default function TransactionManager({ player, onClose, onUpdate }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in" role="dialog" aria-modal="true" aria-label={`Movimientos de ${player?.name || "jugador"}`}>
       <div className="bg-gray-900 border border-gray-700 w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden relative flex flex-col max-h-[90vh]">
         
         {/* NOTIFICACIÓN FLOTANTE */}
         {notification && (
-          <div className={`absolute top-4 left-1/2 -translate-x-1/2 px-4 py-2 rounded-lg shadow-lg text-sm font-bold z-20 flex items-center gap-2 animate-bounce-in ${
+          <div className={`absolute top-4 left-1/2 -translate-x-1/2 px-4 py-2 rounded-lg shadow-lg text-sm font-bold z-20 flex items-center gap-2 animate-fade-in ${
             notification.type === 'error' ? 'bg-red-500 text-white' : 'bg-emerald-500 text-white'
           }`}>
             {notification.type === 'success' && <CheckIcon className="w-4 h-4" />}
@@ -150,7 +152,7 @@ export default function TransactionManager({ player, onClose, onUpdate }) {
                   <div className="flex-1 mx-4 text-right">
                     {editingId === tx.id ? (
                       <input 
-                        type="number" 
+                        type="text" inputMode="numeric" pattern="[0-9]*" 
                         autoFocus
                         className="w-full bg-gray-900 border border-blue-500 text-white text-right px-2 py-1 rounded font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
                         value={editAmount}
