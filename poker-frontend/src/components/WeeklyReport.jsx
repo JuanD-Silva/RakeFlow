@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import api from '../api/axios';
 import KPIDashboard from '../components/KPIDashboard';
 import DealerPaymentsTable from './DealerPaymentsTable';
@@ -20,7 +20,27 @@ export default function WeeklyReport() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState('week');
-  const [referenceDate, setReferenceDate] = useState(new Date());
+  // Default anti-"trampa del lunes": si la semana en curso lleva menos de un
+  // día completo (lunes), arrancamos en la semana CERRADA — que es la que el
+  // dueño viene a revisar. Navegar con → siempre permite volver a hoy.
+  const [referenceDate, setReferenceDate] = useState(() => {
+    const hoy = new Date();
+    if (hoy.getDay() === 1) { const d = new Date(hoy); d.setDate(d.getDate() - 7); return d; }
+    return hoy;
+  });
+  // El ancla -7 es un hack SOLO para la vista semanal: al saltar a día/mes sin
+  // haber navegado, volvemos a hoy (DIARIO del lunes = hoy, no hace 7 días;
+  // MENSUAL del 1° = este mes, no el pasado). Si el usuario ya navegó con las
+  // flechas, el periodo elegido se preserva en todos los modos.
+  const inicioLunesRef = useRef(new Date().getDay() === 1);
+  const navegadoRef = useRef(false);
+  const cambiarModo = (m) => {
+    setViewMode(m);
+    if (m !== 'week' && inicioLunesRef.current && !navegadoRef.current) {
+      setReferenceDate(new Date());
+      inicioLunesRef.current = false;
+    }
+  };
   const [reportTab, setReportTab] = useState('distribution'); // 'distribution' | 'dealers'
   const { email } = useAuth();
 
@@ -59,10 +79,16 @@ export default function WeeklyReport() {
     fetchData();
   }, [referenceDate, viewMode]);
 
+  // Secuencia anti-respuestas-viejas: encadenar taps de ← dispara varios
+  // fetches; solo la respuesta del MÁS reciente puede pintar (patrón reqSeq
+  // de GameControl).
+  const fetchSeqRef = useRef(0);
   const fetchData = async () => {
+    const myReq = ++fetchSeqRef.current;
     setLoading(true);
     try {
       const res = await api.get(`/stats/weekly-distribution?start_date=${formatDateISO(range.start)}&end_date=${formatDateISO(range.end)}`);
+      if (myReq !== fetchSeqRef.current) return;
 
       if (res.data.error) {
         console.error("Server Error:", res.data.error);
@@ -71,27 +97,31 @@ export default function WeeklyReport() {
         setData(res.data);
       }
     } catch (error) {
+      if (myReq !== fetchSeqRef.current) return;
       console.error("Error cargando reporte:", error);
       setData({ error: "Error de conexión" });
     } finally {
-      setLoading(false);
+      if (myReq === fetchSeqRef.current) setLoading(false);
     }
   };
 
   const changePeriod = (direction) => {
+    navegadoRef.current = true;
     const newDate = new Date(referenceDate);
     if (viewMode === 'day') {
       newDate.setDate(newDate.getDate() + direction);
     } else if (viewMode === 'week') {
       newDate.setDate(newDate.getDate() + (direction * 7));
     } else {
-      newDate.setMonth(newDate.getMonth() + direction);
+      // Sobre el día 1: setMonth con día 29-31 desborda (31-mar − 1 mes = 3-mar)
+      // y el "mes anterior" era un no-op silencioso.
+      return setReferenceDate(new Date(newDate.getFullYear(), newDate.getMonth() + direction, 1));
     }
     setReferenceDate(newDate);
   };
 
 
-  if (loading) return (
+  if (loading && (!data || data.error)) return (
     <div className="flex flex-col items-center justify-center h-64 space-y-4">
       <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
       <p className="text-gray-500 font-mono text-sm">Calculando estados financieros...</p>
@@ -153,7 +183,7 @@ export default function WeeklyReport() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto p-6 space-y-8 animate-fade-in">
+    <div className={`transition-opacity ${loading ? "opacity-60" : ""} max-w-5xl mx-auto p-6 space-y-8 animate-fade-in`}>
       {reportTab === 'distribution' && <KPIDashboard startDate={range.start} endDate={range.end} />}
 
       {/* TABS: Distribución / Dealers  +  Exportar */}
@@ -179,19 +209,19 @@ export default function WeeklyReport() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gray-800/40 p-4 rounded-2xl border border-gray-700/50 backdrop-blur-sm">
         <div className="flex bg-gray-900 p-1 rounded-xl w-fit">
           <button
-            onClick={() => { setViewMode('day'); setReferenceDate(new Date()); }}
+            onClick={() => cambiarModo('day')}
             className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${viewMode === 'day' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
           >
             DIARIO
           </button>
           <button
-            onClick={() => { setViewMode('week'); setReferenceDate(new Date()); }}
+            onClick={() => cambiarModo('week')}
             className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${viewMode === 'week' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
           >
             SEMANAL
           </button>
           <button
-            onClick={() => { setViewMode('month'); setReferenceDate(new Date()); }}
+            onClick={() => cambiarModo('month')}
             className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${viewMode === 'month' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
           >
             MENSUAL
@@ -384,6 +414,12 @@ export default function WeeklyReport() {
           <div className="col-span-full py-20 bg-gray-800/20 border-2 border-dashed border-gray-700 rounded-3xl flex flex-col items-center justify-center text-gray-500">
             <CalendarDaysIcon className="w-12 h-12 mb-4 opacity-20" />
             <p className="font-bold uppercase tracking-widest text-xs">Sin actividad financiera en este periodo</p>
+            <button
+              onClick={() => changePeriod(-1)}
+              className="mt-4 px-4 py-2.5 rounded-xl bg-blue-600/15 border border-blue-500/40 text-blue-300 hover:bg-blue-600/25 text-xs font-bold uppercase tracking-wider transition-colors"
+            >
+              ‹ Ver {viewMode === 'day' ? 'el día anterior' : viewMode === 'week' ? 'la semana pasada' : 'el mes pasado'}
+            </button>
           </div>
         )}
       </div>
