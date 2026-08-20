@@ -217,6 +217,9 @@ async def get_weekly_distribution(
                 "name": "Gastos (dealers + cortesías)",
                 "total": int(expenses_week),
                 "percent": 0,
+                # type EXPLÍCITO: la UI clasificaba por substring del nombre y
+                # una regla llamada "...fijo..." se pintaba como meta.
+                "type": "EXPENSES",
             })
 
         #
@@ -256,7 +259,8 @@ async def get_weekly_distribution(
                 distribution.append({
                     "name": quota_rule.name or "Meta Mensual",
                     "total": int(payment),
-                    "percent": 0 # Indicador visual
+                    "percent": 0,  # Indicador visual
+                    "type": "META",
                 })
                 remaining_pool -= payment
 
@@ -274,10 +278,11 @@ async def get_weekly_distribution(
                     distribution.append({
                         "name": r.name,
                         "total": int(amount),
-                        "percent": r.value
+                        "percent": r.value,
+                        "type": "PARTNER",
                     })
             else:
-                distribution.append({"name": "Fondo Club", "total": int(remaining_pool), "percent": 100})
+                distribution.append({"name": "Fondo Club", "total": int(remaining_pool), "percent": 100, "type": "FUND"})
 
         return {
             "range": { "start": start_dt.strftime("%d %b"), "end": end_dt.strftime("%d %b") },

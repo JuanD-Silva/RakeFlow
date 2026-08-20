@@ -111,17 +111,20 @@ export default function WeeklyReport() {
   if (!data) return <div className="text-center text-gray-500 mt-10">No hay datos disponibles.</div>;
 
   // --- LÓGICA DE CLASIFICACIÓN ---
-  const isGasto = (item) => item.percent === 0;
-  const isSocio = (item) => item.percent > 0;
-
-  const isMetaItem = (item) => {
+  // El backend manda `type` explícito (EXPENSES/META/PARTNER/FUND): la UI NO
+  // adivina por substrings del nombre — una regla llamada "...fijo..." se
+  // pintaba como meta. El fallback heurístico existe SOLO para la carrera de
+  // deploys (backend viejo sin type) y se puede borrar en el próximo pase.
+  const itemType = (item) => {
+    if (item.type) return item.type;
+    if (item.percent > 0) return 'PARTNER';
     const n = item.name.toLowerCase();
-    return isGasto(item) && (n.includes('meta') || n.includes('deuda') || n.includes('quota') || n.includes('fijo') || (!n.includes('caja') && !n.includes('fondo') && !n.includes('reserva') && !n.includes('operativo')));
+    if (n.includes('caja') || n.includes('fondo') || n.includes('reserva') || n.includes('operativo')) return 'FUND';
+    return 'META';
   };
-  const isFondoItem = (item) => {
-    const n = item.name.toLowerCase();
-    return isGasto(item) && (n.includes('caja') || n.includes('fondo') || n.includes('reserva') || n.includes('operativo'));
-  };
+  const isSocio = (item) => itemType(item) === 'PARTNER' || itemType(item) === 'FUND';
+  const isMetaItem = (item) => itemType(item) === 'META';
+  const isFondoItem = (item) => itemType(item) === 'FUND';
 
   const totalSocios = data.distribution.filter(isSocio).reduce((acc, curr) => acc + curr.total, 0);
   const totalMeta = data.distribution.filter(isMetaItem).reduce((acc, curr) => acc + curr.total, 0);
@@ -236,8 +239,15 @@ export default function WeeklyReport() {
             <p className="text-3xl font-black text-white font-mono">{cajaEgresos > 0 ? `− ${formatMoney(cajaEgresos)}` : formatMoney(0)}</p>
           </div>
           <div className="bg-gradient-to-br from-emerald-900/20 to-transparent border border-emerald-500/20 p-5 rounded-2xl">
-            <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest mb-1">✅ Neto a repartir</p>
-            <p className="text-3xl font-black text-white font-mono">{formatMoney(cajaNeto)}</p>
+            {/* La semana que se pierde se dice de frente: nada de celebrar un
+                monto negativo con un checkmark. */}
+            <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${cajaNeto < 0 ? 'text-red-400' : 'text-emerald-400'}`}>
+              {cajaNeto < 0 ? '⚠ Pérdida del periodo' : '✅ Neto a repartir'}
+            </p>
+            <p className={`text-3xl font-black font-mono ${cajaNeto < 0 ? 'text-red-300' : 'text-white'}`}>{formatMoney(cajaNeto)}</p>
+            {cajaNeto < 0 && (
+              <p className="text-red-300/80 text-xs mt-1">Los gastos (dealers y cortesías) superaron el rake. Revisa la pestaña Dealers.</p>
+            )}
           </div>
         </div>
       </div>
@@ -275,12 +285,12 @@ export default function WeeklyReport() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {data.distribution.length > 0 ? (
           data.distribution.map((item, idx) => {
-            const n = item.name.toLowerCase();
-            const isMeta = n.includes('meta') || n.includes('deuda') || n.includes('quota') || n.includes('fijo');
-            const isFondo = n.includes('caja') || n.includes('fondo') || n.includes('reserva') || n.includes('operativo');
+            const t = itemType(item);
+            const isMeta = t === 'META' || t === 'EXPENSES';
+            const isFondo = t === 'FUND';
 
             let theme;
-            if (isMeta || (isGasto(item) && !isFondo)) {
+            if (isMeta && !isFondo) {
                 theme = {
                     icon: ScaleIcon,
                     label: "Reparto · Abono a meta (prioridad 1)",
