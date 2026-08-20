@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import api from '../api/axios';
 import KPIDashboard from '../components/KPIDashboard';
 import DealerPaymentsTable from './DealerPaymentsTable';
@@ -20,7 +20,14 @@ export default function WeeklyReport() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState('week');
-  const [referenceDate, setReferenceDate] = useState(new Date());
+  // Default anti-"trampa del lunes": si la semana en curso lleva menos de un
+  // día completo (lunes), arrancamos en la semana CERRADA — que es la que el
+  // dueño viene a revisar. Navegar con → siempre permite volver a hoy.
+  const [referenceDate, setReferenceDate] = useState(() => {
+    const hoy = new Date();
+    if (hoy.getDay() === 1) { const d = new Date(hoy); d.setDate(d.getDate() - 7); return d; }
+    return hoy;
+  });
   const [reportTab, setReportTab] = useState('distribution'); // 'distribution' | 'dealers'
   const { email } = useAuth();
 
@@ -59,10 +66,16 @@ export default function WeeklyReport() {
     fetchData();
   }, [referenceDate, viewMode]);
 
+  // Secuencia anti-respuestas-viejas: encadenar taps de ← dispara varios
+  // fetches; solo la respuesta del MÁS reciente puede pintar (patrón reqSeq
+  // de GameControl).
+  const fetchSeqRef = useRef(0);
   const fetchData = async () => {
+    const myReq = ++fetchSeqRef.current;
     setLoading(true);
     try {
       const res = await api.get(`/stats/weekly-distribution?start_date=${formatDateISO(range.start)}&end_date=${formatDateISO(range.end)}`);
+      if (myReq !== fetchSeqRef.current) return;
 
       if (res.data.error) {
         console.error("Server Error:", res.data.error);
@@ -71,10 +84,11 @@ export default function WeeklyReport() {
         setData(res.data);
       }
     } catch (error) {
+      if (myReq !== fetchSeqRef.current) return;
       console.error("Error cargando reporte:", error);
       setData({ error: "Error de conexión" });
     } finally {
-      setLoading(false);
+      if (myReq === fetchSeqRef.current) setLoading(false);
     }
   };
 
@@ -91,7 +105,7 @@ export default function WeeklyReport() {
   };
 
 
-  if (loading) return (
+  if (loading && !data) return (
     <div className="flex flex-col items-center justify-center h-64 space-y-4">
       <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
       <p className="text-gray-500 font-mono text-sm">Calculando estados financieros...</p>
@@ -153,7 +167,7 @@ export default function WeeklyReport() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto p-6 space-y-8 animate-fade-in">
+    <div className={`${loading ? "opacity-60 transition-opacity" : ""} max-w-5xl mx-auto p-6 space-y-8 animate-fade-in`}>
       {reportTab === 'distribution' && <KPIDashboard startDate={range.start} endDate={range.end} />}
 
       {/* TABS: Distribución / Dealers  +  Exportar */}
@@ -179,19 +193,19 @@ export default function WeeklyReport() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gray-800/40 p-4 rounded-2xl border border-gray-700/50 backdrop-blur-sm">
         <div className="flex bg-gray-900 p-1 rounded-xl w-fit">
           <button
-            onClick={() => { setViewMode('day'); setReferenceDate(new Date()); }}
+            onClick={() => setViewMode('day')}
             className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${viewMode === 'day' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
           >
             DIARIO
           </button>
           <button
-            onClick={() => { setViewMode('week'); setReferenceDate(new Date()); }}
+            onClick={() => setViewMode('week')}
             className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${viewMode === 'week' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
           >
             SEMANAL
           </button>
           <button
-            onClick={() => { setViewMode('month'); setReferenceDate(new Date()); }}
+            onClick={() => setViewMode('month')}
             className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${viewMode === 'month' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
           >
             MENSUAL
@@ -384,6 +398,12 @@ export default function WeeklyReport() {
           <div className="col-span-full py-20 bg-gray-800/20 border-2 border-dashed border-gray-700 rounded-3xl flex flex-col items-center justify-center text-gray-500">
             <CalendarDaysIcon className="w-12 h-12 mb-4 opacity-20" />
             <p className="font-bold uppercase tracking-widest text-xs">Sin actividad financiera en este periodo</p>
+            <button
+              onClick={() => changePeriod(-1)}
+              className="mt-4 px-4 py-2.5 rounded-xl bg-blue-600/15 border border-blue-500/40 text-blue-300 hover:bg-blue-600/25 text-xs font-bold uppercase tracking-wider transition-colors"
+            >
+              ‹ Ver {viewMode === 'day' ? 'el día anterior' : viewMode === 'week' ? 'la semana pasada' : 'el mes pasado'}
+            </button>
           </div>
         )}
       </div>
