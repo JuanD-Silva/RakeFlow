@@ -153,6 +153,8 @@ async def get_dashboard_stats(
         total_in = int(cash_buyin_total + tourney_gross)
 
         return {
+            # Rake del rango (bruto): lo usa el KPI "vs periodo anterior".
+            "rake_range": int(range_profit),
             "avg_rake_hour": int(range_profit / total_hours) if total_hours > 0 else 0,
             "total_hours": round(total_hours, 1),
             "total_sessions": total_sessions,

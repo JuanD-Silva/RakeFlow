@@ -8,7 +8,13 @@ import {
   ClockIcon,
   TableCellsIcon,
   TrophyIcon,
+  BanknotesIcon,
+  ArrowTrendingUpIcon,
+  ArrowTrendingDownIcon,
+  ExclamationTriangleIcon,
+  CheckCircleIcon,
 } from '@heroicons/react/24/outline';
+import { useEscape } from '../hooks/useEscape';
 
 function formatDuration(minutes) {
   if (!minutes || minutes <= 0) return '0m';
@@ -25,9 +31,11 @@ function formatDate(iso) {
   return d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-export default function KPIDashboard({ startDate, endDate } = {}) {
+export default function KPIDashboard({ startDate, endDate, netPeriodo = null } = {}) {
   const [stats, setStats] = useState(null);
   const [quota, setQuota] = useState(null);
+  const [prevStats, setPrevStats] = useState(null);
+  const [dealerPending, setDealerPending] = useState(null);
   const [error, setError] = useState(null);
 
   // Modal de "Horas operadas"
@@ -51,12 +59,32 @@ export default function KPIDashboard({ startDate, endDate } = {}) {
           };
           params = `?start_date=${fmt(startDate)}&end_date=${fmt(endDate)}`;
         }
-        const [dashRes, quotaRes] = await Promise.all([
+        // Periodo ANTERIOR de la misma duración (para el KPI "vs anterior")
+        let prevParams = '';
+        let curQuery = '';
+        if (startDate && endDate) {
+          const fmt2 = (d) => {
+            const y = d.getFullYear();
+            const m2 = String(d.getMonth() + 1).padStart(2, '0');
+            const day2 = String(d.getDate()).padStart(2, '0');
+            return `${y}-${m2}-${day2}`;
+          };
+          const dur = Math.round((endDate - startDate) / 86400000) + 1;
+          const prevEnd = new Date(startDate); prevEnd.setDate(prevEnd.getDate() - 1);
+          const prevStart = new Date(prevEnd); prevStart.setDate(prevStart.getDate() - dur + 1);
+          prevParams = `?start_date=${fmt2(prevStart)}&end_date=${fmt2(prevEnd)}`;
+          curQuery = `start_date=${fmt2(startDate)}&end_date=${fmt2(endDate)}`;
+        }
+        const [dashRes, quotaRes, prevRes, dealersRes] = await Promise.all([
           api.get(`/stats/dashboard${params}`),
           api.get(`/stats/monthly-debt-quota${params}`),
+          prevParams ? api.get(`/stats/dashboard${prevParams}`).catch(() => ({ data: null })) : Promise.resolve({ data: null }),
+          curQuery ? api.get(`/stats/dealer-payments?${curQuery}`).catch(() => ({ data: null })) : Promise.resolve({ data: null }),
         ]);
         setStats(dashRes.data);
         setQuota(quotaRes.data);
+        setPrevStats(prevRes.data);
+        setDealerPending(dealersRes.data?.summary?.pending ?? null);
       } catch (e) {
         console.error("Error KPIs", e);
         setError("Error al cargar indicadores");
@@ -64,6 +92,8 @@ export default function KPIDashboard({ startDate, endDate } = {}) {
     }
     fetchStats();
   }, [startDate, endDate]);
+
+  useEscape(() => setShowHoursModal(false), showHoursModal);
 
   const openHoursModal = async () => {
     setShowHoursModal(true);
@@ -102,24 +132,35 @@ export default function KPIDashboard({ startDate, endDate } = {}) {
     );
   }
 
-  const Card = ({ title, value, sub, icon, color, onClick }) => (
-    <div
-      onClick={onClick}
-      className={`bg-gray-800 rounded-xl p-4 border-l-4 ${color} shadow-lg flex items-center justify-between ${
-        onClick ? 'cursor-pointer hover:bg-gray-750 hover:shadow-xl transition-all group' : ''
-      }`}
-    >
-      <div>
-        <p className="text-gray-400 text-xs uppercase font-bold tracking-wider flex items-center gap-1.5">
-          {title}
-          {onClick && <span className="text-[10px] text-blue-400 group-hover:text-blue-300">› ver detalle</span>}
-        </p>
-        <p className="text-2xl font-bold text-white font-mono mt-1">{value}</p>
-        {sub && <p className="text-xs text-gray-500 mt-1">{sub}</p>}
-      </div>
-      <div className="text-3xl opacity-20 text-white select-none">{icon}</div>
-    </div>
-  );
+  const Card = ({ title, value, sub, Icon, border, iconColor, valueColor = 'text-white', onClick }) => {
+    const Tag = onClick ? 'button' : 'div';
+    return (
+      <Tag
+        {...(onClick ? { type: 'button', onClick } : {})}
+        className={`bg-gray-800 rounded-xl p-4 border ${border} shadow-lg flex items-center justify-between text-left w-full ${
+          onClick ? 'cursor-pointer hover:bg-gray-700/50 hover:shadow-xl transition-all group' : ''
+        }`}
+      >
+        <div className="min-w-0">
+          <p className="text-gray-400 text-xs uppercase font-bold tracking-wider flex items-center gap-1.5">
+            {title}
+            {onClick && <span className="text-[10px] text-blue-400 group-hover:text-blue-300">› ver detalle</span>}
+          </p>
+          <p className={`text-2xl font-bold font-mono mt-1 truncate ${valueColor}`}>{value}</p>
+          {sub && <p className="text-xs text-gray-400 mt-1">{sub}</p>}
+        </div>
+        {Icon && <Icon className={`w-9 h-9 shrink-0 ${iconColor}`} />}
+      </Tag>
+    );
+  };
+
+  // KPIs del DUEÑO: cuánto quedó, cómo va vs el periodo anterior, a quién le
+  // debo — las preguntas del lunes. Las métricas de operación (rake/hora,
+  // ticket) viven en el detalle de horas y en Estadísticas.
+  const rakeActual = stats.rake_range ?? null;
+  const rakePrevio = prevStats?.rake_range ?? null;
+  const delta = rakeActual != null && rakePrevio != null ? rakeActual - rakePrevio : null;
+  const deltaPct = delta != null && rakePrevio > 0 ? Math.round((delta / rakePrevio) * 100) : null;
 
   // Histórico ordenado por fecha desc + total de horas calculado
   const sortedHistory = [...historyItems].sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -130,36 +171,42 @@ export default function KPIDashboard({ startDate, endDate } = {}) {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8 animate-fade-in">
 
         <Card
-          title="Rake / Hora"
-          value={`$${stats.avg_rake_hour?.toLocaleString() ?? 0}`}
-          sub="Promedio del periodo"
-          icon="⚡"
-          color="border-yellow-500"
+          title="Neto del periodo"
+          value={netPeriodo != null ? formatMoney(netPeriodo) : formatMoney(rakeActual || 0)}
+          sub={netPeriodo != null ? (netPeriodo < 0 ? 'Pérdida: los gastos superaron el rake' : 'Rake bruto − dealers y cortesías') : 'Rake bruto del periodo'}
+          Icon={BanknotesIcon}
+          border={netPeriodo != null && netPeriodo < 0 ? 'border-red-500/40' : 'border-emerald-500/30'}
+          iconColor={netPeriodo != null && netPeriodo < 0 ? 'text-red-400' : 'text-emerald-400'}
+          valueColor={netPeriodo != null && netPeriodo < 0 ? 'text-red-300' : 'text-white'}
         />
 
         <Card
-          title="Horas Operadas"
+          title="Vs periodo anterior"
+          value={deltaPct != null ? `${delta >= 0 ? '+' : ''}${deltaPct}%` : (delta != null ? `${delta >= 0 ? '+' : ''}${formatMoney(delta)}` : '—')}
+          sub={rakePrevio != null ? `Rake bruto: ${formatMoney(rakeActual || 0)} vs ${formatMoney(rakePrevio)}` : 'Sin datos del periodo anterior'}
+          Icon={delta != null && delta < 0 ? ArrowTrendingDownIcon : ArrowTrendingUpIcon}
+          border={delta != null && delta < 0 ? 'border-red-500/40' : 'border-blue-500/30'}
+          iconColor={delta != null && delta < 0 ? 'text-red-400' : 'text-blue-400'}
+          valueColor={delta != null && delta < 0 ? 'text-red-300' : 'text-white'}
+        />
+
+        <Card
+          title="Pendiente a dealers"
+          value={dealerPending != null ? formatMoney(dealerPending) : '—'}
+          sub={dealerPending > 0 ? 'Liquida en la pestaña Dealers' : dealerPending === 0 ? 'Al día con el equipo' : 'Sin datos'}
+          Icon={dealerPending > 0 ? ExclamationTriangleIcon : CheckCircleIcon}
+          border={dealerPending > 0 ? 'border-amber-500/40' : 'border-gray-700'}
+          iconColor={dealerPending > 0 ? 'text-amber-400' : 'text-gray-500'}
+        />
+
+        <Card
+          title="Horas operadas"
           value={`${stats.total_hours ?? 0}h`}
           sub={`${stats.total_sessions ?? 0} sesiones del periodo`}
-          icon="⏱️"
-          color="border-blue-500"
+          Icon={ClockIcon}
+          border="border-blue-500/30"
+          iconColor="text-blue-400"
           onClick={openHoursModal}
-        />
-
-        <Card
-          title="Buy-in Promedio"
-          value={`$${stats.avg_ticket?.toLocaleString() ?? 0}`}
-          sub="Por entrada"
-          icon="🎟️"
-          color="border-purple-500"
-        />
-
-        <Card
-          title="Total Movido"
-          value={formatMoney(stats.total_in || 0)}
-          sub="Buyins cash + pozos torneos"
-          icon="💸"
-          color="border-emerald-500"
         />
 
         {quota && quota.target > 0 && (
@@ -191,7 +238,7 @@ export default function KPIDashboard({ startDate, endDate } = {}) {
 
       {/* MODAL: Detalle de horas operadas (sesiones cash + torneos) */}
       {showHoursModal && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fade-in" onClick={() => setShowHoursModal(false)}>
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fade-in" onClick={() => setShowHoursModal(false)} role="dialog" aria-modal="true" aria-label="Detalle de horas operadas">
           <div className="bg-gray-900 rounded-2xl border border-blue-500/30 shadow-2xl w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
             <div className="bg-gray-800 px-5 py-4 border-b border-gray-700 flex items-center justify-between">
               <div>

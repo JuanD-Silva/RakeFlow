@@ -184,7 +184,7 @@ export default function WeeklyReport() {
 
   return (
     <div className={`transition-opacity ${loading ? "opacity-60" : ""} max-w-5xl mx-auto p-6 space-y-8 animate-fade-in`}>
-      {reportTab === 'distribution' && <KPIDashboard startDate={range.start} endDate={range.end} />}
+      {reportTab === 'distribution' && <KPIDashboard startDate={range.start} endDate={range.end} netPeriodo={data.net_week ?? null} />}
 
       {/* TABS: Distribución / Dealers  +  Exportar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
