@@ -145,11 +145,18 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
     };
 
     const handleRequestFinalize = (winnersList) => {
+        // RECAP en el propio confirm: el sí de la transacción más grande de la
+        // noche no se da a ciegas (el PayoutModal queda tapado por el backdrop).
+        const payoutPcts = tournament.payout_structure || [];
+        const recap = [...winnersList]
+            .sort((a, b) => a.rank - b.rank)
+            .map((w) => `${w.rank}º ${getPlayerName(w.player_id)} — ${formatCurrency(Math.round(netPot * ((payoutPcts[w.rank - 1] || 0) / 100)))}`)
+            .join("\n");
         setConfirmModal({
             isOpen: true,
             title: "🏆 Finalizar Torneo",
-            message: "¿Estás seguro de que la distribución de premios es correcta?",
-            subMessage: "Esta acción cerrará el torneo y asignará los ganadores.",
+            message: `Se reparte el pozo (${formatCurrency(netPot)}) y se cierra el torneo:`,
+            subMessage: recap,
             type: "success",
             onConfirm: async () => {
                 setLoading(true);
@@ -223,10 +230,34 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
     };
 
     const handleEliminate = (pid, name) => {
-        setConfirmModal({ isOpen: true, title: "Eliminar", message: `¿Eliminar a ${name}?`, type: "danger", onConfirm: async () => {
-            setLoading(true); // Activar loader
-            try { await tournamentService.eliminatePlayer(tournament.id, pid); onUpdate(); showToast("Eliminado"); } catch(e){ console.error("Error eliminando jugador:", e.response?.data || e.message || e); showToast(e.response?.data?.detail || "Error al eliminar","error"); } finally { setLoading(false); setConfirmModal(prev=>({...prev,isOpen:false})); }
-        }});
+        // Quedarán N activos tras eliminarlo — dato para el momento de riesgo.
+        const quedan = Math.max(0, activePlayersCount - 1);
+        setConfirmModal({
+            isOpen: true, title: "Eliminar (quebró)", message: `¿Eliminar a ${name}?`,
+            subMessage: `Su plata queda en el pozo. Quedan ${quedan} activo${quedan === 1 ? '' : 's'}.`,
+            type: "danger",
+            onConfirm: async () => {
+                setLoading(true);
+                try {
+                    await tournamentService.eliminatePlayer(tournament.id, pid);
+                    onUpdate();
+                    // Mismo patrón del fiado: reversa de un toque en vez de un
+                    // camino sin retorno (re-inscribir cobraría OTRA entrada).
+                    showToast(`${name} eliminado · quedan ${quedan}`, "success", {
+                        label: "Deshacer",
+                        onClick: async () => {
+                            try {
+                                await tournamentService.reactivatePlayer(tournament.id, pid);
+                                onUpdate();
+                                showToast(`${name} vuelve al torneo`);
+                            } catch (e) {
+                                showToast(e.response?.data?.detail || "No se pudo reactivar. Revisa la lista.", "error");
+                            }
+                        },
+                    });
+                } catch(e){ console.error("Error eliminando jugador:", e.response?.data || e.message || e); showToast(e.response?.data?.detail || "No se pudo eliminar. Inténtalo de nuevo.","error"); } finally { setLoading(false); setConfirmModal(prev=>({...prev,isOpen:false})); }
+            }
+        });
     };
 
     // Quitar inscripción ERRADA: borra el registro y sus cobros del torneo
@@ -535,7 +566,7 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
                         <h3 className="text-xl font-bold text-white mb-2">{confirmModal.title}</h3>
                         <p className="text-gray-300 mb-2">{confirmModal.message}</p>
                         {confirmModal.subMessage && (
-                            <p className="text-sm font-mono font-bold text-white bg-gray-700/50 py-1 px-3 rounded-lg mb-4 inline-block">
+                            <p className="text-sm font-mono font-bold text-white bg-gray-700/50 py-2 px-3 rounded-lg mb-4 inline-block whitespace-pre-line text-left">
                                 {confirmModal.subMessage}
                             </p>
                         )}

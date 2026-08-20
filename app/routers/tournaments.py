@@ -1552,6 +1552,56 @@ async def eliminate_player(
     return t_player
 
 
+@router.post("/{tournament_id}/players/{player_id}/reactivate", response_model=schemas.TournamentPlayerSchema)
+async def reactivate_player(
+    tournament_id: int,
+    player_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club)
+):
+    """DESHACER un bust reciente: ELIMINATED -> ACTIVE. No mueve plata (el bust
+    nunca la movió: sus cobros siguen en el pozo y entries_count no cambia — es
+    lo contrario de la RE-ENTRADA, que sí cobra otra entrada). Re-sienta
+    best-effort, igual que el registro."""
+    t_result = await db.execute(
+        select(models.Tournament)
+        .where(models.Tournament.id == tournament_id)
+        .where(models.Tournament.club_id == current_club.id)
+    )
+    tournament = t_result.scalars().first()
+    if not tournament:
+        raise HTTPException(status_code=404, detail="Torneo no encontrado")
+    if tournament.status in TERMINAL_STATUSES:
+        raise HTTPException(status_code=400, detail="El torneo ya finalizó; no se puede reactivar jugadores.")
+
+    p_result = await db.execute(
+        select(models.TournamentPlayer)
+        .where(models.TournamentPlayer.tournament_id == tournament_id)
+        .where(models.TournamentPlayer.player_id == player_id)
+        .with_for_update()
+    )
+    t_player = p_result.scalars().first()
+    if not t_player:
+        raise HTTPException(status_code=404, detail="Jugador no encontrado en el torneo")
+    if t_player.status != "ELIMINATED":
+        raise HTTPException(status_code=400, detail="El jugador no está eliminado")
+
+    t_player.status = "ACTIVE"
+    await db.commit()
+    await db.refresh(t_player)
+
+    # Re-sentar best-effort en commit aparte: si una carrera choca el asiento,
+    # el jugador queda en espera pero la reactivación NUNCA falla por esto.
+    try:
+        if await _auto_seat_one(db, tournament.id, t_player):
+            await db.commit()
+            await db.refresh(t_player)
+    except IntegrityError:
+        await db.rollback()
+        await db.refresh(t_player)
+    return t_player
+
+
 # QUITAR INSCRIPCIÓN (mal inscrito). Distinto de "Eliminar" (bust): el bust
 # conserva el registro y sus cobros porque el pozo se calcula con los inscritos.
 # Quitar es para un registro ERRADO: borra la inscripción Y sus transacciones
@@ -1700,7 +1750,9 @@ async def finalize_tournament(
             p.status = "WINNER"
             p.rank = rank
             # round, no truncar: int() a secas se comía pesos del pozo repartido
-            p.prize_collected = int(round(prize))
+            # Half-up (no banker's): paridad exacta con el Math.round del recap
+            # y la ceremonia en el frontend (round() de Python difiere en .5).
+            p.prize_collected = int(prize + 0.5)
         else:
             # Si no está en la lista de ganadores, es eliminado automáticamente
             p.status = "ELIMINATED"
