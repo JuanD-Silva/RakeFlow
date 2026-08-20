@@ -1,7 +1,7 @@
 # app/schemas.py
 from pydantic import BaseModel, Field, ConfigDict, field_validator, computed_field
 from decimal import Decimal
-from typing import Optional, List
+from typing import Optional, List, Literal
 from datetime import datetime
 from .models import TransactionType, SessionStatus
 from . import tournament_chips
@@ -292,7 +292,9 @@ class TransactionCreate(BaseSchema):
     player_id: Optional[int] = None
     session_id: Optional[int] = None  # opcional para compat; si no viene, fallback a primera OPEN
     amount: Decimal = Field(..., gt=0, decimal_places=2)
-    method: str = "CASH"
+    # Validado en el borde: cualquier otro string contaría como "no digital"
+    # (= efectivo) en el descuadre del cierre sin que nadie lo note.
+    method: Literal["CASH", "DIGITAL"] = "CASH"
     dealer_id: Optional[int] = None  # solo lo usa /tip: dealer destinatario
 
 class TransactionResponse(BaseSchema):

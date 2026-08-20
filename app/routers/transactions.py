@@ -22,7 +22,10 @@ router = APIRouter(
 )
 class TransactionUpdate(BaseModel):
     amount: float
-    method: str = "CASH" # CASH o DIGITAL
+    # None = NO tocar el método. El default "CASH" convertía en efectivo
+    # cualquier transacción DIGITAL al editarle el monto → la auditoría de
+    # "dinero físico esperado" y el descuadre del cierre quedaban mal.
+    method: str | None = None  # CASH o DIGITAL
 # ---------------------------------------------------------
 # HELPER: Buscar Sesión Activa (Actualizado para SaaS)
 # ---------------------------------------------------------
@@ -188,11 +191,14 @@ async def update_transaction(
     if tx.session.status == models.SessionStatus.CLOSED:
         raise HTTPException(status_code=400, detail="No se pueden editar transacciones de sesiones cerradas")
 
-    # 4. Si todo está bien, actualizamos
+    # 4. Si todo está bien, actualizamos. method=None = conservar el actual.
+    if data.method is not None and data.method not in ("CASH", "DIGITAL"):
+        raise HTTPException(status_code=400, detail="Método inválido: usa CASH o DIGITAL.")
     old_amount = tx.amount
     old_method = tx.method
     tx.amount = data.amount
-    tx.method = data.method
+    if data.method is not None:
+        tx.method = data.method
 
     await log_action(
         db, request=request, club=current_club,
