@@ -8,7 +8,7 @@ import { transactionService, playerService } from '../api/services';
 import { useAuth } from '../context/AuthContext';
 import PlayerAppAccount from './PlayerAppAccount';
 
-export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect, onRefresh }) {
+export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect, onRefresh, onQuickAction }) {
   const [players, setPlayers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -243,6 +243,26 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
                 </span>
               </div>
 
+              {/* ATAJOS POR FILA: el modelo mental real es "Pedro quiere otra
+                  entrada / Pedro se va" — abre el form con el jugador ya
+                  elegido (el grid de arriba sigue para jugadores nuevos). */}
+              {onQuickAction && (
+                <div className="flex gap-2 mb-3">
+                  <button
+                    onClick={() => onQuickAction('buyin', p)}
+                    className="flex-1 py-2.5 rounded-lg bg-emerald-600/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-600/25 text-xs font-bold uppercase tracking-wider transition-colors active:scale-[0.98]"
+                  >
+                    + Entrada
+                  </button>
+                  <button
+                    onClick={() => onQuickAction('cashout', p)}
+                    className="flex-1 py-2.5 rounded-lg bg-red-600/15 border border-red-500/40 text-red-300 hover:bg-red-600/25 text-xs font-bold uppercase tracking-wider transition-colors active:scale-[0.98]"
+                  >
+                    Cobrar
+                  </button>
+                </div>
+              )}
+
               {/* MINI GRID DE MONTOS */}
               <div className="grid grid-cols-2 gap-2 text-xs mb-3">
                 <div className="bg-gray-900/40 p-2 rounded border border-gray-700">
@@ -395,6 +415,7 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
               <th className="p-4 font-semibold text-right text-red-400">Cashouts</th>
               <th className="p-4 font-semibold text-right text-yellow-400">Gastos / Premios</th>
               <th className="p-4 font-semibold text-right text-white">Balance</th>
+              <th className="p-4 font-semibold text-center w-40">Acciones</th>
             </tr>
           </thead>
 
@@ -503,12 +524,26 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
                         {formatMoney(p.current_balance)}
                       </span>
                     </td>
+                    <td className="p-4 text-center">
+                      {onQuickAction && (
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button onClick={(e) => { e.stopPropagation(); onQuickAction('buyin', p); }}
+                            className="px-3 py-2 rounded-lg bg-emerald-600/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-600/25 text-xs font-bold uppercase tracking-wider transition-colors active:scale-95">
+                            + Entrada
+                          </button>
+                          <button onClick={(e) => { e.stopPropagation(); onQuickAction('cashout', p); }}
+                            className="px-3 py-2 rounded-lg bg-red-600/15 border border-red-500/40 text-red-300 hover:bg-red-600/25 text-xs font-bold uppercase tracking-wider transition-colors active:scale-95">
+                            Cobrar
+                          </button>
+                        </div>
+                      )}
+                    </td>
                   </tr>
 
                   {/* FILA EXPANDIDA */}
                   {isExpanded && (
                     <tr className="bg-gray-900/50 animate-fade-in border-b border-gray-700">
-                      <td colSpan="7" className="p-0">
+                      <td colSpan="8" className="p-0">
                         <div className="p-4 pl-14 grid grid-cols-1 md:grid-cols-2 gap-6">
                           <div className="md:col-span-2"><PlayerAppAccount playerId={p.player_id} account={accounts[p.player_id]} canManage={canManageApp} onChanged={loadAccounts} /></div>
                           <div>

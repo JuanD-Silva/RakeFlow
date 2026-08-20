@@ -307,7 +307,11 @@ const handleCreateTournament = async (formData) => {
   };
 
   // HANDLERS MODALES
-  const handleOpenModal = (type, title) => {
+  // Preselección desde la fila del jugador (atajo "actuar sobre Pedro"):
+  // el form abre con el jugador ya elegido y el foco en el monto.
+  const [modalPreselect, setModalPreselect] = useState(null);
+  const handleOpenModal = (type, title, preselect = null) => {
+    setModalPreselect(preselect);
     setModalType(type);
     setModalTitle(title);
     setIsModalOpen(true);
@@ -634,6 +638,7 @@ const handleCreateTournament = async (formData) => {
            <div className="col-span-2 md:col-span-3 mt-2">
               <StatsPanel refreshTrigger={refreshKey} sessionId={activeSession?.id} />
               <PlayerTable
+                onQuickAction={(t, pl) => handleOpenModal(t, t === 'buyin' ? `Entrada — ${pl.name}` : `Cobrar — ${pl.name}`, { id: pl.player_id, name: pl.name })}
                 refreshTrigger={refreshKey}
                 sessionId={activeSession?.id}
                 onPlayerSelect={setSelectedPlayerForHistory}
@@ -818,6 +823,7 @@ const handleCreateTournament = async (formData) => {
         ) : (
           <TransactionForm
             type={modalType}
+            preselectedPlayer={modalPreselect}
             onSuccess={handleTransactionSuccess}
             sessionId={pendingSessionOpen ? null : activeSession?.id}
             createSessionFirst={pendingSessionOpen}
