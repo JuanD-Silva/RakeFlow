@@ -44,6 +44,8 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
     // action opcional: { label, onClick } — botón dentro del toast (ej. Deshacer).
     // El timer se guarda para que un toast nuevo no muera por el timeout del viejo.
     const toastTimer = useRef(null);
+    const togglingPaidRef = useRef(false);
+    useEffect(() => () => clearTimeout(toastTimer.current), []);
     const showToast = (msg, type = "success", action = null) => {
         if (toastTimer.current) clearTimeout(toastTimer.current);
         setNotification({ show: true, message: msg, type, action });
@@ -180,17 +182,28 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
     const handleTogglePaid = async (pid) => {
         // Es plata (el fiado): un roce en el badge lo cambia, así que el toast
         // trae "Deshacer" 5s en vez de un confirm que estorbe al cajero.
-        const estabaDebiendo = tournament.players?.find(x => x.player_id === pid)?.is_buyin_paid === false;
+        // El rótulo sale de la RESPUESTA del servidor (el endpoint es un flip
+        // ciego y el prop local puede llevar hasta 15s de atraso: rotular con
+        // el estado viejo podía decir "pagado" cuando quedó debiendo).
+        if (togglingPaidRef.current) return; // doble-tap en el badge = dos flips
+        togglingPaidRef.current = true;
         try {
-            await tournamentService.toggleBuyinPaid(tournament.id, pid);
+            const r = await tournamentService.toggleBuyinPaid(tournament.id, pid);
             onUpdate();
-            showToast(estabaDebiendo ? "Marcado como pagado" : "Marcado como pendiente", "success", {
+            const quedoPagado = r?.is_buyin_paid === true;
+            showToast(quedoPagado ? "Marcado como pagado" : "Marcado como pendiente", "success", {
                 label: "Deshacer",
                 onClick: async () => {
                     try {
-                        await tournamentService.toggleBuyinPaid(tournament.id, pid);
+                        const r2 = await tournamentService.toggleBuyinPaid(tournament.id, pid);
                         onUpdate();
-                        showToast("Revertido");
+                        // Validar contra lo esperado: si otro staff lo cambió en
+                        // la ventana de 5s, el flip ciego lo dejaría al revés.
+                        if (r2?.is_buyin_paid === !quedoPagado) {
+                            showToast("Revertido");
+                        } else {
+                            showToast("Alguien más cambió este pago; revisa el badge antes de seguir.", "error");
+                        }
                     } catch (e) {
                         showToast(e.response?.data?.detail || "No se pudo revertir. Toca el badge de pago para corregirlo.", "error");
                     }
@@ -199,6 +212,8 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
         } catch (e) {
             console.error(e);
             showToast(e.response?.data?.detail || "No se pudo cambiar el estado de pago. Inténtalo de nuevo.", "error");
+        } finally {
+            togglingPaidRef.current = false;
         }
     };
 

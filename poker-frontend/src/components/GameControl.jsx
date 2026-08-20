@@ -112,8 +112,10 @@ export default function GameControl() {
     setNotice({ message, type });
     noticeTimer.current = setTimeout(() => setNotice(null), 4500);
   };
+  useEffect(() => () => clearTimeout(noticeTimer.current), []);
   // Confirmación propia para borrar un torneo programado (era window.confirm)
   const [scheduledToDelete, setScheduledToDelete] = useState(null); // objeto torneo
+  const [isDeletingScheduled, setIsDeletingScheduled] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   
   // ESTADOS DE AUDITORÍA
@@ -283,7 +285,8 @@ const handleCreateTournament = async (formData) => {
 
   const confirmDeleteScheduled = async () => {
       const t = scheduledToDelete;
-      if (!t) return;
+      if (!t || isDeletingScheduled) return;
+      setIsDeletingScheduled(true);
       try {
           await tournamentService.deleteTournament(t.id);
           setScheduledTournaments((prev) => prev.filter((x) => x.id !== t.id));
@@ -292,6 +295,7 @@ const handleCreateTournament = async (formData) => {
           showNotice(error.response?.data?.detail || "No se pudo eliminar el torneo programado.");
       } finally {
           setScheduledToDelete(null);
+          setIsDeletingScheduled(false);
       }
   };
 
@@ -1012,6 +1016,7 @@ const handleCreateTournament = async (formData) => {
         title="Eliminar torneo programado"
         message={scheduledToDelete ? `"${scheduledToDelete.name}" se eliminará de la agenda. Esta acción no se puede deshacer.` : ''}
         confirmText="Sí, eliminar"
+        isDeleting={isDeletingScheduled}
       />
 
       {selectedPlayerForHistory && (
