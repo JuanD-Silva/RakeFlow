@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 import api from '../api/axios';
 import KPIDashboard from '../components/KPIDashboard';
-import { useToast, Toast } from './Toast';
-import DealerPaymentsTable, { LiquidarModal } from './DealerPaymentsTable';
+import DealerPaymentsTable from './DealerPaymentsTable';
 import ExportMenu from './ExportMenu';
 import { statsService, historyService } from '../api/services';
 import { useAuth } from '../context/AuthContext';
@@ -24,13 +23,6 @@ export default function WeeklyReport() {
   // Default anti-"trampa del lunes": si la semana en curso lleva menos de un
   // día completo (lunes), arrancamos en la semana CERRADA — que es la que el
   // dueño viene a revisar. Navegar con → siempre permite volver a hoy.
-  // Recarga de la lista de dealers pendientes tras liquidar
-  const [payoutReload, setPayoutReload] = useState(0);
-  const [liquidarFor, setLiquidarFor] = useState(null); // dealer (lista "a quién le debo")
-  // Dealers del periodo: alimentan la lista "A quién le debo".
-  // Si falla, la lista lo DICE (no finge "nadie pendiente").
-  const [dealersDue, setDealersDue] = useState({ rows: [], error: false });
-  const { toast, showToast, dismissToast } = useToast();
   const [referenceDate, setReferenceDate] = useState(() => {
     const hoy = new Date();
     if (hoy.getDay() === 1) { const d = new Date(hoy); d.setDate(d.getDate() - 7); return d; }
@@ -86,21 +78,6 @@ export default function WeeklyReport() {
   useEffect(() => {
     fetchData();
   }, [referenceDate, viewMode]);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await statsService.getDealerPayments(formatDateISO(range.start), formatDateISO(range.end));
-        if (!cancelled) setDealersDue({ rows: res?.dealers || [], error: false });
-      } catch (e) {
-        console.error("Error cargando dealers del periodo", e);
-        if (!cancelled) setDealersDue({ rows: [], error: true });
-      }
-    })();
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [referenceDate, viewMode, payoutReload]);
 
   // Secuencia anti-respuestas-viejas: encadenar taps de ← dispara varios
   // fetches; solo la respuesta del MÁS reciente puede pintar (patrón reqSeq
@@ -191,27 +168,6 @@ export default function WeeklyReport() {
   const cajaEgresos = data.expenses_week || 0;
   const cajaNeto = data.net_week ?? (cajaIngresos - cajaEgresos);
 
-  // "A quién le debo": dealers con pendiente positivo del periodo. (El pago
-  // de utilidades a socios NO se registra aquí — decisión de Juan 2026-08-21.)
-  const deudas = [
-    ...dealersDue.rows
-      .filter((d) => d.pending > 0 && !d.paid_external)
-      .map((d) => ({
-        key: `d-${d.dealer_id}`,
-        kind: 'Dealer',
-        kindCls: 'bg-amber-500/15 text-amber-300',
-        name: d.name,
-        sub: `${d.hours}h del periodo${d.paid > 0 ? ` · pagado ${formatMoney(d.paid)} de ${formatMoney(d.club_payment)}` : ''}`,
-        amount: d.pending,
-        cta: 'Liquidar',
-        onPay: () => setLiquidarFor(d),
-      })),
-  ].sort((a, b) => b.amount - a.amount);
-  const totalDeudas = deudas.reduce((acc, d) => acc + d.amount, 0);
-  // Dealers con un pago registrado a otro nivel de periodo (ej. el mes): no
-  // entran a la lista, pero el KPI sí los cuenta — se explica, no se esconde.
-  const dealersExternos = dealersDue.rows.filter((d) => d.pending > 0 && d.paid_external).length;
-
   // Arma el modelo de exportación según la pestaña activa. Dealers se trae al
   // momento (su data vive en el componente hijo); distribución ya está en `data`.
   const buildExportModel = async () => {
@@ -228,16 +184,7 @@ export default function WeeklyReport() {
 
   return (
     <div className={`transition-opacity ${loading ? "opacity-60" : ""} max-w-5xl mx-auto p-6 space-y-8 animate-fade-in`}>
-      {reportTab === 'distribution' && (
-        <KPIDashboard
-          startDate={range.start}
-          endDate={range.end}
-          netPeriodo={cajaNeto}
-          rakeBruto={cajaIngresos}
-          egresos={cajaEgresos}
-          refreshKey={payoutReload}
-        />
-      )}
+      {reportTab === 'distribution' && <KPIDashboard startDate={range.start} endDate={range.end} netPeriodo={data.net_week ?? null} />}
 
       {/* TABS: Distribución / Dealers  +  Exportar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -309,57 +256,33 @@ export default function WeeklyReport() {
       {/* ===== TAB DISTRIBUCIÓN ===== */}
       {reportTab === 'distribution' && <>
 
-      {/* ===== A QUIÉN LE DEBO: dealers con pago pendiente del periodo,
-             ordenados por monto, con Liquidar en la fila. La utilidad de
-             socios se reparte fuera de la app (no se registra aquí). La
-             cuenta del periodo (rake − gastos = neto) vive arriba, en el hero. ===== */}
-      <section aria-labelledby="deudas-titulo" className="space-y-3">
-        <div className="flex items-baseline justify-between gap-3">
-          <h2 id="deudas-titulo" className="text-sm font-bold text-white">Dealers por pagar</h2>
-          {deudas.length > 0 && (
-            <p className="text-sm text-gray-400 tabular-nums">Total <span className="font-mono font-bold text-amber-300">{formatMoney(totalDeudas)}</span></p>
-          )}
+      {/* ===== LA CUENTA DEL PERIODO: ingresos − egresos = neto a repartir.
+             Un solo vocabulario en toda la caja (pantalla y export): INGRESOS
+             (rake bruto), EGRESOS (dealers + cortesías) y NETO A REPARTIR. ===== */}
+      <div className="space-y-3">
+        <p className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em]">Caja del periodo</p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="bg-gradient-to-br from-green-900/20 to-transparent border border-green-500/20 p-5 rounded-2xl">
+            <p className="text-[10px] font-bold text-green-500 uppercase tracking-widest mb-1">💵 Ingresos · Rake bruto</p>
+            <p className="text-3xl font-black text-white font-mono">{formatMoney(cajaIngresos)}</p>
+          </div>
+          <div className="bg-gradient-to-br from-red-900/15 to-transparent border border-red-500/20 p-5 rounded-2xl">
+            <p className="text-[10px] font-bold text-red-400 uppercase tracking-widest mb-1">📤 Egresos · Dealers y cortesías</p>
+            <p className="text-3xl font-black text-white font-mono">{cajaEgresos > 0 ? `− ${formatMoney(cajaEgresos)}` : formatMoney(0)}</p>
+          </div>
+          <div className="bg-gradient-to-br from-emerald-900/20 to-transparent border border-emerald-500/20 p-5 rounded-2xl">
+            {/* La semana que se pierde se dice de frente: nada de celebrar un
+                monto negativo con un checkmark. */}
+            <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${cajaNeto < 0 ? 'text-red-400' : 'text-emerald-400'}`}>
+              {cajaNeto < 0 ? '⚠ Pérdida del periodo' : '✅ Neto a repartir'}
+            </p>
+            <p className={`text-3xl font-black font-mono ${cajaNeto < 0 ? 'text-red-300' : 'text-white'}`}>{formatMoney(cajaNeto)}</p>
+            {cajaNeto < 0 && (
+              <p className="text-red-300/80 text-xs mt-1">Los gastos (dealers y cortesías) superaron el rake. Revisa la pestaña Dealers.</p>
+            )}
+          </div>
         </div>
-        {dealersDue.error && (
-          <p className="text-xs text-red-300 bg-red-900/10 border border-red-500/20 rounded-lg px-3 py-2">
-            No pude cargar lo pendiente a dealers — la lista puede estar incompleta. <button type="button" onClick={() => setPayoutReload((k) => k + 1)} className="underline font-bold">Reintentar</button>
-          </p>
-        )}
-        {deudas.length === 0 && !dealersDue.error ? (
-          <p className={`rounded-2xl border px-4 py-4 text-sm ${dealersDue.error ? 'border-gray-700 text-gray-400' : 'border-emerald-500/30 bg-emerald-500/5 text-emerald-300'}`}>
-            {dealersDue.error ? 'No se pudo cargar la lista.' : 'Al día: ningún dealer pendiente en este periodo.'}
-          </p>
-        ) : deudas.length > 0 ? (
-          <ul className="rounded-2xl border border-gray-700 bg-gray-800 divide-y divide-gray-700/70 overflow-hidden">
-            {/* Móvil: dos líneas (quién / cuánto + botón); desktop: una fila
-                con columnas alineadas. */}
-            {deudas.map((d) => (
-              <li key={d.key} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
-                <div className="flex items-center gap-3 min-w-0 basis-full sm:basis-auto sm:flex-1">
-                  <span className={`shrink-0 text-[11px] font-bold uppercase tracking-wider rounded-md px-1.5 py-0.5 ${d.kindCls}`}>{d.kind}</span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-white font-bold truncate">{d.name}</p>
-                    {d.sub && <p className="text-xs text-gray-400 truncate">{d.sub}</p>}
-                  </div>
-                </div>
-                <p className="ml-auto sm:ml-0 font-mono font-bold text-white tabular-nums whitespace-nowrap sm:min-w-[7.5rem] sm:text-right">{formatMoney(d.amount)}</p>
-                <button
-                  type="button"
-                  onClick={d.onPay}
-                  className="shrink-0 min-h-11 px-3 sm:min-w-[10rem] rounded-lg bg-emerald-600/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-600/25 text-xs font-bold uppercase tracking-wider transition-colors"
-                >
-                  {d.cta}
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-        {dealersExternos > 0 && (
-          <p className="text-xs text-blue-300/90">
-            {dealersExternos === 1 ? 'Un dealer tiene' : `${dealersExternos} dealers tienen`} un pago registrado en otro periodo (ej. el mes): no aparece{dealersExternos === 1 ? '' : 'n'} aquí para que no lo repitas.
-          </p>
-        )}
-      </section>
+      </div>
 
       {/* ===== REPARTO DEL NETO: a dónde va la plata (ni ingreso ni egreso:
              asignación del neto según las reglas del club). Solo aparece si el
@@ -514,21 +437,6 @@ export default function WeeklyReport() {
 
       </>}
 
-      <Toast toast={toast} onDismiss={dismissToast} />
-
-      {liquidarFor && (
-        <LiquidarModal
-          dealer={liquidarFor}
-          startISO={formatDateISO(range.start)}
-          endISO={formatDateISO(range.end)}
-          onClose={() => setLiquidarFor(null)}
-          onDone={({ amount, dealer }) => {
-            setLiquidarFor(null);
-            setPayoutReload((k) => k + 1);
-            showToast(`Liquidaste ${formatMoney(amount)} a ${dealer.name}`, "success");
-          }}
-        />
-      )}
 
     </div>
   );

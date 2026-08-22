@@ -8,6 +8,7 @@ import {
   ClockIcon,
   TableCellsIcon,
   TrophyIcon,
+  BanknotesIcon,
   ArrowTrendingUpIcon,
   ArrowTrendingDownIcon,
   ExclamationTriangleIcon,
@@ -30,7 +31,7 @@ function formatDate(iso) {
   return d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-export default function KPIDashboard({ startDate, endDate, netPeriodo = null, rakeBruto = null, egresos = null, refreshKey = 0 } = {}) {
+export default function KPIDashboard({ startDate, endDate, netPeriodo = null } = {}) {
   const [stats, setStats] = useState(null);
   const [quota, setQuota] = useState(null);
   const [prevStats, setPrevStats] = useState(null);
@@ -123,7 +124,7 @@ export default function KPIDashboard({ startDate, endDate, netPeriodo = null, ra
       }
     }
     fetchStats();
-  }, [startDate, endDate, reloadKey, refreshKey]);
+  }, [startDate, endDate, reloadKey]);
 
   useEscape(() => setShowHoursModal(false), showHoursModal);
 
@@ -206,83 +207,53 @@ export default function KPIDashboard({ startDate, endDate, netPeriodo = null, ra
   const sortedHistory = [...historyItems].sort((a, b) => new Date(b.date) - new Date(a.date));
   const totalMinutes = sortedHistory.reduce((acc, it) => acc + (it.duration_minutes || 0), 0);
 
-  const esPerdida = netPeriodo != null && netPeriodo < 0;
-  const neto = netPeriodo != null ? netPeriodo : (rakeActual || 0);
-  const deltaTxt = deltaPct != null
-    ? `${delta >= 0 ? '+' : ''}${deltaPct}%`
-    : (delta != null ? `${delta >= 0 ? '+' : ''}${formatMoney(delta)}` : null);
-  const deltaSub = prevStats?.comparacion?.parcial
-    ? `vs los mismos ${prevStats.comparacion.transcurridos} días del periodo anterior`
-    : 'vs el periodo anterior';
-
   return (
     <>
-      {/* EL HERO ES LA ECUACIÓN, no un número suelto: rake − gastos = neto.
-          Una sola cosa manda en la pantalla (el neto); el delta va pegado a
-          él como chip, no como una card rival; dealers y horas son
-          secundarios a la derecha. */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-8 animate-fade-in">
-        <section
-          aria-label="Neto del periodo"
-          className={`lg:col-span-2 rounded-2xl border p-5 sm:p-6 bg-gray-800 shadow-lg ${esPerdida ? 'border-red-500/40' : 'border-emerald-500/30'}`}
-        >
-          <div className="flex items-start justify-between gap-3">
-            <p className={`text-xs font-bold uppercase tracking-wider ${esPerdida ? 'text-red-300' : 'text-emerald-300'}`}>
-              {esPerdida ? 'Pérdida del periodo' : 'Neto del periodo'}
-            </p>
-            {deltaTxt != null && (
-              <span
-                title={`${formatMoney(rakeActual || 0)} vs ${formatMoney(rakePrevio)} de rake bruto · ${deltaSub}`}
-                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold tabular-nums ${delta < 0 ? 'bg-red-500/15 text-red-300' : 'bg-emerald-500/15 text-emerald-300'}`}
-              >
-                {delta < 0 ? <ArrowTrendingDownIcon className="w-4 h-4" /> : <ArrowTrendingUpIcon className="w-4 h-4" />}
-                {deltaTxt}
-                <span className="hidden sm:inline font-normal opacity-80">{prevStats?.comparacion?.parcial ? '· parcial' : '· vs anterior'}</span>
-              </span>
-            )}
-          </div>
-          <p className={`mt-2 font-mono font-black tabular-nums leading-none text-4xl sm:text-5xl ${esPerdida ? 'text-red-300' : 'text-white'}`}>
-            {formatMoney(neto)}
-          </p>
-          {rakeBruto != null && egresos != null ? (
-            <dl className="mt-4 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm text-gray-300 tabular-nums">
-              <div className="flex items-baseline gap-1.5 whitespace-nowrap"><dt className="text-gray-500">Rake bruto</dt><dd className="font-mono text-white">{formatMoney(rakeBruto)}</dd></div>
-              <div className="flex items-baseline gap-1.5 whitespace-nowrap"><span className="text-gray-600">−</span><dt className="text-gray-500">Dealers y cortesías</dt><dd className="font-mono text-red-300">{formatMoney(egresos)}</dd></div>
-              <div className="flex items-baseline gap-1.5 whitespace-nowrap"><span className="text-gray-600">=</span><dd className={`font-mono font-bold ${esPerdida ? 'text-red-300' : 'text-emerald-300'}`}>{formatMoney(neto)}</dd></div>
-            </dl>
-          ) : (
-            <p className="mt-3 text-sm text-gray-400">{netPeriodo != null ? 'Rake bruto − dealers y cortesías' : 'Rake bruto del periodo'}</p>
-          )}
-          {esPerdida && (
-            <p className="mt-2 text-sm text-red-300/90">Los gastos superaron el rake: este periodo no hay nada que repartir.</p>
-          )}
-          {deltaTxt == null && (
-            <p className="mt-2 text-xs text-gray-500">Sin datos del periodo anterior para comparar.</p>
-          )}
-        </section>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8 animate-fade-in">
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-4">
-          <Card
-            title="Pendiente a dealers"
-            value={dealerPending != null ? formatMoney(dealerPending) : '—'}
-            sub={dealerPending > 0 ? 'Liquida abajo o en Dealers' : dealerPending === 0 ? 'Al día con el equipo' : 'Sin datos'}
-            Icon={dealerPending > 0 ? ExclamationTriangleIcon : CheckCircleIcon}
-            border={dealerPending > 0 ? 'border-amber-500/40' : 'border-gray-700'}
-            iconColor={dealerPending > 0 ? 'text-amber-400' : 'text-gray-500'}
-          />
-          <Card
-            title="Horas operadas"
-            value={`${stats.total_hours ?? 0}h`}
-            sub={`${stats.total_sessions ?? 0} sesiones`}
-            Icon={ClockIcon}
-            border="border-blue-500/30"
-            iconColor="text-blue-400"
-            onClick={openHoursModal}
-          />
-        </div>
+        <Card
+          title="Neto del periodo"
+          value={netPeriodo != null ? formatMoney(netPeriodo) : formatMoney(rakeActual || 0)}
+          sub={netPeriodo != null ? (netPeriodo < 0 ? 'Pérdida: los gastos superaron el rake' : 'Rake bruto − dealers y cortesías') : 'Rake bruto del periodo'}
+          Icon={BanknotesIcon}
+          border={netPeriodo != null && netPeriodo < 0 ? 'border-red-500/40' : 'border-emerald-500/30'}
+          iconColor={netPeriodo != null && netPeriodo < 0 ? 'text-red-400' : 'text-emerald-400'}
+          valueColor={netPeriodo != null && netPeriodo < 0 ? 'text-red-300' : 'text-white'}
+        />
+
+        <Card
+          title="Vs periodo anterior"
+          value={deltaPct != null ? `${delta >= 0 ? '+' : ''}${deltaPct}%` : (delta != null ? `${delta >= 0 ? '+' : ''}${formatMoney(delta)}` : '—')}
+          sub={rakePrevio != null
+            ? `${prevStats?.comparacion?.parcial ? `Mismos ${prevStats.comparacion.transcurridos} días del anterior · ` : ''}${formatMoney(rakeActual || 0)} vs ${formatMoney(rakePrevio)}`
+            : 'Sin datos del periodo anterior'}
+          Icon={delta != null && delta < 0 ? ArrowTrendingDownIcon : ArrowTrendingUpIcon}
+          border={delta != null && delta < 0 ? 'border-red-500/40' : 'border-blue-500/30'}
+          iconColor={delta != null && delta < 0 ? 'text-red-400' : 'text-blue-400'}
+          valueColor={delta != null && delta < 0 ? 'text-red-300' : 'text-white'}
+        />
+
+        <Card
+          title="Pendiente a dealers"
+          value={dealerPending != null ? formatMoney(dealerPending) : '—'}
+          sub={dealerPending > 0 ? 'Del periodo — liquida en la pestaña Dealers' : dealerPending === 0 ? 'Al día con el equipo (este periodo)' : 'Sin datos'}
+          Icon={dealerPending > 0 ? ExclamationTriangleIcon : CheckCircleIcon}
+          border={dealerPending > 0 ? 'border-amber-500/40' : 'border-gray-700'}
+          iconColor={dealerPending > 0 ? 'text-amber-400' : 'text-gray-500'}
+        />
+
+        <Card
+          title="Horas operadas"
+          value={`${stats.total_hours ?? 0}h`}
+          sub={`${stats.total_sessions ?? 0} sesiones del periodo`}
+          Icon={ClockIcon}
+          border="border-blue-500/30"
+          iconColor="text-blue-400"
+          onClick={openHoursModal}
+        />
 
         {quota && quota.target > 0 && (
-          <div className="lg:col-span-3 bg-gray-800/80 border border-gray-700 rounded-xl p-4 shadow-lg">
+          <div className="sm:col-span-2 lg:col-span-4 bg-gray-800/80 border border-gray-700 rounded-xl p-4 shadow-lg">
             <div className="flex justify-between items-center mb-2">
               <p className="text-blue-400 text-xs font-bold uppercase tracking-wider">Meta Mensual</p>
               <div className="flex items-center gap-3">
