@@ -154,13 +154,20 @@ async def compute_monthly_rankings(
     con TODOS los jugadores del club en el período (no solo el top 3)."""
     now = datetime.utcnow()
     if year and month:
-        # Mes historico explicito
-        start_date = datetime(year, month, 1)
-        if month == 12:
-            end_date = datetime(year + 1, 1, 1)
-        else:
-            end_date = datetime(year, month + 1, 1)
-        is_current_month = (year == now.year and month == now.month)
+        # Mes historico explicito — limites en hora COLOMBIA pasados a UTC naive,
+        # igual que el mes en curso. Antes eran UTC puro: una sesion cerrada el
+        # 31 a las 10pm Bogota (03:00 UTC del 1) caia en el mes siguiente y el
+        # ranking cambiaba al pasar de mes.
+        col_start = datetime(year, month, 1, tzinfo=COL_TZ)
+        col_end = datetime(year + 1, 1, 1, tzinfo=COL_TZ) if month == 12 else datetime(year, month + 1, 1, tzinfo=COL_TZ)
+        start_date = col_start.astimezone(UTC).replace(tzinfo=None)
+        end_date = col_end.astimezone(UTC).replace(tzinfo=None)
+        col_now = datetime.now(COL_TZ)
+        is_current_month = (year == col_now.year and month == col_now.month)
+        # Si es el mes en curso pedido explicitamente, respeta el reset igual
+        # que el default (mismo mes = mismo ranking, venga de donde venga).
+        if is_current_month and club.rankings_reset_at and club.rankings_reset_at > start_date:
+            start_date = club.rankings_reset_at
     else:
         # Mes en curso (default): respeta rankings_reset_at del club.
         # Mes en hora Colombia para coincidir con la UI del cliente.
@@ -273,6 +280,9 @@ async def compute_monthly_rankings(
         "is_current_month": is_current_month,
         "start_date": start_date.isoformat(),
         "end_date": end_date.isoformat(),
+        # Si el ranking arranca en un reinicio (promo/temporada) y no el dia 1,
+        # la UI lo dice: "desde el 12 de agosto".
+        "reset_at": start_date.isoformat() if (club.rankings_reset_at and start_date == club.rankings_reset_at) else None,
     }
     return winners_map, spenders_map, active_map, names_map, period
 
