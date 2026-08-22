@@ -1,6 +1,7 @@
 # app/routers/players.py
 import os
 import asyncio
+import unicodedata
 from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
@@ -21,6 +22,41 @@ router = APIRouter(
     tags=["Players"]
 )
 
+def _name_key(name: str) -> str:
+    """Clave de comparación de nombres: minúsculas, sin tildes, espacios colapsados."""
+    base = unicodedata.normalize("NFD", name or "")
+    base = "".join(ch for ch in base if unicodedata.category(ch) != "Mn")
+    return " ".join(base.lower().split())
+
+
+class PlayerPhoneUpdate(BaseModel):
+    phone: str = Field(min_length=7, max_length=20)
+
+
+@router.patch("/{player_id}/phone", response_model=schemas.PlayerResponse)
+async def update_player_phone(
+    player_id: int,
+    data: PlayerPhoneUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+    _: models.User = Depends(require_role([models.UserRole.OWNER, models.UserRole.MANAGER])),
+):
+    """Agrega o corrige el teléfono de una ficha (directorio): sin teléfono no hay
+    WhatsApp ni invitación — era un callejón sin salida."""
+    player = (await db.execute(
+        select(models.Player).where(models.Player.id == player_id, models.Player.club_id == current_club.id)
+    )).scalars().first()
+    if not player:
+        raise HTTPException(status_code=404, detail="Jugador no encontrado")
+    phone = normalize_phone(data.phone)
+    if not phone or len(phone) < 10:
+        raise HTTPException(status_code=400, detail="Teléfono inválido: escribe el celular con sus 10 dígitos.")
+    player.phone = phone
+    await db.commit()
+    await db.refresh(player)
+    return player
+
+
 @router.post("/", response_model=schemas.PlayerResponse)
 async def create_player(player: schemas.PlayerCreate, db: AsyncSession = Depends(get_db), current_club = Depends(get_current_club)):
     """
@@ -30,22 +66,27 @@ async def create_player(player: schemas.PlayerCreate, db: AsyncSession = Depends
     if not player.name or not player.name.strip():
         raise HTTPException(status_code=400, detail="Player name cannot be empty")
 
-    # 1. Validación SaaS: Verificar si ya existe en ESTE club para no duplicar
-    result = await db.execute(
-        select(models.Player).where(
-            models.Player.name == player.name, 
-            models.Player.club_id == current_club.id
-        )
-    )
-    existing_player = result.scalars().first()
-    
+    # 1. Validación SaaS: ¿ya existe en ESTE club? Comparación NORMALIZADA
+    #    (sin mayúsculas, tildes ni espacios sobrantes): "Sebastian",
+    #    "sebastián " y "SEBASTIAN" eran tres fichas con el rake repartido.
+    name_clean = " ".join(player.name.split())
+    key = _name_key(name_clean)
+    rows = (await db.execute(
+        select(models.Player).where(models.Player.club_id == current_club.id)
+    )).scalars().all()
+    existing_player = next((r for r in rows if _name_key(r.name) == key), None)
     if existing_player:
+        # Si llega teléfono y la ficha no lo tenía, se aprovecha (no pisa uno existente).
+        if player.phone and not existing_player.phone:
+            existing_player.phone = normalize_phone(player.phone) or player.phone
+            await db.commit()
+            await db.refresh(existing_player)
         return existing_player
 
     # 2. Creación: Agregamos el club_id automáticamente
     new_player = models.Player(
-        name=player.name, 
-        phone=player.phone,
+        name=name_clean,
+        phone=(normalize_phone(player.phone) or player.phone) if player.phone else None,
         club_id=current_club.id # 👈 CAMBIO OBLIGATORIO SAAS
     )
     db.add(new_player)
@@ -456,7 +497,7 @@ async def reset_player_access(
     if not player:
         raise HTTPException(status_code=404, detail="Jugador no encontrado")
     if not player.user_id:
-        raise HTTPException(status_code=409, detail="Este jugador no tiene cuenta. Usá 'Invitar'.")
+        raise HTTPException(status_code=409, detail="Este jugador no tiene cuenta. Usa 'Invitar'.")
 
     user = (await db.execute(
         select(models.User).where(models.User.id == player.user_id)
@@ -778,7 +819,7 @@ async def unlock_player_history(
     # Sin cuenta no hay nada que vender/destrabar: evita que un click fuera de
     # orden deje un corte fantasma que arruine el "arranca de cero" al activar.
     if not player.user_id:
-        raise HTTPException(status_code=409, detail="Este jugador no tiene cuenta del panel. Invitalo primero.")
+        raise HTTPException(status_code=409, detail="Este jugador no tiene cuenta del panel. Invítalo primero.")
 
     if player.stats_since is not None:
         prev = player.stats_since

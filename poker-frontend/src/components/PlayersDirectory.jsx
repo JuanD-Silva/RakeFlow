@@ -5,6 +5,7 @@ import { playerService } from '../api/services';
 import { useAuth } from '../context/AuthContext';
 import PlayerAppAccount from './PlayerAppAccount';
 import PlayerProfileModal from './PlayerProfileModal';
+import PhoneEditor from './PhoneEditor';
 import { mcop, segmentOf, waPhone, SEGMENTS, haceDias } from '../utils/crm';
 
 // ---------------------------------------------------------
@@ -226,7 +227,9 @@ export default function PlayersDirectory() {
                   ) : (
                     <p className="text-white font-bold truncate">{p.name}</p>
                   )}
-                  <p className="text-xs text-gray-500 font-mono">{p.phone || 'sin teléfono'}</p>
+                  {p.phone
+                    ? <p className="text-xs text-gray-500 font-mono">{p.phone}</p>
+                    : <PhoneEditor playerId={p.id} onSaved={load} />}
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                   {p.is_vip && (
