@@ -86,7 +86,7 @@ async def create_player(player: schemas.PlayerCreate, db: AsyncSession = Depends
     # 2. Creación: Agregamos el club_id automáticamente
     new_player = models.Player(
         name=name_clean,
-        phone=player.phone,
+        phone=(normalize_phone(player.phone) or player.phone) if player.phone else None,
         club_id=current_club.id # 👈 CAMBIO OBLIGATORIO SAAS
     )
     db.add(new_player)
