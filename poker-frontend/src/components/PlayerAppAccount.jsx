@@ -163,14 +163,14 @@ export default function PlayerAppAccount({ playerId, account, canManage, onChang
         <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3 space-y-2">
           <p className="text-xs text-gray-300">Invitación lista. Mándasela al jugador:</p>
           <div className="flex flex-wrap gap-2">
-            <a href={pendingWa.wa_url} target="_blank" rel="noreferrer" onClick={() => setPendingWa(null)}
+            <a href={pendingWa.wa_url} target="_blank" rel="noreferrer" onClick={() => setTimeout(() => setPendingWa(null), 0)}
               className={`${BTN} bg-[#25D366]/90 hover:bg-[#25D366] border-[#25D366] text-white`}>
               Abrir WhatsApp
             </a>
             <button type="button" onClick={copyMsg} className={`${BTN} border-gray-600 text-gray-300 hover:bg-gray-700`}>
               <ClipboardDocumentIcon className="w-4 h-4" /> {copied ? 'Copiado' : 'Copiar mensaje'}
             </button>
-            <button type="button" onClick={() => setPendingWa(null)} aria-label="Cerrar" className="min-h-11 min-w-11 flex items-center justify-center text-gray-500 hover:text-gray-300">
+            <button type="button" onClick={() => setTimeout(() => setPendingWa(null), 0)} aria-label="Cerrar" className="min-h-11 min-w-11 flex items-center justify-center text-gray-500 hover:text-gray-300">
               <XMarkIcon className="w-5 h-5" />
             </button>
           </div>

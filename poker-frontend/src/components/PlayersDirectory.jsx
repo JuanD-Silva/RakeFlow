@@ -102,7 +102,12 @@ export default function PlayersDirectory() {
     const ins = (p) => insights?.players?.[p.id];
     const list = players
       .filter((p) => matchFilter(p, filter, ins(p)))
-      .filter((p) => !q || norm(p.name).includes(q) || (p.phone || '').replace(/\D/g, '').includes(q.replace(/\D/g, '') || '\u0000'));
+      .filter((p) => {
+        if (!q) return true;
+        if (norm(p.name).includes(q)) return true;
+        const qd = q.replace(/\D/g, '');
+        return qd.length >= 3 && (p.phone || '').replace(/\D/g, '').includes(qd);
+      });
     // Sin insights solo hay orden alfabético; con insights, los sin-datos van al final.
     const by = {
       name: (a, b) => a.name.localeCompare(b.name, 'es'),
