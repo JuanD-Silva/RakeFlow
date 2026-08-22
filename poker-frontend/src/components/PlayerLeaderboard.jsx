@@ -82,13 +82,14 @@ function RankingRow({ pos, player, format, tone, onOpen }) {
           <p className={`font-bold truncate group-hover:text-white transition-colors ${pos === 0 ? 'text-white text-base' : 'text-gray-200 text-sm'}`}>
             {player.name} <span className="text-gray-600 text-xs font-normal">›</span>
           </p>
-          <p className="text-xs text-gray-500 font-mono truncate">
-            {player.phone || 'sin teléfono'}
-            {player.has_panel && <span className="ml-2 font-sans text-[11px] text-cyan-300/90">· tiene el panel</span>}
+          <p className="text-xs text-gray-500 truncate">
+            <span className={`font-mono font-black tabular-nums ${pos === 0 ? `text-sm ${tone.val}` : 'text-gray-200'}`}>{format(player.value)}</span>
+            <span className="mx-1.5 text-gray-700">·</span>
+            <span className="font-mono">{player.phone || 'sin teléfono'}</span>
+            {player.has_panel && <span className="ml-1.5 text-[11px] text-cyan-300/90">· panel</span>}
           </p>
         </button>
       </div>
-      <span className={`font-mono font-black tabular-nums whitespace-nowrap ${pos === 0 ? `text-base ${tone.val}` : 'text-sm text-gray-200'}`}>{format(player.value)}</span>
       {wa ? (
         <a
           href={`https://wa.me/${wa}`} target="_blank" rel="noreferrer"
