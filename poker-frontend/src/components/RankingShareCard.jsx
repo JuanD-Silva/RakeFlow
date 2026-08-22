@@ -1,5 +1,7 @@
 import { useRef, useState } from 'react';
 import { shareCardImage } from '../utils/shareImage';
+import { useEscape } from '../hooks/useEscape';
+import { TrophyIcon } from '@heroicons/react/24/solid';
 
 // Tarjeta-podio compartible del ranking del staff: el MISMO podio que se ve
 // en la pestaña Ranking, convertido a imagen (PNG por Web Share → WhatsApp;
@@ -18,7 +20,7 @@ function Step({ pos, player, format }) {
   const st = STEP[pos];
   return (
     <div className="flex flex-col items-center flex-1 min-w-0" style={st.wrap}>
-      {pos === 0 && <p className="text-2xl leading-none mb-1">🏆</p>}
+      {pos === 0 && <TrophyIcon className="w-8 h-8 text-yellow-500 mb-1" />}
       <div className={`${st.circle} rounded-full border-2 flex items-center justify-center mb-2`}>
         <span className={`font-black ${st.num}`}>{pos + 1}</span>
       </div>
@@ -34,6 +36,10 @@ export default function RankingShareCard({ def, data, clubName, periodLabel, onC
   const [busy, setBusy] = useState(false);
   const [shared, setShared] = useState(null);
   const cardRef = useRef(null);
+  // Cerrar a mitad de captura descargaba un PNG fantasma (lección de la
+  // ceremonia de torneo): mientras genera, no se cierra.
+  const close = () => { if (!busy) onClose(); };
+  useEscape(onClose, !busy);
 
   const shareText = `${def.emoji} ${def.title} · ${periodLabel}${clubName ? ` · ${clubName}` : ''}`;
   const fileSlug = `ranking-${def.key}-${periodLabel.replace(/\s+/g, '-')}`;
@@ -52,8 +58,8 @@ export default function RankingShareCard({ def, data, clubName, periodLabel, onC
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm overflow-y-auto" onClick={onClose} role="dialog" aria-modal="true" aria-label={`Compartir ${def.title}`}>
-      <button onClick={onClose} aria-label="Cerrar"
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm overflow-y-auto" onClick={close} role="dialog" aria-modal="true" aria-label={`Compartir ${def.title}`}>
+      <button onClick={close} aria-label="Cerrar"
         className="fixed top-3 right-3 z-10 w-11 h-11 flex items-center justify-center rounded-full bg-gray-800/80 text-gray-300 hover:text-white text-lg leading-none">✕</button>
 
       <div className="min-h-full flex flex-col items-center justify-center px-4 pt-16 pb-8" onClick={(e) => e.stopPropagation()}>
@@ -61,7 +67,7 @@ export default function RankingShareCard({ def, data, clubName, periodLabel, onC
         <div ref={cardRef} className={`w-[320px] rounded-2xl p-5 border ${def.tone.ring}`} style={{ background: def.grad }}>
           <div className="flex items-center justify-between gap-2">
             <p className={`text-[10px] font-black tracking-[0.25em] uppercase ${def.tone.icon} truncate`}>{clubName || 'Mi club'}</p>
-            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide shrink-0 capitalize">{periodLabel}</span>
+            <span className="text-[10px] font-bold text-gray-400 tracking-wide shrink-0 capitalize">{periodLabel}</span>
           </div>
           <p className="text-center text-white text-2xl font-black mt-4 leading-tight">{def.emoji} {def.title}</p>
           <p className="text-center text-gray-400 text-xs mt-1">{def.measure}</p>
@@ -90,7 +96,7 @@ export default function RankingShareCard({ def, data, clubName, periodLabel, onC
           <p className="text-xs text-red-300 mt-3 text-center w-[320px]">No se pudo generar la imagen. Prueba de nuevo.</p>
         )}
 
-        <button onClick={onClose} className="mt-5 min-h-11 text-sm text-gray-400 hover:text-white font-bold">Cerrar</button>
+        <button onClick={close} className="mt-5 min-h-11 text-sm text-gray-400 hover:text-white font-bold">Cerrar</button>
       </div>
     </div>
   );
