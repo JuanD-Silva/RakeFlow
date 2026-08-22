@@ -448,7 +448,7 @@ function ShiftTab() {
   if (!data?.has_shift) return (
     <div className="text-center py-20">
       <p className="text-5xl mb-4">⏱</p>
-      <p className="font-bold text-white">No tenés turno abierto</p>
+      <p className="font-bold text-white">No tienes turno abierto</p>
       <p className="text-sm text-gray-400 mt-1">Tu pago empieza a correr cuando el cajero abra tu turno.</p>
     </div>
   );
@@ -480,7 +480,7 @@ function HistoryTab() {
   if (!loadedOnce) return error ? <Reconnecting /> : <Spinner />;
   const shifts = data?.shifts || [];
   if (shifts.length === 0) return (
-    <div className="text-center py-20"><p className="text-5xl mb-4">📜</p><p className="font-bold text-white">Sin turnos aún</p><p className="text-sm text-gray-400 mt-1">Acá vas a ver tus sesiones y lo que ganaste.</p></div>
+    <div className="text-center py-20"><p className="text-5xl mb-4">📜</p><p className="font-bold text-white">Sin turnos aún</p><p className="text-sm text-gray-400 mt-1">Aquí vas a ver tus sesiones y lo que ganaste.</p></div>
   );
   return (
     <div className="space-y-3">

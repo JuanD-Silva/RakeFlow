@@ -175,14 +175,14 @@ function PokerManagerApp() {
             de noche desde el celular y el banner de Chrome es heurístico (por eso
             existe nuestro botón, #77). Copy propio: acá no es "tu panel". */}
         <InstallAppBanner
-          title="Llevá el control del club en el bolsillo"
+          title="Lleva el control del club en el bolsillo"
           subtitle="Ícono en tu pantalla, abre al toque"
         />
         <ErrorBoundary>
           {currentView === 'game' && <GameControl />}
           {currentView === 'history' && <SessionHistory />}
           {currentView === 'finance' && <WeeklyReport />}
-          {currentView === 'ranking' && <PlayerLeaderboard />}
+          {currentView === 'ranking' && <PlayerLeaderboard clubName={clubName} />}
           {currentView === 'players' && (isOwner || role === 'manager') && <PlayersDirectory />}
           {currentView === 'crecimiento' && (isOwner || role === 'manager') && <GrowthPanel />}
           {currentView === 'team' && <TeamPanel />}

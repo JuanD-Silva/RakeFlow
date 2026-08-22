@@ -427,6 +427,15 @@ async def get_rankings(
     winners_map, spenders_map, active_map, names_map, period = \
         await player_stats.compute_monthly_rankings(db, current_club, year, month)
 
+    # Flechas: posicion de cada uno en el MES ANTERIOR (mismo calculo, mes
+    # previo al del periodo). None = no aparecia (nuevo en el ranking).
+    py, pm = period["year"], period["month"]
+    prev_y, prev_m = (py - 1, 12) if pm == 1 else (py, pm - 1)
+    prev_w, prev_s, prev_a, _n, _p = await player_stats.compute_monthly_rankings(db, current_club, prev_y, prev_m)
+    def positions(data_map):
+        return {pid: i + 1 for i, (pid, _) in enumerate(sorted(data_map.items(), key=lambda kv: kv[1], reverse=True))}
+    prev_pos = {"winners": positions(prev_w), "spenders": positions(prev_s), "active": positions(prev_a)}
+
     # Identidad para ACTUAR desde el ranking (ficha 360, WhatsApp): telefono y
     # si ya activo el panel. Solo de los que entran al top.
     top_ids = set()
@@ -445,19 +454,21 @@ async def get_rankings(
         )).all()
         info = {r[0]: {"phone": r[1], "has_panel": r[2] is not None} for r in rows}
 
-    def serialize(ordered):
+    def serialize(key, ordered):
         return [{
             "player_id": pid,
             "name": names_map.get(pid, "Sin nombre"),
             "value": v,
             "phone": info.get(pid, {}).get("phone"),
             "has_panel": info.get(pid, {}).get("has_panel", False),
-        } for pid, v in ordered]
+            # Puesto en el mes anterior (1 = primero); None = no estaba.
+            "prev_pos": prev_pos[key].get(pid),
+        } for i, (pid, v) in enumerate(ordered)]
 
     return {
-        "winners": serialize(tops["winners"]),
-        "spenders": serialize(tops["spenders"]),
-        "active": serialize(tops["active"]),
+        "winners": serialize("winners", tops["winners"]),
+        "spenders": serialize("spenders", tops["spenders"]),
+        "active": serialize("active", tops["active"]),
         "period": period,
     }
 

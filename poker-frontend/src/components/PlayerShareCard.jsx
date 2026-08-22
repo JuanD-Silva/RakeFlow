@@ -88,7 +88,7 @@ export default function PlayerShareCard({ onClose }) {
             className="rf-tap px-4 py-2 text-lg leading-none rounded-lg bg-gray-800 hover:bg-gray-700 font-bold disabled:opacity-30">›</button>
         </div>
 
-        {error && <p className="text-sm text-red-300 py-10">No se pudo cargar el resumen. Probá de nuevo.</p>}
+        {error && <p className="text-sm text-red-300 py-10">No se pudo cargar el resumen. Prueba de nuevo.</p>}
         {!data && !error && (
           <div className="w-[320px] rounded-2xl p-5 border border-gray-700/60 space-y-3">
             <div className="rf-skel h-4 w-1/2" />

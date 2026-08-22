@@ -156,7 +156,7 @@ export default function MonthlyChallengeManager() {
       await load();
     } catch (e) {
       const detail = e.response?.data?.detail;
-      setError(typeof detail === 'string' ? detail : 'No se pudo guardar. Probá de nuevo.');
+      setError(typeof detail === 'string' ? detail : 'No se pudo guardar. Prueba de nuevo.');
     } finally {
       setBusy(false);
     }
