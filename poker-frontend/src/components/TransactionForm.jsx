@@ -564,10 +564,10 @@ export default function TransactionForm({ type, onSuccess, sessionId, createSess
             <button
               key={val}
               type="button"
-              onClick={() => setAmount((prev) => String((Number(prev) || 0) + val))}
+              onClick={() => setAmount(String(val))}
               className="bg-gray-700/50 hover:bg-gray-600 text-gray-300 hover:text-white text-xs font-mono py-1.5 px-4 rounded-full border border-gray-600 hover:border-gray-500 transition-all"
             >
-              +{(val >= 1000 ? (val / 1000) + 'k' : val)}
+              {(val >= 1000 ? (val / 1000) + 'k' : val)}
             </button>
           ))}
         </div>

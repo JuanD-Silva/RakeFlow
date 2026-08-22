@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState, useRef } from 'react';
 import api from '../api/axios';
 import KPIDashboard from '../components/KPIDashboard';
 import { useToast, Toast } from './Toast';
-import { useEscape } from '../hooks/useEscape';
 import DealerPaymentsTable, { LiquidarModal } from './DealerPaymentsTable';
 import ExportMenu from './ExportMenu';
 import { statsService, historyService } from '../api/services';
@@ -25,13 +24,11 @@ export default function WeeklyReport() {
   // Default anti-"trampa del lunes": si la semana en curso lleva menos de un
   // día completo (lunes), arrancamos en la semana CERRADA — que es la que el
   // dueño viene a revisar. Navegar con → siempre permite volver a hoy.
-  // Ledger de pagos a socios del periodo visto
-  const [partnerPayouts, setPartnerPayouts] = useState([]);
+  // Recarga de la lista de dealers pendientes tras liquidar
   const [payoutReload, setPayoutReload] = useState(0);
-  const [payoutFor, setPayoutFor] = useState(null); // item de distribución
   const [liquidarFor, setLiquidarFor] = useState(null); // dealer (lista "a quién le debo")
-  // Dealers del periodo: alimentan la lista "A quién le debo" junto a los
-  // socios. Si falla, la lista lo DICE (no finge "nadie pendiente").
+  // Dealers del periodo: alimentan la lista "A quién le debo".
+  // Si falla, la lista lo DICE (no finge "nadie pendiente").
   const [dealersDue, setDealersDue] = useState({ rows: [], error: false });
   const { toast, showToast, dismissToast } = useToast();
   const [referenceDate, setReferenceDate] = useState(() => {
@@ -91,14 +88,6 @@ export default function WeeklyReport() {
   }, [referenceDate, viewMode]);
 
   useEffect(() => {
-    let vivo = true;
-    statsService.getPartnerPayouts(formatDateISO(range.start), formatDateISO(range.end))
-      .then((r) => { if (vivo) setPartnerPayouts(r || []); })
-      .catch(() => { if (vivo) setPartnerPayouts([]); });
-    return () => { vivo = false; };
-  }, [referenceDate, viewMode, payoutReload]);
-
-  useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
@@ -112,18 +101,6 @@ export default function WeeklyReport() {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [referenceDate, viewMode, payoutReload]);
-
-  // Suman solo los pagos CONTENIDOS en el rango visto; un pago que lo
-  // desborda (ej. registrado a nivel MES y estamos viendo la semana) no suma
-  // pero sí AVISA — para no re-registrar el mismo pago dos veces.
-  const startISO = formatDateISO(range.start);
-  const endISO = formatDateISO(range.end);
-  const pagosDe = (nombre) => partnerPayouts.filter((p) => p.beneficiary_name === (nombre || '').trim());
-  const pagadoA = (nombre) => pagosDe(nombre)
-    .filter((p) => p.period_start >= startISO && p.period_end <= endISO)
-    .reduce((acc, p) => acc + (p.amount || 0), 0);
-  const pagoExterno = (nombre) => pagosDe(nombre)
-    .some((p) => !(p.period_start >= startISO && p.period_end <= endISO));
 
   // Secuencia anti-respuestas-viejas: encadenar taps de ← dispara varios
   // fetches; solo la respuesta del MÁS reciente puede pintar (patrón reqSeq
@@ -214,28 +191,9 @@ export default function WeeklyReport() {
   const cajaEgresos = data.expenses_week || 0;
   const cajaNeto = data.net_week ?? (cajaIngresos - cajaEgresos);
 
-  // "A quién le debo": socios/fondos con pendiente (sin pago externo) + dealers
-  // con pendiente positivo. Un sobrepago NO resta la deuda de otro.
+  // "A quién le debo": dealers con pendiente positivo del periodo. (El pago
+  // de utilidades a socios NO se registra aquí — decisión de Juan 2026-08-21.)
   const deudas = [
-    ...data.distribution
-      .filter((item) => (isSocio(item) || isFondoItem(item)) && item.total > 0)
-      .map((item) => {
-        const pagado = pagadoA(item.name);
-        const pendiente = item.total - pagado;
-        if (pendiente <= 0 || pagoExterno(item.name)) return null;
-        const fondo = isFondoItem(item);
-        return {
-          key: `p-${item.name}`,
-          kind: fondo ? 'Fondo' : 'Socio',
-          kindCls: fondo ? 'bg-purple-500/15 text-purple-300' : 'bg-blue-500/15 text-blue-300',
-          name: item.name,
-          sub: pagado > 0 ? `Pagado ${formatMoney(pagado)} de ${formatMoney(item.total)}` : (fondo ? 'Reparto del neto' : `${item.percent}% del neto`),
-          amount: pendiente,
-          cta: 'Registrar pago',
-          onPay: () => setPayoutFor({ ...item, pendiente }),
-        };
-      })
-      .filter(Boolean),
     ...dealersDue.rows
       .filter((d) => d.pending > 0 && !d.paid_external)
       .map((d) => ({
@@ -351,13 +309,13 @@ export default function WeeklyReport() {
       {/* ===== TAB DISTRIBUCIÓN ===== */}
       {reportTab === 'distribution' && <>
 
-      {/* ===== A QUIÉN LE DEBO: la pregunta del lunes en UNA lista. Socios y
-             fondos (del reparto) + dealers (devengado del periodo), ordenados
-             por monto, cada uno con su botón de pago. La cuenta del periodo
-             (rake − gastos = neto) vive arriba, en el hero. ===== */}
+      {/* ===== A QUIÉN LE DEBO: dealers con pago pendiente del periodo,
+             ordenados por monto, con Liquidar en la fila. La utilidad de
+             socios se reparte fuera de la app (no se registra aquí). La
+             cuenta del periodo (rake − gastos = neto) vive arriba, en el hero. ===== */}
       <section aria-labelledby="deudas-titulo" className="space-y-3">
         <div className="flex items-baseline justify-between gap-3">
-          <h2 id="deudas-titulo" className="text-sm font-bold text-white">A quién le debo</h2>
+          <h2 id="deudas-titulo" className="text-sm font-bold text-white">Dealers por pagar</h2>
           {deudas.length > 0 && (
             <p className="text-sm text-gray-400 tabular-nums">Total <span className="font-mono font-bold text-amber-300">{formatMoney(totalDeudas)}</span></p>
           )}
@@ -369,7 +327,7 @@ export default function WeeklyReport() {
         )}
         {deudas.length === 0 ? (
           <p className={`rounded-2xl border px-4 py-4 text-sm ${dealersDue.error ? 'border-gray-700 text-gray-400' : 'border-emerald-500/30 bg-emerald-500/5 text-emerald-300'}`}>
-            {dealersDue.error ? 'Sin pendientes a socios en este periodo.' : 'Al día: no le debes a nadie en este periodo.'}
+            {dealersDue.error ? 'No se pudo cargar la lista.' : 'Al día: ningún dealer pendiente en este periodo.'}
           </p>
         ) : (
           <ul className="rounded-2xl border border-gray-700 bg-gray-800 divide-y divide-gray-700/70 overflow-hidden">
@@ -523,38 +481,6 @@ export default function WeeklyReport() {
                     </p>
                   </div>
 
-                  {/* LEDGER: el pago a socios deja de vivir en un cuaderno.
-                      "Registrar pago" solo apunta que la plata YA se entregó
-                      (como Liquidar de dealers) — no mueve la caja. */}
-                  {(isSocio(item) || isFondoItem(item)) && item.total > 0 && (() => {
-                    const pagado = pagadoA(item.name);
-                    const externo = pagoExterno(item.name);
-                    const pendiente = item.total - pagado; // SIN clamp: si hay de más, se dice
-                    return (
-                      <div className="border-t border-gray-700/50 pt-3 flex items-center justify-between gap-3 flex-wrap">
-                        {pagado > item.total ? (
-                          <span className="text-red-300 text-xs font-bold">Pagado {formatMoney(pagado)} de {formatMoney(item.total)} — hay registros de más, revisa</span>
-                        ) : pendiente <= 0 ? (
-                          <span className="text-emerald-400 text-xs font-bold uppercase tracking-wider">✓ Pagado</span>
-                        ) : pagado > 0 ? (
-                          <span className="text-amber-300 text-xs font-bold">Pagado {formatMoney(pagado)} de {formatMoney(item.total)}</span>
-                        ) : externo ? (
-                          <span className="text-blue-300 text-xs font-bold">Registrado en otro periodo (ej. el mes) — no lo repitas</span>
-                        ) : (
-                          <span className="text-gray-400 text-xs font-bold uppercase tracking-wider">Sin registrar</span>
-                        )}
-                        {pendiente > 0 && !externo && (
-                          <button
-                            type="button"
-                            onClick={() => setPayoutFor({ ...item, pendiente })}
-                            className="px-3 py-2 rounded-lg bg-emerald-600/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-600/25 text-xs font-bold uppercase tracking-wider transition-colors"
-                          >
-                            Registrar pago
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })()}
                 </div>
 
                 {/* Decoración inferior */}
@@ -604,113 +530,6 @@ export default function WeeklyReport() {
         />
       )}
 
-      {payoutFor && (
-        <PartnerPayoutModal
-          item={payoutFor}
-          periodStart={formatDateISO(range.start)}
-          periodEnd={formatDateISO(range.end)}
-          onClose={() => setPayoutFor(null)}
-          onDone={(payout) => {
-            setPayoutFor(null);
-            setPayoutReload((k) => k + 1);
-            showToast(`Registraste ${formatMoney(payout.amount)} a ${payout.beneficiary_name}`, "success", {
-              label: "Deshacer",
-              onClick: async () => {
-                try {
-                  await statsService.deletePartnerPayout(payout.id);
-                  setPayoutReload((k) => k + 1);
-                  showToast("Registro deshecho");
-                } catch (e) {
-                  showToast(e.response?.data?.detail || "No se pudo deshacer el registro.", "error");
-                }
-              },
-            });
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
-// Modal de registro de pago a socio (espejo del Liquidar de dealers): solo
-// LEDGER — apunta que la plata ya se entregó, no mueve la caja.
-function PartnerPayoutModal({ item, periodStart, periodEnd, onClose, onDone }) {
-  const [amount, setAmount] = useState(String(item.pendiente || item.total || ""));
-  const [method, setMethod] = useState("cash");
-  const [note, setNote] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
-  useEscape(onClose, !saving);
-
-  const submit = async () => {
-    const value = Number(amount);
-    if (!value || value <= 0) { setError("Ingresa un monto válido."); return; }
-    if (value > (item.pendiente || item.total)) {
-      setError(`El pendiente del periodo es ${formatMoney(item.pendiente || item.total)} — revisa el monto.`);
-      return;
-    }
-    setSaving(true);
-    setError(null);
-    try {
-      const payout = await statsService.createPartnerPayout({
-        beneficiary_name: item.name,
-        rule_id: item.rule_id ?? null,
-        period_start: periodStart,
-        period_end: periodEnd,
-        amount: value,
-        method,
-        note: note.trim() || null,
-      });
-      onDone(payout);
-    } catch (e) {
-      setError(e.response?.data?.detail || "No se pudo registrar el pago.");
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-fade-in" role="dialog" aria-modal="true" aria-label={`Registrar pago a ${item.name}`} onClick={onClose}>
-      <div className="bg-gray-900 rounded-2xl border border-emerald-500/30 shadow-2xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-white font-black text-lg uppercase tracking-tight mb-1">Registrar pago</h3>
-        <p className="text-gray-400 text-sm mb-4">{item.name} · pendiente del periodo: <span className="font-mono font-bold text-emerald-300">{formatMoney(item.pendiente || item.total)}</span></p>
-
-        <label className="block text-gray-400 text-xs font-bold uppercase tracking-wider mb-1">Monto entregado</label>
-        <input
-          type="text" inputMode="numeric" pattern="[0-9]*"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value.replace(/\D/g, ""))}
-          className="w-full bg-gray-800 text-white border border-gray-600 rounded-xl py-3 px-4 font-mono text-xl font-bold focus:border-emerald-500 outline-none mb-1"
-        />
-        {Number(amount) > 0 && <p className="text-center font-mono text-sm text-white/80 mb-3">= {formatMoney(Number(amount))}</p>}
-
-        <div className="flex gap-2 mb-3">
-          {[["cash", "Efectivo"], ["transfer", "Transferencia"]].map(([v, l]) => (
-            <button key={v} type="button" onClick={() => setMethod(v)}
-              className={`flex-1 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider border transition-colors ${method === v ? 'bg-emerald-600 border-emerald-500 text-white' : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white'}`}>
-              {l}
-            </button>
-          ))}
-        </div>
-
-        <input
-          type="text" value={note} onChange={(e) => setNote(e.target.value)}
-          placeholder="Nota (opcional)"
-          className="w-full bg-gray-800 text-white border border-gray-600 rounded-xl py-2.5 px-4 text-sm focus:border-emerald-500 outline-none mb-3 placeholder-gray-500"
-        />
-
-        <p className="text-[11px] text-gray-500 mb-4">Solo registra que ya entregaste la plata (como Liquidar de dealers). La utilidad ya se reconoció en el cierre — esto no mueve la caja.</p>
-
-        {error && <p className="text-red-300 text-sm mb-3 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{error}</p>}
-
-        <div className="flex gap-3">
-          <button type="button" onClick={onClose} disabled={saving}
-            className="flex-1 py-3 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white rounded-xl font-bold transition-colors">Cancelar</button>
-          <button type="button" onClick={submit} disabled={saving}
-            className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl font-bold transition-colors">
-            {saving ? "Guardando…" : "Registrar"}
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
