@@ -834,7 +834,7 @@ async def reset_dealer_access(
     if not dealer:
         raise HTTPException(status_code=404, detail="Dealer no encontrado")
     if not dealer.user_id:
-        raise HTTPException(status_code=409, detail="Este dealer no tiene cuenta. Usá 'Invitar a la app'.")
+        raise HTTPException(status_code=409, detail="Este dealer no tiene cuenta. Usa 'Invitar a la app'.")
 
     user = (await db.execute(
         select(models.User).where(models.User.id == dealer.user_id)

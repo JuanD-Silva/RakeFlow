@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useEscape } from '../hooks/useEscape';
+import { XMarkIcon, SparklesIcon, TrophyIcon, Squares2X2Icon, ChatBubbleLeftRightIcon } from '@heroicons/react/24/outline';
 import { playerService } from '../api/services';
 import { mcop, segmentOf, waPhone, haceDias } from '../utils/crm';
 
@@ -29,6 +31,10 @@ const Kpi = ({ label, value, tone }) => (
 export default function PlayerProfileModal({ player, onClose }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(false);
+  const panelRef = useRef(null);
+  useEscape(onClose, true);
+  // Foco al abrir (lectores de pantalla y teclado): el panel, no el ✕.
+  useEffect(() => { panelRef.current?.focus(); }, []);
 
   // El caller monta el modal con key={player.id}: cambiar de jugador remonta el
   // componente (estado fresco), así el effect no necesita resetear estado a mano.
@@ -46,19 +52,21 @@ export default function PlayerProfileModal({ player, onClose }) {
   const maxVisits = data ? Math.max(1, ...data.monthly.map((m) => m.visits)) : 1;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm overflow-y-auto" onClick={onClose}>
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm overflow-y-auto" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="ficha-titulo">
       <button onClick={onClose} aria-label="Cerrar"
-        className="fixed top-3 right-3 z-10 w-9 h-9 flex items-center justify-center rounded-full bg-gray-800/80 text-gray-300 hover:text-white text-lg leading-none">✕</button>
+        className="fixed top-3 right-3 z-10 w-11 h-11 flex items-center justify-center rounded-full bg-gray-800/80 text-gray-300 hover:text-white">
+        <XMarkIcon className="w-5 h-5" />
+      </button>
 
       <div className="min-h-full flex flex-col items-center justify-center px-4 py-10" onClick={(e) => e.stopPropagation()}>
-        <div className="w-full max-w-md bg-gray-900 border border-gray-700/60 rounded-2xl p-5 space-y-4">
+        <div ref={panelRef} tabIndex={-1} className="w-full max-w-md bg-gray-900 border border-gray-700/60 rounded-2xl p-5 space-y-4 outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50">
 
           {/* Cabecera: quién es y en qué estado está */}
           <div>
             <div className="flex items-start justify-between gap-3">
-              <h3 className="text-xl font-black text-white leading-tight">{player.name}</h3>
+              <h3 id="ficha-titulo" className="text-xl font-black text-white leading-tight">{player.name}</h3>
               {player.is_vip && (
-                <span className="shrink-0 text-[9px] font-bold uppercase px-2 py-1 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/25">💎 VIP</span>
+                <span className="shrink-0 inline-flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-lg bg-cyan-500/10 text-cyan-300 border border-cyan-500/25"><SparklesIcon className="w-3.5 h-3.5" /> VIP</span>
               )}
             </div>
             <div className="flex flex-wrap items-center gap-2 mt-2 text-[11px]">
@@ -129,12 +137,12 @@ export default function PlayerProfileModal({ player, onClose }) {
               {/* Últimas jugadas */}
               {data.recent.length > 0 && (
                 <div>
-                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wide mb-2">Últimas jugadas</p>
+                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wide mb-2">Últimas jugadas <span className="normal-case font-normal text-gray-500">· visto desde el club: dejó / retiró</span></p>
                   <div className="space-y-1">
                     {data.recent.map((r, i) => (
                       <div key={i} className="flex items-center justify-between gap-2 bg-gray-800/50 rounded-lg px-3 py-2 text-xs">
                         <div className="min-w-0 flex items-center gap-2">
-                          <span>{r.kind === 'torneo' ? '🏆' : '🃏'}</span>
+                          {r.kind === 'torneo' ? <TrophyIcon className="w-4 h-4 text-violet-400 shrink-0" /> : <Squares2X2Icon className="w-4 h-4 text-emerald-400 shrink-0" />}
                           <div className="min-w-0">
                             <p className="text-gray-200 font-bold truncate">
                               {r.name}{r.rank ? <span className="text-amber-300"> · #{r.rank}</span> : null}
@@ -142,8 +150,8 @@ export default function PlayerProfileModal({ player, onClose }) {
                             <p className="text-[10px] text-gray-500">{fmtDay(r.date)} · entró {mcop(r.invested)}</p>
                           </div>
                         </div>
-                        <span className={`shrink-0 font-black nums ${r.net > 0 ? 'text-emerald-300' : r.net < 0 ? 'text-red-300/90' : 'text-gray-400'}`}>
-                          {r.net > 0 ? '+' : r.net < 0 ? '−' : ''}{mcop(r.net)}
+                        <span className={`shrink-0 font-bold nums text-right ${r.net < 0 ? 'text-emerald-300' : r.net > 0 ? 'text-amber-300' : 'text-gray-400'}`}>
+                          {r.net < 0 ? 'dejó ' : r.net > 0 ? 'retiró ' : ''}{mcop(r.net)}
                         </span>
                       </div>
                     ))}
@@ -156,13 +164,16 @@ export default function PlayerProfileModal({ player, onClose }) {
           {/* Acción principal: hablarle */}
           {wa && (
             <a href={`https://wa.me/${wa}`} target="_blank" rel="noreferrer"
-              className="block w-full py-3 rounded-xl bg-[#25D366]/90 hover:bg-[#25D366] text-white font-black uppercase tracking-wide text-center text-sm">
-              💬 Escribirle por WhatsApp
+              className="w-full min-h-12 rounded-xl bg-[#25D366]/90 hover:bg-[#25D366] text-white font-black uppercase tracking-wide text-sm inline-flex items-center justify-center gap-2">
+              <ChatBubbleLeftRightIcon className="w-5 h-5" /> Escribirle por WhatsApp
             </a>
+          )}
+          {!wa && (
+            <p className="text-xs text-gray-500 text-center">Sin teléfono: agrégalo desde la lista para poder escribirle.</p>
           )}
         </div>
 
-        <button onClick={onClose} className="mt-4 text-sm text-gray-400 hover:text-white font-bold">Cerrar</button>
+        <button onClick={onClose} className="mt-4 min-h-11 px-4 text-sm text-gray-400 hover:text-white font-bold">Cerrar</button>
       </div>
     </div>
   );

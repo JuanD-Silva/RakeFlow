@@ -125,6 +125,9 @@ export const playerService = {
         return response.data;
     },
 
+    updatePhone: async (playerId, phone) =>
+        (await api.patch(`/players/${playerId}/phone`, { phone })).data,
+
     // --- Cuenta del panel del jugador (staff OWNER/MANAGER) ---
     invite: async (playerId, phone) =>
         (await api.post(`/players/${playerId}/invite`, { phone })).data,
