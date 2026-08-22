@@ -42,7 +42,7 @@ export default function PlayerActivate() {
       <div className="w-full max-w-sm space-y-6">
         <div className="text-center">
           <p className="text-emerald-500 text-xs font-black tracking-[0.3em] uppercase">RakeFlow · Jugador</p>
-          <h1 className="text-2xl font-black text-white mt-2">Activá tu cuenta</h1>
+          <h1 className="text-2xl font-black text-white mt-2">Activa tu cuenta</h1>
           <p className="text-gray-400 text-sm mt-1">Tus estadísticas de juego, logros y ranking del club, en tu bolsillo.</p>
         </div>
 

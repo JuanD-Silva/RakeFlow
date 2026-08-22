@@ -292,7 +292,7 @@ export default function PublicClub() {
                 </p>
                 <p className="pc-display text-[#f7e9bd] font-bold text-xl mt-5 tracking-wide">Las cartas ya están barajadas</p>
                 <p className="text-sm mt-2 text-[#9fb3a4] max-w-[30ch] mx-auto leading-relaxed">
-                  La sala abre por la noche. Guardá este link: cuando haya mesa, acá la ves primero.
+                  La sala abre por la noche. Guarda este link: cuando haya mesa, aquí la ves primero.
                 </p>
               </div>
             )}

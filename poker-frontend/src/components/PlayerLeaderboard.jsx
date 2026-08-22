@@ -1,8 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import api from '../api/axios';
-import { TrophyIcon, StarIcon, ClockIcon, ArrowPathIcon } from '@heroicons/react/24/solid';
+import { TrophyIcon, StarIcon, ClockIcon, ArrowPathIcon, ShareIcon } from '@heroicons/react/24/solid';
 import PlayerProfileModal from './PlayerProfileModal';
-import { waPhone } from '../utils/crm';
 import { formatMoney } from '../utils/formatters';
 
 const MONTH_NAMES = [
@@ -39,6 +38,7 @@ const RANKINGS = [
   {
     key: 'winners',
     title: 'Tiburones',
+    emoji: '🦈',
     measure: 'Utilidad neta · cash + torneos',
     Icon: TrophyIcon,
     tone: { icon: 'text-emerald-400', ring: 'border-emerald-500/30', top: 'bg-emerald-500/10 border-emerald-500/40', val: 'text-emerald-300' },
@@ -47,6 +47,7 @@ const RANKINGS = [
   {
     key: 'spenders',
     title: 'Consumo VIP',
+    emoji: '⭐',
     measure: 'Consumo en barra + propinas',
     Icon: StarIcon,
     tone: { icon: 'text-violet-400', ring: 'border-violet-500/30', top: 'bg-violet-500/10 border-violet-500/40', val: 'text-violet-300' },
@@ -55,6 +56,7 @@ const RANKINGS = [
   {
     key: 'active',
     title: 'Los Fieles',
+    emoji: '🔥',
     measure: 'Horas en mesa · torneo ponderado por puesto',
     Icon: ClockIcon,
     tone: { icon: 'text-amber-400', ring: 'border-amber-500/30', top: 'bg-amber-500/10 border-amber-500/40', val: 'text-amber-300' },
@@ -62,74 +64,85 @@ const RANKINGS = [
   },
 ];
 
-const MEDAL = ['bg-yellow-500/20 text-yellow-300 border-yellow-500/50', 'bg-gray-400/15 text-gray-200 border-gray-400/50', 'bg-orange-700/20 text-orange-300 border-orange-600/50'];
+// Flecha vs el mes anterior: ▲ subió N, ▼ bajó N, = igual, ✦ nuevo en el ranking.
+function Delta({ pos, prevPos }) {
+  if (prevPos == null) return <span className="text-[10px] font-bold text-cyan-300" title="No estaba el mes pasado">✦ nuevo</span>;
+  const d = prevPos - (pos + 1);
+  if (d > 0) return <span className="text-[10px] font-bold text-emerald-400" title={`Subió ${d} ${d === 1 ? 'puesto' : 'puestos'} vs el mes pasado`}>▲ {d}</span>;
+  if (d < 0) return <span className="text-[10px] font-bold text-red-400" title={`Bajó ${-d} ${-d === 1 ? 'puesto' : 'puestos'} vs el mes pasado`}>▼ {-d}</span>;
+  return <span className="text-[10px] font-bold text-gray-500" title="Mismo puesto que el mes pasado">= igual</span>;
+}
 
-// Fila = un jugador sobre el que se puede ACTUAR: tocar el nombre abre la ficha
-// 360 (mismo patrón que Jugadores), WhatsApp a un toque, y se ve si ya tiene
-// el panel. Targets de 44px: es la pantalla del dueño en el celular de noche.
-function RankingRow({ pos, player, format, tone, onOpen }) {
-  const wa = waPhone(player.phone);
+// Un puesto del podio. Tocarlo abre la ficha 360 del jugador (teléfono y
+// WhatsApp viven ahí, como en Jugadores).
+function Step({ pos, player, format, onOpen, styles }) {
+  if (!player) return null;
   return (
-    <li className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border ${pos === 0 ? tone.top : 'border-transparent'}`}>
-      <span className={`shrink-0 w-8 h-8 rounded-full border flex items-center justify-center font-black text-sm ${MEDAL[pos] || MEDAL[2]}`}>{pos + 1}</span>
-      <div className="min-w-0 flex-1">
-        <button
-          type="button"
-          onClick={() => onOpen(player)}
-          aria-label={`Ver ficha de ${player.name}`}
-          className="block w-full text-left min-h-11 group"
-        >
-          <p className={`font-bold truncate group-hover:text-white transition-colors ${pos === 0 ? 'text-white text-base' : 'text-gray-200 text-sm'}`}>
-            {player.name} <span className="text-gray-600 text-xs font-normal">›</span>
-          </p>
-          <p className="text-xs text-gray-500 truncate">
-            <span className={`font-mono font-black tabular-nums ${pos === 0 ? `text-sm ${tone.val}` : 'text-gray-200'}`}>{format(player.value)}</span>
-            <span className="mx-1.5 text-gray-700">·</span>
-            <span className="font-mono">{player.phone || 'sin teléfono'}</span>
-            {player.has_panel && <span className="ml-1.5 text-[11px] text-cyan-300/90">· panel</span>}
-          </p>
-        </button>
+    <button
+      type="button"
+      onClick={() => onOpen(player)}
+      aria-label={`${pos + 1}° ${player.name}: ver ficha`}
+      className={`flex flex-col items-center flex-1 min-w-0 group ${styles.wrap}`}
+    >
+      {pos === 0 && <TrophyIcon className="w-8 h-8 text-yellow-500 mb-1" />}
+      <div className={`${styles.circle} rounded-full border-2 flex items-center justify-center mb-2 shadow-lg`}>
+        <span className={`font-black ${styles.num}`}>{pos + 1}</span>
       </div>
-      {wa ? (
-        <a
-          href={`https://wa.me/${wa}`} target="_blank" rel="noreferrer"
-          aria-label={`Escribirle a ${player.name} por WhatsApp`}
-          className="shrink-0 min-h-11 min-w-11 rounded-xl border border-emerald-500/40 bg-emerald-600/15 text-emerald-300 hover:bg-emerald-600/25 flex items-center justify-center text-xs font-bold"
-        >
-          WA
-        </a>
-      ) : (
-        <span className="shrink-0 min-w-11" aria-hidden="true" />
-      )}
-    </li>
+      <p className={`${styles.name} w-full text-center truncate group-hover:text-white transition-colors`} title={player.name}>{player.name}</p>
+      <Delta pos={pos} prevPos={player.prev_pos} />
+      <div className={`${styles.bar} w-full mt-2 flex items-center justify-center`}>
+        <span className={`font-mono font-bold ${styles.val}`}>{format(player.value)}</span>
+      </div>
+    </button>
   );
 }
 
-function RankingCard({ def, data, onOpen }) {
+const STEP = [
+  { wrap: 'scale-110 -translate-y-2', circle: 'w-14 h-14 bg-yellow-500/20 border-yellow-500 shadow-yellow-500/20 shadow-xl', num: 'text-yellow-500 text-xl', name: 'text-sm font-black text-white', bar: 'h-20 bg-yellow-600/20 rounded-t-xl border-x border-t border-yellow-500/30', val: 'text-xs text-yellow-400' },
+  { wrap: '', circle: 'w-12 h-12 bg-gray-400/20 border-gray-400', num: 'text-gray-300', name: 'text-xs font-bold text-gray-300', bar: 'h-12 bg-gray-700/50 rounded-t-lg', val: 'text-[11px] text-gray-300' },
+  { wrap: '', circle: 'w-10 h-10 bg-orange-700/20 border-orange-700', num: 'text-orange-500 text-sm', name: 'text-xs font-bold text-gray-400', bar: 'h-8 bg-gray-700/50 rounded-t-lg', val: 'text-[11px] text-gray-400' },
+];
+
+function RankingCard({ def, data, onOpen, onShare }) {
   const { title, measure, Icon, tone, format } = def;
   return (
-    <section aria-labelledby={`rk-${def.key}`} className={`bg-gray-800/60 border ${tone.ring} rounded-2xl p-4 flex flex-col`}>
-      <div className="flex items-center gap-3 mb-3">
-        <Icon className={`w-6 h-6 shrink-0 ${tone.icon}`} />
-        <div className="min-w-0">
-          <h3 id={`rk-${def.key}`} className="font-black text-white text-base leading-tight">{title}</h3>
-          <p className="text-xs text-gray-400">{measure}</p>
+    <section aria-labelledby={`rk-${def.key}`} className={`bg-gray-800/40 border ${tone.ring} rounded-3xl overflow-hidden flex flex-col shadow-2xl`}>
+      <div className={`p-5 border-b border-gray-700/30 flex items-start justify-between gap-3`}>
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="p-2 bg-gray-900/50 rounded-xl shadow-inner shrink-0"><Icon className={`w-6 h-6 ${tone.icon}`} /></div>
+          <div className="min-w-0">
+            <h3 id={`rk-${def.key}`} className="font-black text-white uppercase tracking-tighter text-lg leading-tight">{title}</h3>
+            <p className="text-xs text-gray-400">{measure}</p>
+          </div>
         </div>
+        {data.length > 0 && (
+          <button
+            type="button"
+            onClick={() => onShare(def, data)}
+            aria-label={`Compartir ${title} por WhatsApp`}
+            title="Compartir por WhatsApp"
+            className="shrink-0 min-h-11 min-w-11 rounded-xl border border-emerald-500/40 bg-emerald-600/15 text-emerald-300 hover:bg-emerald-600/25 flex items-center justify-center"
+          >
+            <ShareIcon className="w-5 h-5" />
+          </button>
+        )}
       </div>
-      {data.length === 0 ? (
-        <p className="text-center text-gray-400 text-sm py-8">Nadie todavía en este periodo.<br /><span className="text-gray-500 text-xs">Cuenta al cerrar cada mesa o torneo.</span></p>
-      ) : (
-        <ul className="space-y-1">
-          {data.map((p, i) => (
-            <RankingRow key={p.player_id ?? `${def.key}-${i}`} pos={i} player={p} format={format} tone={tone} onOpen={onOpen} />
-          ))}
-        </ul>
-      )}
+      <div className="p-4 flex-1">
+        {data.length === 0 ? (
+          <p className="text-center text-gray-400 text-sm py-10">Nadie todavía en este periodo.<br /><span className="text-gray-500 text-xs">Cuenta al cerrar cada mesa o torneo.</span></p>
+        ) : (
+          <div className="flex items-end justify-center gap-2 pt-4 pb-2 px-1">
+            <Step pos={1} player={data[1]} format={format} onOpen={onOpen} styles={STEP[1]} />
+            <Step pos={0} player={data[0]} format={format} onOpen={onOpen} styles={STEP[0]} />
+            <Step pos={2} player={data[2]} format={format} onOpen={onOpen} styles={STEP[2]} />
+          </div>
+        )}
+      </div>
     </section>
   );
 }
 
-export default function PlayerLeaderboard() {
+export default function PlayerLeaderboard({ clubName = '' } = {}) {
   const [rankings, setRankings] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -157,6 +170,16 @@ export default function PlayerLeaderboard() {
   };
 
   useEffect(() => { fetchRankings(selected); }, [selected]);
+
+  // Compartir un ranking por WhatsApp como texto: puestos y nombres, con el
+  // valor solo en horas. La plata de los jugadores no sale del club
+  // (principio "público = sin plata"); el dueño la ve aquí, el grupo no.
+  const shareRanking = (def, data) => {
+    const lines = data.map((p, i) => `${['🥇', '🥈', '🥉'][i] || `${i + 1}.`} ${p.name}${def.key === 'active' ? ` · ${def.format(p.value)}` : ''}`);
+    const titulo = `${def.emoji} ${def.title} · ${selected.label}`;
+    const texto = `*${clubName ? `${clubName} · ` : ''}Ranking*\n${titulo}\n${lines.join('\n')}\n\n${def.key === 'active' ? 'Horas en mesa este mes.' : 'Los que más mueven este mes.'} ¿Estás en el podio?`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(texto)}`, '_blank', 'noopener');
+  };
 
   const period = rankings?.period;
   const resetDesde = period?.reset_at ? fmtDia(period.reset_at) : null;
@@ -217,9 +240,9 @@ export default function PlayerLeaderboard() {
       )}
 
       {!loading && !error && rankings && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {RANKINGS.map((def) => (
-            <RankingCard key={def.key} def={def} data={rankings[def.key] || []} onOpen={setProfileOf} />
+            <RankingCard key={def.key} def={def} data={rankings[def.key] || []} onOpen={setProfileOf} onShare={shareRanking} />
           ))}
         </div>
       )}

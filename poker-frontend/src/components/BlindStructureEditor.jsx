@@ -326,7 +326,7 @@ export default function BlindStructureEditor({ value, onChange, startingStack, o
       </div>
 
       {levels.length > 0 && (
-        <p className="text-[10px] text-gray-600 px-0.5">Arrastrá <Bars3Icon className="w-3 h-3 inline -mt-0.5" /> para reordenar · tocá un nivel para resaltarlo.</p>
+        <p className="text-[10px] text-gray-600 px-0.5">Arrastra <Bars3Icon className="w-3 h-3 inline -mt-0.5" /> para reordenar · toca un nivel para resaltarlo.</p>
       )}
 
       {levels.length === 0 && (

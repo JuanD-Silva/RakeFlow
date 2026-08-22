@@ -77,7 +77,7 @@ export default function PlayerProfileModal({ player, onClose }) {
           </div>
 
           {error && (
-            <p className="text-sm text-red-300 py-6 text-center">No se pudo cargar la ficha. Cerrá y probá de nuevo.</p>
+            <p className="text-sm text-red-300 py-6 text-center">No se pudo cargar la ficha. Cierra y prueba de nuevo.</p>
           )}
           {!data && !error && (
             <div className="space-y-3">
