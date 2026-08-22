@@ -108,6 +108,58 @@ async def get_dashboard_stats(
         total_sessions = len(cash_sessions) + len(tournaments)
         total_hours = cash_hours + tourney_hours
 
+        # A2. JUGADORES DEL PERIODO: personas distintas que jugaron (buy-in en
+        #     una mesa cash cerrada del rango o inscripcion en un torneo
+        #     completado del rango) y cuantas de ellas jugaron por PRIMERA vez
+        #     en el club. Es la metrica de fidelizacion del dueno: "cuanta
+        #     gente vino" y "cuantos son nuevos".
+        session_ids = [s.id for s in cash_sessions]
+        tourney_ids = [t.id for t in tournaments]
+        jugadores = set()
+        if session_ids:
+            rows = (await db.execute(
+                select(models.Transaction.player_id).where(
+                    models.Transaction.session_id.in_(session_ids),
+                    models.Transaction.type == models.TransactionType.BUYIN,
+                    models.Transaction.player_id.isnot(None),
+                ).distinct()
+            )).scalars().all()
+            jugadores.update(rows)
+        if tourney_ids:
+            rows = (await db.execute(
+                select(models.TournamentPlayer.player_id).where(
+                    models.TournamentPlayer.tournament_id.in_(tourney_ids),
+                    models.TournamentPlayer.player_id.isnot(None),
+                ).distinct()
+            )).scalars().all()
+            jugadores.update(rows)
+        nuevos = 0
+        if jugadores:
+            ids = list(jugadores)
+            # Jugaron ANTES del rango (cualquier buy-in o torneo previo) → no son nuevos.
+            prev_cash = (await db.execute(
+                select(models.Transaction.player_id)
+                .join(models.Session, models.Session.id == models.Transaction.session_id)
+                .where(
+                    models.Session.club_id == current_club.id,
+                    models.Transaction.player_id.in_(ids),
+                    models.Transaction.type == models.TransactionType.BUYIN,
+                    models.Transaction.timestamp < range_start,
+                ).distinct()
+            )).scalars().all()
+            prev_t = (await db.execute(
+                select(models.TournamentPlayer.player_id)
+                .join(models.Tournament, models.Tournament.id == models.TournamentPlayer.tournament_id)
+                .where(
+                    models.Tournament.club_id == current_club.id,
+                    models.TournamentPlayer.player_id.in_(ids),
+                    models.Tournament.start_time < range_start,
+                ).distinct()
+            )).scalars().all()
+            veteranos = set(prev_cash) | set(prev_t)
+            nuevos = len(jugadores - veteranos)
+        players_range = len(jugadores)
+
         # B. PROFIT DEL RANGO (cash + torneos)
         range_profit = await _get_net_profit_in_range(db, current_club.id, range_start, range_end)
 
@@ -161,6 +213,8 @@ async def get_dashboard_stats(
             "avg_rake_hour": int(range_profit / total_hours) if total_hours > 0 else 0,
             "total_hours": round(total_hours, 1),
             "total_sessions": total_sessions,
+            "players_range": players_range,
+            "new_players_range": nuevos,
             "avg_ticket": avg_ticket,
             "total_in": total_in,
             "efficiency": round(efficiency, 1),
