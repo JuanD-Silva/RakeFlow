@@ -422,25 +422,44 @@ async def get_rankings(
     El cálculo vive en player_stats.compute_monthly_rankings (fuente única,
     compartida con el panel del jugador); acá solo se toma el top 3.
     """
-    try:
-        winners_map, spenders_map, active_map, names_map, period = \
-            await player_stats.compute_monthly_rankings(db, current_club, year, month)
+    # Sin try/except generico: un error de DB era "Sin datos este periodo" y el
+    # dueno concluia que nadie jugo. Ahora es un 500 honesto y el front reintenta.
+    winners_map, spenders_map, active_map, names_map, period = \
+        await player_stats.compute_monthly_rankings(db, current_club, year, month)
 
-        def get_top_3(data_map):
-            lista = [{"name": names_map.get(k, "Unknown"), "value": v} for k, v in data_map.items()]
-            return sorted(lista, key=lambda x: x["value"], reverse=True)[:3]
+    # Identidad para ACTUAR desde el ranking (ficha 360, WhatsApp): telefono y
+    # si ya activo el panel. Solo de los que entran al top.
+    top_ids = set()
+    tops = {}
+    for key, data_map in (("winners", winners_map), ("spenders", spenders_map), ("active", active_map)):
+        ordered = sorted(data_map.items(), key=lambda kv: kv[1], reverse=True)[:3]
+        tops[key] = ordered
+        top_ids.update(pid for pid, _ in ordered)
+    info = {}
+    if top_ids:
+        rows = (await db.execute(
+            select(models.Player.id, models.Player.phone, models.Player.user_id).where(
+                models.Player.club_id == current_club.id,
+                models.Player.id.in_(list(top_ids)),
+            )
+        )).all()
+        info = {r[0]: {"phone": r[1], "has_panel": r[2] is not None} for r in rows}
 
-        return {
-            "winners": get_top_3(winners_map),
-            "spenders": get_top_3(spenders_map),
-            "active": get_top_3(active_map),
-            "period": period,
-        }
+    def serialize(ordered):
+        return [{
+            "player_id": pid,
+            "name": names_map.get(pid, "Sin nombre"),
+            "value": v,
+            "phone": info.get(pid, {}).get("phone"),
+            "has_panel": info.get(pid, {}).get("has_panel", False),
+        } for pid, v in ordered]
 
-    except Exception as e:
-        logger.error("Error rankings: %s", e)
-        # En caso de error devolvemos listas vacías para que el front no explote
-        return {"winners": [], "spenders": [], "active": [], "period": None}
+    return {
+        "winners": serialize(tops["winners"]),
+        "spenders": serialize(tops["spenders"]),
+        "active": serialize(tops["active"]),
+        "period": period,
+    }
 
 @router.get("/jackpot-global")
 async def get_global_jackpot(db: AsyncSession = Depends(get_db), current_club: models.Club = Depends(get_current_club)):
