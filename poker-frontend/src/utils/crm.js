@@ -18,12 +18,20 @@ export const mcop = (n) => {
   return '$' + v.toLocaleString('es-CO');
 };
 
-// Semáforo de recencia (mismos cortes que el análisis de negocio):
-// ≤14 activo · 15–30 tibio · 31–60 enfriándose · >60 dormido.
+// Semáforo de recencia (mismos cortes que el análisis de negocio). UNA sola
+// fuente: chips de filtro, contadores y el chip de cada card salen de aquí —
+// antes el filtro "dormidos" era +30 y la card pintaba 🧊 a los de 31-60.
+export const SEGMENTS = [
+  { key: 'hot',    emoji: '🔥', label: 'Activo',       range: '≤14d',   from: 0,  to: 14,       cls: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30' },
+  { key: 'warm',   emoji: '🌗', label: 'Tibio',        range: '15–30d', from: 15, to: 30,       cls: 'bg-yellow-500/10 text-yellow-300 border-yellow-500/30' },
+  { key: 'cool',   emoji: '🧊', label: 'Enfriándose',  range: '31–60d', from: 31, to: 60,       cls: 'bg-sky-500/10 text-sky-300 border-sky-500/30' },
+  { key: 'asleep', emoji: '😴', label: 'Dormido',      range: '+60d',   from: 61, to: Infinity, cls: 'bg-red-500/10 text-red-300/90 border-red-500/25' },
+];
+
 export const segmentOf = (days) => {
   if (days == null) return null;
-  if (days <= 14) return { emoji: '🔥', cls: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30' };
-  if (days <= 30) return { emoji: '🌗', cls: 'bg-yellow-500/10 text-yellow-300 border-yellow-500/30' };
-  if (days <= 60) return { emoji: '🧊', cls: 'bg-sky-500/10 text-sky-300 border-sky-500/30' };
-  return { emoji: '😴', cls: 'bg-red-500/10 text-red-300/90 border-red-500/25' };
+  return SEGMENTS.find((s) => days >= s.from && days <= s.to) || SEGMENTS[SEGMENTS.length - 1];
 };
+
+// "hoy" / "ayer" / "hace 14d"
+export const haceDias = (days) => (days === 0 ? 'hoy' : days === 1 ? 'ayer' : `hace ${days}d`);

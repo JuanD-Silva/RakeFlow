@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { playerService } from '../api/services';
-import { mcop, segmentOf, waPhone } from '../utils/crm';
+import { mcop, segmentOf, waPhone, haceDias } from '../utils/crm';
 
 // Ficha 360 del jugador para el CLUB (OWNER/MANAGER): se abre desde el
 // directorio. Totales de su historia, actividad de los últimos 6 meses y sus
@@ -64,7 +64,7 @@ export default function PlayerProfileModal({ player, onClose }) {
             <div className="flex flex-wrap items-center gap-2 mt-2 text-[11px]">
               {t && (seg ? (
                 <span className={`font-bold px-2 py-0.5 rounded-full border ${seg.cls}`}>
-                  {seg.emoji} hace {t.days_inactive}d
+                  {seg.emoji} {haceDias(t.days_inactive)} · {seg.label.toLowerCase()}
                 </span>
               ) : (
                 <span className="font-bold px-2 py-0.5 rounded-full border bg-gray-700/40 text-gray-500 border-gray-600/40">sin visitas</span>
