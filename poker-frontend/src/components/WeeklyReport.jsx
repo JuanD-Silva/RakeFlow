@@ -325,11 +325,11 @@ export default function WeeklyReport() {
             No pude cargar lo pendiente a dealers — la lista puede estar incompleta. <button type="button" onClick={() => setPayoutReload((k) => k + 1)} className="underline font-bold">Reintentar</button>
           </p>
         )}
-        {deudas.length === 0 ? (
+        {deudas.length === 0 && !dealersDue.error ? (
           <p className={`rounded-2xl border px-4 py-4 text-sm ${dealersDue.error ? 'border-gray-700 text-gray-400' : 'border-emerald-500/30 bg-emerald-500/5 text-emerald-300'}`}>
             {dealersDue.error ? 'No se pudo cargar la lista.' : 'Al día: ningún dealer pendiente en este periodo.'}
           </p>
-        ) : (
+        ) : deudas.length > 0 ? (
           <ul className="rounded-2xl border border-gray-700 bg-gray-800 divide-y divide-gray-700/70 overflow-hidden">
             {/* Móvil: dos líneas (quién / cuánto + botón); desktop: una fila
                 con columnas alineadas. */}
@@ -353,7 +353,7 @@ export default function WeeklyReport() {
               </li>
             ))}
           </ul>
-        )}
+        ) : null}
         {dealersExternos > 0 && (
           <p className="text-xs text-blue-300/90">
             {dealersExternos === 1 ? 'Un dealer tiene' : `${dealersExternos} dealers tienen`} un pago registrado en otro periodo (ej. el mes): no aparece{dealersExternos === 1 ? '' : 'n'} aquí para que no lo repitas.
