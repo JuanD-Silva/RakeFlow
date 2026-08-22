@@ -11,8 +11,7 @@ import {
   BanknotesIcon,
   ArrowTrendingUpIcon,
   ArrowTrendingDownIcon,
-  ExclamationTriangleIcon,
-  CheckCircleIcon,
+  UserGroupIcon,
 } from '@heroicons/react/24/outline';
 import { useEscape } from '../hooks/useEscape';
 
@@ -35,7 +34,6 @@ export default function KPIDashboard({ startDate, endDate, netPeriodo = null } =
   const [stats, setStats] = useState(null);
   const [quota, setQuota] = useState(null);
   const [prevStats, setPrevStats] = useState(null);
-  const [dealerPending, setDealerPending] = useState(null);
   const [error, setError] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
   // Encadenar taps de ← dispara varios fetches: solo la respuesta del MÁS
@@ -72,7 +70,6 @@ export default function KPIDashboard({ startDate, endDate, netPeriodo = null } =
         // (2) en vista mensual el anterior es el mes CALENDARIO, no "misma
         //     duración" (que metía días de dos meses).
         let prevParams = '';
-        let curQuery = '';
         let comparacion = null;
         if (startDate && endDate) {
           const fmt2 = (d) => {
@@ -104,19 +101,16 @@ export default function KPIDashboard({ startDate, endDate, netPeriodo = null } =
           if (prevEnd > prevEndCompleto) prevEnd = prevEndCompleto;
           comparacion = { parcial, transcurridos };
           prevParams = `?start_date=${fmt2(prevStart)}&end_date=${fmt2(prevEnd)}`;
-          curQuery = `start_date=${fmt2(startDate)}&end_date=${fmt2(endDate)}`;
         }
-        const [dashRes, quotaRes, prevRes, dealersRes] = await Promise.all([
+        const [dashRes, quotaRes, prevRes] = await Promise.all([
           api.get(`/stats/dashboard${params}`),
           api.get(`/stats/monthly-debt-quota${params}`),
           prevParams ? api.get(`/stats/dashboard${prevParams}`).catch(() => ({ data: null })) : Promise.resolve({ data: null }),
-          curQuery ? api.get(`/stats/dealer-payments?${curQuery}`).catch(() => ({ data: null })) : Promise.resolve({ data: null }),
         ]);
         if (myReq !== fetchSeqRef.current) return;
         setStats(dashRes.data);
         setQuota(quotaRes.data);
         setPrevStats(prevRes.data ? { ...prevRes.data, comparacion } : null);
-        setDealerPending(dealersRes.data?.summary?.pending ?? null);
       } catch (e) {
         if (myReq !== fetchSeqRef.current) return;
         console.error("Error KPIs", e);
@@ -234,12 +228,16 @@ export default function KPIDashboard({ startDate, endDate, netPeriodo = null } =
         />
 
         <Card
-          title="Pendiente a dealers"
-          value={dealerPending != null ? formatMoney(dealerPending) : '—'}
-          sub={dealerPending > 0 ? 'Del periodo — liquida en la pestaña Dealers' : dealerPending === 0 ? 'Al día con el equipo (este periodo)' : 'Sin datos'}
-          Icon={dealerPending > 0 ? ExclamationTriangleIcon : CheckCircleIcon}
-          border={dealerPending > 0 ? 'border-amber-500/40' : 'border-gray-700'}
-          iconColor={dealerPending > 0 ? 'text-amber-400' : 'text-gray-500'}
+          title="Jugadores del periodo"
+          value={stats.players_range != null ? String(stats.players_range) : '—'}
+          sub={stats.players_range != null
+            ? (stats.new_players_range > 0
+                ? `${stats.new_players_range} ${stats.new_players_range === 1 ? 'jugó' : 'jugaron'} por primera vez`
+                : (stats.players_range > 0 ? 'Todos ya conocidos del club' : 'Nadie jugó en este periodo'))
+            : 'Sin datos'}
+          Icon={UserGroupIcon}
+          border="border-violet-500/30"
+          iconColor="text-violet-400"
         />
 
         <Card
