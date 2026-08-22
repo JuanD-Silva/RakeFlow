@@ -435,7 +435,7 @@ function HomeTab({ club, data, loaded, error }) {
 
       {/* Aviso sesión en curso */}
       {data.open_session && (
-        <p className="text-center text-[11px] text-emerald-300/80 font-bold">🎲 Tenés una sesión abierta — se suma a tus números al cerrar la mesa</p>
+        <p className="text-center text-[11px] text-emerald-300/80 font-bold">🎲 Tienes una sesión abierta — se suma a tus números al cerrar la mesa</p>
       )}
 
       {/* El mes en curso. Peak-end rule + finding on-domain: mostrar la pérdida
