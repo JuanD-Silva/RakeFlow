@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from 'react';
 import api from '../api/axios';
 import { TrophyIcon, StarIcon, ClockIcon, ArrowPathIcon, ShareIcon } from '@heroicons/react/24/solid';
 import PlayerProfileModal from './PlayerProfileModal';
+import RankingShareCard from './RankingShareCard';
 import { formatMoney } from '../utils/formatters';
 
 const MONTH_NAMES = [
@@ -41,7 +42,8 @@ const RANKINGS = [
     emoji: '🦈',
     measure: 'Utilidad neta · cash + torneos',
     Icon: TrophyIcon,
-    tone: { icon: 'text-emerald-400', ring: 'border-emerald-500/30', top: 'bg-emerald-500/10 border-emerald-500/40', val: 'text-emerald-300' },
+    tone: { icon: 'text-emerald-400', ring: 'border-emerald-500/30', top: 'bg-emerald-500/10 border-emerald-500/40', val: 'text-emerald-300', btn: 'bg-emerald-600 hover:bg-emerald-500' },
+    grad: 'linear-gradient(160deg, #052e22 0%, #0a0f1a 55%, #0b1220 100%)',
     format: (v) => `+${formatMoney(v)}`,
   },
   {
@@ -50,7 +52,8 @@ const RANKINGS = [
     emoji: '⭐',
     measure: 'Consumo en barra + propinas',
     Icon: StarIcon,
-    tone: { icon: 'text-violet-400', ring: 'border-violet-500/30', top: 'bg-violet-500/10 border-violet-500/40', val: 'text-violet-300' },
+    tone: { icon: 'text-violet-400', ring: 'border-violet-500/30', top: 'bg-violet-500/10 border-violet-500/40', val: 'text-violet-300', btn: 'bg-violet-600 hover:bg-violet-500' },
+    grad: 'linear-gradient(160deg, #170a32 0%, #0a0f1a 55%, #0b1220 100%)',
     format: (v) => formatMoney(v),
   },
   {
@@ -59,7 +62,8 @@ const RANKINGS = [
     emoji: '🔥',
     measure: 'Horas en mesa · torneo ponderado por puesto',
     Icon: ClockIcon,
-    tone: { icon: 'text-amber-400', ring: 'border-amber-500/30', top: 'bg-amber-500/10 border-amber-500/40', val: 'text-amber-300' },
+    tone: { icon: 'text-amber-400', ring: 'border-amber-500/30', top: 'bg-amber-500/10 border-amber-500/40', val: 'text-amber-300', btn: 'bg-amber-600 hover:bg-amber-500' },
+    grad: 'linear-gradient(160deg, #2a1a05 0%, #0a0f1a 55%, #0b1220 100%)',
     format: (v) => `${Number(v).toFixed(1)} h`,
   },
 ];
@@ -171,15 +175,9 @@ export default function PlayerLeaderboard({ clubName = '' } = {}) {
 
   useEffect(() => { fetchRankings(selected); }, [selected]);
 
-  // Compartir un ranking por WhatsApp como texto: puestos y nombres, con el
-  // valor solo en horas. La plata de los jugadores no sale del club
-  // (principio "público = sin plata"); el dueño la ve aquí, el grupo no.
-  const shareRanking = (def, data) => {
-    const lines = data.map((p, i) => `${['🥇', '🥈', '🥉'][i] || `${i + 1}.`} ${p.name}${def.key === 'active' ? ` · ${def.format(p.value)}` : ''}`);
-    const titulo = `${def.emoji} ${def.title} · ${selected.label}`;
-    const texto = `*${clubName ? `${clubName} · ` : ''}Ranking*\n${titulo}\n${lines.join('\n')}\n\n${def.key === 'active' ? 'Horas en mesa este mes.' : 'Los que más mueven este mes.'} ¿Estás en el podio?`;
-    window.open(`https://wa.me/?text=${encodeURIComponent(texto)}`, '_blank', 'noopener');
-  };
+  // Compartir = el MISMO podio como imagen (tarjeta-podio), no un texto.
+  const [shareOf, setShareOf] = useState(null); // { def, data }
+  const shareRanking = (def, data) => setShareOf({ def, data });
 
   const period = rankings?.period;
   const resetDesde = period?.reset_at ? fmtDia(period.reset_at) : null;
@@ -250,6 +248,10 @@ export default function PlayerLeaderboard({ clubName = '' } = {}) {
       <p className="text-xs text-gray-500 text-center border-t border-gray-800 pt-4">
         Los rankings se actualizan al cerrar cada mesa o torneo. Es lo mismo que ve cada jugador en su panel.
       </p>
+
+      {shareOf && (
+        <RankingShareCard def={shareOf.def} data={shareOf.data} clubName={clubName} periodLabel={selected.label} onClose={() => setShareOf(null)} />
+      )}
 
       {profileOf && (
         <PlayerProfileModal key={profileOf.player_id} player={{ id: profileOf.player_id, name: profileOf.name, phone: profileOf.phone }} onClose={() => setProfileOf(null)} />
