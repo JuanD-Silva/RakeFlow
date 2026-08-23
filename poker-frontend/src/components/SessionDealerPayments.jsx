@@ -139,7 +139,9 @@ function PayModal({ dealer, sessionId, onClose, onDone }) {
               % del rake{dealer.declared_rake > 0
                 ? (dealer.rake_pct_mixed
                     ? <> (sobre {formatMoney(dealer.declared_rake)} declarados)</>
-                    : <> ({dealer.rake_pct}% de {formatMoney(dealer.declared_rake)} declarados)</>)
+                    : dealer.rake_pct > 0
+                      ? <> ({dealer.rake_pct}% de {formatMoney(dealer.declared_rake)} declarados)</>
+                      : null)
                 : dealer.rake_pct > 0 ? <> ({dealer.rake_pct}% · sin rake declarado aún)</> : null}:
             </span>
             <span className="font-mono text-gray-200">{formatMoney(dealer.rake_commission)}</span>
