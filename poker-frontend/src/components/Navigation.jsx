@@ -39,7 +39,9 @@ export default function Navigation({ currentView, setView, clubName }) {
 
   return (
     <nav className="bg-gray-900 border-b border-gray-800 sticky top-0 z-50 shadow-2xl">
-      <div className="max-w-7xl mx-auto px-4">
+      {/* En pantallas grandes (≥1536px) el contenedor se amplía: con los iconos
+          de vuelta, 8 ítems no caben en 1280px. */}
+      <div className="max-w-7xl 2xl:max-w-[1500px] mx-auto px-4">
         {/* Tres zonas con aire fijo entre ellas (gap-6): marca · menú · admin.
             La marca y el admin no se encogen; el menú toma el resto y nunca
             parte etiquetas en dos líneas — si no cabe, scrollea sin barra. */}
@@ -76,7 +78,7 @@ export default function Navigation({ currentView, setView, clubName }) {
                   onClick={() => setView(item.id)}
                   aria-current={isActive ? 'page' : undefined}
                   className={`
-                    relative shrink-0 whitespace-nowrap min-h-11 px-3 2xl:px-4 rounded-lg text-xs 2xl:text-[13px] font-bold uppercase tracking-normal 2xl:tracking-wide flex items-center gap-2 transition-all duration-200
+                    relative shrink-0 whitespace-nowrap min-h-11 px-3 rounded-lg text-xs font-bold uppercase tracking-normal flex items-center gap-2 transition-all duration-200
                     ${isActive
                       ? 'text-white bg-gray-700 shadow-lg border border-gray-600'
                       : 'text-gray-400 hover:text-white hover:bg-gray-700/50'
