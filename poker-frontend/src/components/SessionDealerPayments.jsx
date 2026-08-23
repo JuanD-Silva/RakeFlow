@@ -133,7 +133,17 @@ function PayModal({ dealer, sessionId, onClose, onDone }) {
         {/* Desglose del pago: de dónde sale el número, no solo el total. */}
         <div className="bg-gray-900/50 border border-gray-700 rounded-lg p-3 text-xs text-gray-400 space-y-1">
           <div className="flex justify-between"><span>Por horas ({dealer.hours}h):</span><span className="font-mono text-gray-200">{formatMoney(dealer.hour_payment)}</span></div>
-          <div className="flex justify-between"><span>% del rake:</span><span className="font-mono text-gray-200">{formatMoney(dealer.rake_commission)}</span></div>
+          {/* El "por qué" del monto: de qué rake declarado sale la comisión. */}
+          <div className="flex justify-between">
+            <span>
+              % del rake{dealer.declared_rake > 0
+                ? (dealer.rake_pct_mixed
+                    ? <> (sobre {formatMoney(dealer.declared_rake)} declarados)</>
+                    : <> ({dealer.rake_pct}% de {formatMoney(dealer.declared_rake)} declarados)</>)
+                : dealer.rake_pct > 0 ? <> ({dealer.rake_pct}% · sin rake declarado aún)</> : null}:
+            </span>
+            <span className="font-mono text-gray-200">{formatMoney(dealer.rake_commission)}</span>
+          </div>
           <div className="flex justify-between font-bold border-t border-gray-700 pt-1 mt-1"><span>A pagar en esta mesa:</span><span className="font-mono text-white">{formatMoney(dealer.club_payment)}</span></div>
           <div className="flex justify-between"><span>Ya pagado:</span><span className="font-mono text-green-400">{formatMoney(dealer.paid)}</span></div>
           <div className="flex justify-between font-bold"><span>Pendiente:</span><span className="font-mono text-orange-400">{formatMoney(dealer.pending)}</span></div>

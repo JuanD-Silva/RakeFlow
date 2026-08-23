@@ -1163,11 +1163,22 @@ async def session_dealer_payments(
             "dealer_id": shift.dealer_id, "name": name,
             "hours": 0.0, "hour_payment": 0, "rake_commission": 0,
             "club_payment": 0, "has_open_shift": False, "rake_pct_open": 0,
+            # De dónde sale el "% del rake": rake declarado en sus turnos y el
+            # % aplicado (si todos los turnos comparten %, se muestra; si no, None).
+            "declared_rake": 0.0, "rake_pct": None, "rake_pct_mixed": False,
         })
         d["hours"] += hours
         d["hour_payment"] += bd["hour_payment"]
         d["rake_commission"] += bd["rake_commission"]
         d["club_payment"] += bd["club_payment"]
+        # Clamp a >=0 como el breakdown (services.py): un remainder negativo del
+        # cierre no comisiona y no debe restar del "por qué".
+        d["declared_rake"] += max(0.0, float(shift.declared_rake or 0))
+        pct = float(shift.rake_pct or 0)
+        if d["rake_pct"] is None:
+            d["rake_pct"] = pct
+        elif d["rake_pct"] != pct:
+            d["rake_pct_mixed"] = True
         if shift.end_time is None:
             d["has_open_shift"] = True
             d["rake_pct_open"] = shift.rake_pct
