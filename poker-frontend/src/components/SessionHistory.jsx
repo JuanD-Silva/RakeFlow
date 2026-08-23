@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import api from '../api/axios';
 import { historyService, tournamentService } from '../api/services';
-import { formatMoney } from '../utils/formatters';
+import { formatMoney, parseServerDate } from '../utils/formatters';
 import ConfirmModal from './ConfirmModal';
 import { 
   CalendarIcon, ClockIcon, CurrencyDollarIcon, UserGroupIcon, 
@@ -80,7 +80,7 @@ export default function SessionHistory() {
   
   const formatDate = (dateString) => {
     if (!dateString) return "---";
-    return new Date(dateString).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' }).toUpperCase();
+    return parseServerDate(dateString).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Bogota' }).toUpperCase();
   };
 
   const getDuration = (minutes) => {
@@ -117,7 +117,7 @@ export default function SessionHistory() {
                         {isTourney ? item.title : `#${item.id} — ${formatDate(item.date)}`}
                       </h3>
                       <div className="flex items-center gap-3 mt-1 text-gray-500 font-mono text-xs uppercase">
-                        <span className="flex items-center gap-1"><ClockIcon className="w-3 h-3"/> {isTourney ? formatDate(item.date) : new Date(item.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                        <span className="flex items-center gap-1"><ClockIcon className="w-3 h-3"/> {isTourney ? formatDate(item.date) : parseServerDate(item.date).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' })}</span>
                         <span className={`flex items-center gap-1 ${isTourney ? 'text-violet-400' : 'text-blue-400'}`}><ClockIcon className="w-3 h-3"/> {getDuration(item.duration_minutes)}</span>
                       </div>
                     </div>
