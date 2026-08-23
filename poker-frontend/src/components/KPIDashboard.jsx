@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import api from '../api/axios';
 import { historyService } from '../api/services';
-import { formatMoney } from '../utils/formatters';
+import { formatMoney, parseServerDate } from '../utils/formatters';
 import {
   XMarkIcon,
   ClockIcon,
@@ -26,8 +26,7 @@ function formatDuration(minutes) {
 
 function formatDate(iso) {
   if (!iso) return '-';
-  const d = new Date(iso);
-  return d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' });
+  return parseServerDate(iso).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'America/Bogota' });
 }
 
 export default function KPIDashboard({ startDate, endDate, netPeriodo = null } = {}) {
@@ -133,7 +132,7 @@ export default function KPIDashboard({ startDate, endDate, netPeriodo = null } =
       const desde = new Date(startDate); desde.setHours(0, 0, 0, 0);
       const hasta = new Date(endDate); hasta.setHours(23, 59, 59, 999);
       const enRango = (data || []).filter((it) => {
-        const f = new Date(it.date || it.start_time || it.created_at);
+        const f = parseServerDate(it.date || it.start_time || it.created_at);
         return !isNaN(f) && f >= desde && f <= hasta;
       });
       setHistoryItems(enRango);
@@ -198,7 +197,7 @@ export default function KPIDashboard({ startDate, endDate, netPeriodo = null } =
   const deltaPct = delta != null && rakePrevio > 0 ? Math.round((delta / rakePrevio) * 100) : null;
 
   // Histórico ordenado por fecha desc + total de horas calculado
-  const sortedHistory = [...historyItems].sort((a, b) => new Date(b.date) - new Date(a.date));
+  const sortedHistory = [...historyItems].sort((a, b) => parseServerDate(b.date) - parseServerDate(a.date));
   const totalMinutes = sortedHistory.reduce((acc, it) => acc + (it.duration_minutes || 0), 0);
 
   return (

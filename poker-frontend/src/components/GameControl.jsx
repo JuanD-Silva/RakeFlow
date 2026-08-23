@@ -18,13 +18,13 @@ import TournamentPlayerTable from './TournamentPlayerTable';
 import TournamentClock from './TournamentClock';
 import TournamentTables from './TournamentTables';
 import { useAuth } from '../context/AuthContext';
-import { formatMoney } from '../utils/formatters';
+import { formatMoney, parseServerDate } from '../utils/formatters';
 import { useEscape } from '../hooks/useEscape';
 
 // Formatea una duracion en mins -> "1h 30m", "45m", "2h"
 function formatDuration(startIso) {
   if (!startIso) return null;
-  const start = new Date(startIso).getTime();
+  const start = parseServerDate(startIso).getTime();
   if (isNaN(start)) return null;
   const minutes = Math.floor((Date.now() - start) / 60000);
   if (minutes < 1) return "<1m";

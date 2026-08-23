@@ -1,3 +1,4 @@
+import { parseServerDate } from '../utils/formatters';
 import { useState, useEffect, useRef } from 'react';
 import { dealerService } from '../api/services';
 import {
@@ -253,7 +254,7 @@ export default function DealerShiftForm({ mode, sessionId, currentShift, onSucce
                 return (
                   <div key={i} className="flex items-center justify-between text-xs font-mono">
                     <span className="text-gray-500">
-                      {c.at ? new Date(c.at).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }) : '—'}
+                      {c.at ? parseServerDate(c.at).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' }) : '—'}
                     </span>
                     <span className="text-gray-300">
                       ${Math.round(c.declared_rake ?? 0).toLocaleString('es-CO')}
