@@ -219,8 +219,11 @@ async def _build_players_stats(db: AsyncSession, session: models.Session) -> dic
             amount,
             CAST(method AS TEXT) as method_str,
             COALESCE(is_paid, FALSE) as is_paid,
-            -- 👇 AQUÍ ESTÁ LA FUSIÓN CLAVE: 'timestamp' + 'Time Zone'
-            (timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'America/Bogota') as created_at
+            -- UTC crudo, como busted_at y el resto de la API: el frontend convierte
+            -- UNA sola vez (parseServerDate + America/Bogota). Antes este campo
+            -- venía ya en hora Bogotá y el resto en UTC: dos formatos en la misma
+            -- respuesta, y cada uno se pintaba con una regla distinta.
+            timestamp as created_at
         FROM transactions
         WHERE session_id = :sid
         ORDER BY timestamp DESC
@@ -241,7 +244,7 @@ async def _build_players_stats(db: AsyncSession, session: models.Session) -> dic
                     "id": tx.id,
                     "type": clean_type,
                     "amount": tx.amount,
-                    "created_at": tx.created_at,
+                    "created_at": tx.created_at.isoformat() if tx.created_at else None,
                     "method": tx.method_str or "CASH",
                     "is_paid": bool(tx.is_paid),
                 })
