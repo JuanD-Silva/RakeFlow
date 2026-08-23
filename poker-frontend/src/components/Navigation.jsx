@@ -40,10 +40,13 @@ export default function Navigation({ currentView, setView, clubName }) {
   return (
     <nav className="bg-gray-900 border-b border-gray-800 sticky top-0 z-50 shadow-2xl">
       <div className="max-w-7xl mx-auto px-4">
-        <div className="flex justify-between items-center h-20">
+        {/* Tres zonas con aire fijo entre ellas (gap-6): marca · menú · admin.
+            La marca y el admin no se encogen; el menú toma el resto y nunca
+            parte etiquetas en dos líneas — si no cabe, scrollea sin barra. */}
+        <div className="flex items-center h-20 gap-6">
 
           {/* 1. LOGO / MARCA */}
-          <div className="flex items-center gap-3 cursor-pointer group" onClick={() => setView('game')}>
+          <div className="flex items-center gap-3 cursor-pointer group shrink-0" onClick={() => setView('game')}>
             <div className="bg-gradient-to-br from-emerald-600 to-green-900 p-2.5 rounded-xl shadow-lg group-hover:shadow-emerald-500/20 transition-all duration-300 border border-emerald-500/30 relative overflow-hidden">
                <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-20 transition-opacity"></div>
                <span className="text-2xl leading-none relative z-10">💸</span>
@@ -63,22 +66,26 @@ export default function Navigation({ currentView, setView, clubName }) {
           </div>
 
           {/* 2. MENU CENTRAL (desktop) */}
-          <div className="hidden md:flex gap-3 bg-gray-800/50 p-1.5 rounded-xl border border-gray-700/50 backdrop-blur-sm">
+          <div className="hidden md:flex flex-1 min-w-0 justify-center">
+          <div className="flex gap-1 lg:gap-1.5 bg-gray-800/50 p-1.5 rounded-xl border border-gray-700/50 backdrop-blur-sm max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {navItems.map((item) => {
               const isActive = currentView === item.id;
               return (
                 <button
                   key={item.id}
                   onClick={() => setView(item.id)}
+                  aria-current={isActive ? 'page' : undefined}
                   className={`
-                    relative px-5 py-2.5 rounded-lg text-sm font-bold uppercase tracking-wide flex items-center gap-2 transition-all duration-200
+                    relative shrink-0 whitespace-nowrap min-h-11 px-3 2xl:px-4 rounded-lg text-xs 2xl:text-[13px] font-bold uppercase tracking-normal 2xl:tracking-wide flex items-center gap-2 transition-all duration-200
                     ${isActive
                       ? 'text-white bg-gray-700 shadow-lg border border-gray-600'
                       : 'text-gray-400 hover:text-white hover:bg-gray-700/50'
                     }
                   `}
                 >
-                  <span className={`transition-colors duration-200 ${isActive ? 'text-emerald-400' : 'text-gray-500'}`}>
+                  {/* Icono solo con espacio de sobra (≥1536px): por debajo, la
+                      etiqueta sola cabe en una línea sin comerse logo ni admin. */}
+                  <span className={`hidden 2xl:inline-flex transition-colors duration-200 ${isActive ? 'text-emerald-400' : 'text-gray-500'}`}>
                     {item.icon}
                   </span>
                   {item.label}
@@ -89,9 +96,10 @@ export default function Navigation({ currentView, setView, clubName }) {
               );
             })}
           </div>
+          </div>
 
           {/* 3. INFO ADMIN (desktop ancho) */}
-          <div className="hidden lg:block text-right">
+          <div className="hidden xl:block text-right shrink-0">
              <p className="text-gray-300 text-xs font-bold">Admin</p>
              <div className="flex items-center justify-end gap-1.5">
                 <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
