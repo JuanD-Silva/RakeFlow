@@ -134,22 +134,29 @@ async def tournament_rake_in_range(
         )
     )
     tournaments = (await db.execute(stmt)).scalars().all()
+    return float(sum(tournament_rake_of(t) for t in tournaments))
 
-    total_rake = 0.0
-    for t in tournaments:
-        gross_pot = 0
-        for p in t.players:
-            single_rebuys = max(0, (p.rebuys_count or 0) - (p.double_rebuys_count or 0))
-            single_addons = max(0, (p.addons_count or 0) - (p.double_addons_count or 0))
-            gross_pot += (
-                (p.entries_count or 1) * t.buyin_amount  # 1 + re-entradas
-                + single_rebuys * t.rebuy_price
-                + (p.double_rebuys_count or 0) * t.double_rebuy_price
-                + single_addons * t.addon_price
-                + (p.double_addons_count or 0) * t.double_addon_price
-            )
-        total_rake += gross_pot * (t.rake_percentage / 100)
-    return total_rake
+
+def tournament_gross_pot_of(t) -> float:
+    """Pozo BRUTO de un torneo (requiere t.players cargados). Invariante
+    singles/dobles: rebuys_count/addons_count son TOTALES; singles = total − dobles."""
+    gross_pot = 0
+    for p in t.players:
+        single_rebuys = max(0, (p.rebuys_count or 0) - (p.double_rebuys_count or 0))
+        single_addons = max(0, (p.addons_count or 0) - (p.double_addons_count or 0))
+        gross_pot += (
+            (p.entries_count or 1) * t.buyin_amount  # 1 + re-entradas
+            + single_rebuys * t.rebuy_price
+            + (p.double_rebuys_count or 0) * t.double_rebuy_price
+            + single_addons * t.addon_price
+            + (p.double_addons_count or 0) * t.double_addon_price
+        )
+    return float(gross_pot)
+
+
+def tournament_rake_of(t) -> float:
+    """Rake de un torneo = pozo bruto × rake_percentage. Fuente única por torneo."""
+    return tournament_gross_pot_of(t) * ((t.rake_percentage or 0) / 100)
 
 
 async def tournament_gross_pot_in_range(
@@ -172,20 +179,7 @@ async def tournament_gross_pot_in_range(
         )
     )
     tournaments = (await db.execute(stmt)).scalars().all()
-
-    total_gross = 0.0
-    for t in tournaments:
-        for p in t.players:
-            single_rebuys = max(0, (p.rebuys_count or 0) - (p.double_rebuys_count or 0))
-            single_addons = max(0, (p.addons_count or 0) - (p.double_addons_count or 0))
-            total_gross += (
-                (p.entries_count or 1) * t.buyin_amount  # 1 + re-entradas
-                + single_rebuys * t.rebuy_price
-                + (p.double_rebuys_count or 0) * t.double_rebuy_price
-                + single_addons * t.addon_price
-                + (p.double_addons_count or 0) * t.double_addon_price
-            )
-    return total_gross
+    return float(sum(tournament_gross_pot_of(t) for t in tournaments))
 
 
 async def club_jackpot(db: AsyncSession, club: models.Club) -> int:

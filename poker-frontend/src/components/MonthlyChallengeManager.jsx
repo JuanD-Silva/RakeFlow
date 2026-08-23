@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { challengeService } from '../api/services';
 import { useAuth } from '../context/AuthContext';
+import ConfirmModal from './ConfirmModal';
+import { FlagIcon, GiftIcon, SparklesIcon } from '@heroicons/react/24/outline';
 
 /**
  * Configuración: retos rotativos del mes (PR7 retención). El staff define hasta
@@ -49,6 +51,7 @@ const metricLabel = (m) => METRICS.find((x) => x.key === m)?.label.toLowerCase()
 export default function MonthlyChallengeManager() {
   const { isOwner, isManager } = useAuth();
   const canManage = isOwner || isManager;
+  const [removing, setRemoving] = useState(null); // index del reto a quitar (ConfirmModal)
   const [challenges, setChallenges] = useState([]);
   const [period, setPeriod] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -104,12 +107,12 @@ export default function MonthlyChallengeManager() {
 
   // Valida el form y devuelve el payload del reto, o null (setea error).
   const buildPayload = () => {
-    if (!form.title.trim()) { setError('Ponele un título al reto.'); return null; }
+    if (!form.title.trim()) { setError('Ponle un título al reto.'); return null; }
     if (form.escalonado) {
       const rows = form.tiers
         .map((t) => ({ ...t, target: parseFloat(t.target) }))
         .filter((t) => t.target > 0 || t.reward.trim() || t.reward_vip.trim());
-      if (!rows.length) { setError('Agregá al menos un tramo con su meta.'); return null; }
+      if (!rows.length) { setError('Agrega al menos un tramo con su meta.'); return null; }
       for (const t of rows) {
         if (!(t.target > 0) || t.target > 1000) {
           setError('Cada tramo necesita una meta entre 1 y 1000.'); return null;
@@ -172,7 +175,12 @@ export default function MonthlyChallengeManager() {
     persist(set);
   };
 
-  const removeChallenge = (index) => {
+  // Quitar un reto es destructivo (los jugadores lo ven en su app): confirma.
+  const removeChallenge = (index) => setRemoving(index);
+  const confirmRemove = () => {
+    const index = removing;
+    setRemoving(null);
+    if (index == null) return;
     setError(null);
     persist(challenges.map(toUpsert).filter((_, j) => j !== index));
   };
@@ -183,7 +191,7 @@ export default function MonthlyChallengeManager() {
     <div className="bg-gray-800/40 border border-gray-700/50 rounded-2xl p-4 space-y-3">
       <div className="flex items-center justify-between gap-2">
         <div>
-          <h3 className="text-sm font-black text-white uppercase tracking-wide">🎯 Retos del mes</h3>
+          <h3 className="text-sm font-black text-white uppercase tracking-wide inline-flex items-center gap-1.5"><FlagIcon className="w-4 h-4 text-violet-300" /> Retos del mes</h3>
           <p className="text-[11px] text-gray-500">Los ven los jugadores en su app · {monthName}</p>
         </div>
         {editingIndex === null && !loading && (
@@ -234,7 +242,7 @@ export default function MonthlyChallengeManager() {
                     placeholder="Recompensa (ej. Bono $100.000)"
                     className="w-full bg-gray-900 text-white border border-gray-600 rounded-lg py-1.5 px-2 text-xs focus:border-violet-500 outline-none" />
                   <input value={t.reward_vip} onChange={(e) => setTier(i, 'reward_vip', e.target.value)} maxLength={120}
-                    placeholder="💎 Recompensa VIP (opcional, ej. Bono $150.000)"
+                    placeholder="Recompensa VIP (opcional, ej. Bono $150.000)"
                     className="w-full bg-gray-900 text-cyan-200 border border-cyan-700/40 rounded-lg py-1.5 px-2 text-xs focus:border-cyan-500 outline-none" />
                 </div>
               ))}
@@ -244,7 +252,7 @@ export default function MonthlyChallengeManager() {
                   + Agregar tramo
                 </button>
               )}
-              <p className="text-[10px] text-gray-500">El VIP ve su recompensa; el resto ve la base. Las entregás en caja.</p>
+              <p className="text-[10px] text-gray-500">El VIP ve su recompensa; el resto ve la base. Las entregas en caja.</p>
             </div>
           ) : (
             <div className="space-y-2.5">
@@ -255,7 +263,7 @@ export default function MonthlyChallengeManager() {
                 <span className="text-xs text-gray-500 self-center">{metricLabel(form.metric)} en el mes</span>
               </div>
               <input value={form.reward_text} onChange={(e) => setForm({ ...form, reward_text: e.target.value })} maxLength={120}
-                placeholder="Recompensa (ej. Ficha de $20.000) — la entregás en caja"
+                placeholder="Recompensa (ej. Ficha de $20.000) — la entregas en caja"
                 className="w-full bg-gray-900 text-white border border-gray-600 rounded-lg py-2 px-3 text-sm focus:border-violet-500 outline-none" />
             </div>
           )}
@@ -281,41 +289,51 @@ export default function MonthlyChallengeManager() {
                   {ch.tiers.map((t, j) => (
                     <p key={j} className="text-[11px] text-gray-400">
                       <b className="text-violet-300">{t.target} {metricLabel(ch.metric)}</b>
-                      {t.reward && <> → 🎁 {t.reward}</>}
-                      {t.reward_vip && <span className="text-cyan-300"> · 💎 {t.reward_vip}</span>}
+                      {t.reward && <> → <GiftIcon className="w-3 h-3 inline -mt-0.5" /> {t.reward}</>}
+                      {t.reward_vip && <span className="text-cyan-300"> · <SparklesIcon className="w-3 h-3 inline -mt-0.5" /> {t.reward_vip}</span>}
                     </p>
                   ))}
                 </div>
               ) : (
                 <p className="text-[11px] text-gray-500 mt-1">
                   Meta: <b className="text-gray-300">{ch.target} {metricLabel(ch.metric)}</b>
-                  {ch.reward_text && <> · 🎁 {ch.reward_text}</>}
+                  {ch.reward_text && <> · <GiftIcon className="w-3 h-3 inline -mt-0.5" /> {ch.reward_text}</>}
                 </p>
               )}
               <div className="flex gap-2 mt-2">
                 <button onClick={() => startEdit(i)} disabled={busy}
-                  className="flex-1 border border-violet-500/40 text-violet-300 hover:bg-violet-500/10 font-bold py-1.5 rounded-lg text-[11px] uppercase">Editar</button>
+                  className="flex-1 min-h-11 border border-violet-500/40 text-violet-300 hover:bg-violet-500/10 font-bold rounded-lg text-xs uppercase">Editar</button>
                 <button onClick={() => removeChallenge(i)} disabled={busy}
-                  className="flex-1 border border-red-500/40 text-red-400 hover:bg-red-500/10 font-bold py-1.5 rounded-lg text-[11px] uppercase">Quitar</button>
+                  className="flex-1 min-h-11 border border-red-500/40 text-red-400 hover:bg-red-500/10 font-bold rounded-lg text-xs uppercase">Quitar</button>
               </div>
             </div>
           ))}
           {error && <p className="text-red-400 text-xs">{error}</p>}
           {challenges.length < MAX_CHALLENGES && (
             <button onClick={() => startEdit(-1)} disabled={busy}
-              className="w-full border border-dashed border-violet-500/40 text-violet-300 hover:bg-violet-500/10 font-bold py-2 rounded-lg text-xs uppercase">
+              className="w-full min-h-11 border border-dashed border-violet-500/40 text-violet-300 hover:bg-violet-500/10 font-bold rounded-lg text-xs uppercase">
               + Agregar reto ({challenges.length}/{MAX_CHALLENGES})
             </button>
           )}
         </div>
       ) : (
         <div className="space-y-2">
-          <p className="text-sm text-gray-400">Sin retos este mes. Poné hasta {MAX_CHALLENGES} y aparecen en la app de todos tus jugadores.</p>
+          <p className="text-sm text-gray-400">Sin retos este mes. Pon hasta {MAX_CHALLENGES} y aparecen en la app de todos tus jugadores.</p>
           {error && <p className="text-red-400 text-xs">{error}</p>}
           <button onClick={() => startEdit(-1)}
-            className="w-full bg-violet-600 hover:bg-violet-500 text-white font-bold py-2 rounded-lg text-xs uppercase">Crear reto del mes</button>
+            className="w-full min-h-11 bg-violet-600 hover:bg-violet-500 text-white font-bold rounded-lg text-xs uppercase">Crear reto del mes</button>
         </div>
       )}
+      <ConfirmModal
+        isOpen={removing != null}
+        onClose={() => setRemoving(null)}
+        onConfirm={confirmRemove}
+        title="¿Quitar este reto?"
+        message={removing != null ? `"${challenges[removing]?.title || 'Reto'}" desaparece de la app de todos los jugadores.` : ''}
+        subMessage="El progreso que llevaban no se recupera."
+        confirmText="Sí, quitar"
+        loadingText="Quitando…"
+      />
     </div>
   );
 }
