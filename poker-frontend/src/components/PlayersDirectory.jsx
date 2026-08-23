@@ -57,7 +57,7 @@ const matchFilter = (p, f, ins) => {
   return true;
 };
 
-export default function PlayersDirectory() {
+export default function PlayersDirectory({ initialFilter = null } = {}) {
   const { isOwner, isManager } = useAuth();
   const canManageApp = isOwner || isManager;
   const [players, setPlayers] = useState(null); // null = cargando
@@ -65,7 +65,7 @@ export default function PlayersDirectory() {
   const [insightsError, setInsightsError] = useState(false);
   const [error, setError] = useState(false);
   const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState('all');
+  const [filter, setFilter] = useState(initialFilter || 'all');
   const [sort, setSort] = useState('name');
   const [shown, setShown] = useState(PAGE);
   const [profileOf, setProfileOf] = useState(null); // jugador con la ficha 360 abierta

@@ -43,6 +43,8 @@ import GrowthPanel from './components/GrowthPanel';
 // --- COMPONENTE PRINCIPAL (Dashboard Protegido) ---
 function PokerManagerApp() {
   const [currentView, setCurrentView] = useState('game');
+  // Filtro precargado al saltar a Jugadores desde Crecimiento ('none' | 'pending').
+  const [playersPreset, setPlayersPreset] = useState(null);
   const [checkingSetup, setCheckingSetup] = useState(true);
   const [emailVerified, setEmailVerified] = useState(true);
   const [resending, setResending] = useState(false);
@@ -183,8 +185,8 @@ function PokerManagerApp() {
           {currentView === 'history' && <SessionHistory />}
           {currentView === 'finance' && <WeeklyReport />}
           {currentView === 'ranking' && <PlayerLeaderboard clubName={clubName} />}
-          {currentView === 'players' && (isOwner || role === 'manager') && <PlayersDirectory />}
-          {currentView === 'crecimiento' && (isOwner || role === 'manager') && <GrowthPanel />}
+          {currentView === 'players' && (isOwner || role === 'manager') && <PlayersDirectory key={playersPreset || 'all'} initialFilter={playersPreset} />}
+          {currentView === 'crecimiento' && (isOwner || role === 'manager') && <GrowthPanel goToPlayers={(f) => { setPlayersPreset(f); setCurrentView('players'); }} />}
           {currentView === 'team' && <TeamPanel />}
           {currentView === 'config' && <ConfigPanel />}
         </ErrorBoundary>

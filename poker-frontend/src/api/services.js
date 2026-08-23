@@ -298,6 +298,7 @@ export const statsService = {
 export const reportsService = {
     getAdoption: async () => (await api.get('/reports/adoption')).data,
     getRetention: async () => (await api.get('/reports/retention')).data,
+    getBI: async () => (await api.get('/reports/bi')).data,
 };
 
 export const authService = {
