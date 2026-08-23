@@ -1171,7 +1171,9 @@ async def session_dealer_payments(
         d["hour_payment"] += bd["hour_payment"]
         d["rake_commission"] += bd["rake_commission"]
         d["club_payment"] += bd["club_payment"]
-        d["declared_rake"] += float(shift.declared_rake or 0)
+        # Clamp a >=0 como el breakdown (services.py): un remainder negativo del
+        # cierre no comisiona y no debe restar del "por qué".
+        d["declared_rake"] += max(0.0, float(shift.declared_rake or 0))
         pct = float(shift.rake_pct or 0)
         if d["rake_pct"] is None:
             d["rake_pct"] = pct
