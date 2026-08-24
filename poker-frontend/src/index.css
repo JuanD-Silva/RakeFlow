@@ -190,3 +190,15 @@ html, body {
   pointer-events: none;
   z-index: 0;
 }
+/* Voz display de la landing: Space Grotesk para titulares (el cuerpo sigue
+   en la sans del sistema). Solo la usa Landing.jsx. */
+.font-display { font-family: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif; letter-spacing: -0.03em; }
+
+/* Demo viva del hero: el evento nuevo entra deslizándose */
+@keyframes demo-pop {
+  0% { opacity: 0; transform: translateY(8px) scale(0.97); }
+  12% { opacity: 1; transform: translateY(0) scale(1); }
+  88% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-6px); }
+}
+.animate-demo-pop { animation: demo-pop 2.6s ease-in-out both; }

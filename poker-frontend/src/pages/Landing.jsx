@@ -76,6 +76,26 @@ const FAQ = [
   { q: '¿En qué moneda y en qué idioma?', a: 'Pesos colombianos y español, de punta a punta. Soporte por WhatsApp con nosotros directamente.' },
 ];
 
+// La demo del hero está VIVA: cada pocos segundos "pasa algo" en la mesa
+// (un buy-in, un cashout, el rake que sube) — el visitante ve el producto
+// trabajando antes de tocar nada. Todo determinista y barato: un interval.
+const DEMO_EVENTS = [
+  { text: 'Buy-in de $100.000 — Pedro', tone: 'text-emerald-300 border-emerald-500/40 bg-emerald-500/10' },
+  { text: 'Cashout de $185.000 — Andrea', tone: 'text-rose-300 border-rose-500/40 bg-rose-500/10' },
+  { text: 'Rake declarado: $52.000', tone: 'text-cyan-300 border-cyan-500/40 bg-cyan-500/10' },
+  { text: 'Re-entrada al torneo — Miguel', tone: 'text-violet-300 border-violet-500/40 bg-violet-500/10' },
+  { text: 'Turno de dealer cerrado — 4.5 h', tone: 'text-amber-300 border-amber-500/40 bg-amber-500/10' },
+];
+
+function useDemoTick(intervalMs = 2600) {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), intervalMs);
+    return () => clearInterval(id);
+  }, [intervalMs]);
+  return tick;
+}
+
 function AnimatedSection({ children, className = '', animation = 'animate-fade-up' }) {
   const [ref, inView] = useInView();
   return (
@@ -87,6 +107,10 @@ function AnimatedSection({ children, className = '', animation = 'animate-fade-u
 
 export default function Landing() {
   const [navSolid, setNavSolid] = useState(false);
+  const demoTick = useDemoTick();
+  // En móvil, pasada la primera pantalla, el CTA viaja contigo: barra fija
+  // abajo con la oferta + WhatsApp. En desktop basta el FAB.
+  const [showMobileCta, setShowMobileCta] = useState(false);
 
   // Solo cambia el navbar al cruzar el umbral — NO re-renderiza en cada scroll
   // (el parallax por scrollY causaba lag en movil al repintar los blurs).
@@ -95,6 +119,7 @@ export default function Landing() {
     const handleScroll = () => {
       const next = window.scrollY > 50;
       if (next !== solid) { solid = next; setNavSolid(next); }
+      setShowMobileCta(window.scrollY > 700);
     };
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
@@ -127,7 +152,7 @@ export default function Landing() {
       </nav>
 
       {/* HERO */}
-      <section className="pt-[calc(7rem+env(safe-area-inset-top))] pb-24 px-6 relative min-h-[90vh] flex flex-col lg:flex-row items-center justify-center">
+      <section className="pt-[calc(7rem+env(safe-area-inset-top))] pb-24 px-6 relative">
         {/* Ambient background — parallax on scroll */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <div className="absolute top-20 left-1/4 w-[500px] h-[500px] bg-emerald-600/8 rounded-full blur-[120px] animate-drift"></div>
@@ -143,13 +168,14 @@ export default function Landing() {
           <div className="absolute inset-0 opacity-[0.02]" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '80px 80px' }}></div>
         </div>
 
-        <div className="max-w-4xl mx-auto text-center relative z-10">
+        <div className="max-w-7xl mx-auto relative z-10 grid grid-cols-1 lg:grid-cols-[1.1fr_1fr] gap-12 lg:gap-10 items-center">
+        <div className="text-center lg:text-left">
           <div className="animate-fade-up inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-5 py-2 mb-8 hover:bg-emerald-500/15 transition-colors cursor-default">
             <BoltIcon className="w-4 h-4 text-emerald-400 animate-pulse" />
             <span className="text-emerald-400 text-xs font-bold uppercase tracking-wider">Hecho para clubes de poker en Colombia</span>
           </div>
 
-          <h1 className="animate-fade-up delay-100 text-5xl md:text-7xl font-black text-white tracking-tight leading-[1.1] mb-6">
+          <h1 className="font-display animate-fade-up delay-100 text-5xl md:text-6xl xl:text-7xl font-bold text-white leading-[1.05] mb-6">
             Controla el{' '}
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-cyan-400 to-emerald-400 animate-shimmer" style={{ backgroundSize: '200% 100%' }}>
               rake
@@ -157,11 +183,11 @@ export default function Landing() {
             {' '}de tu club como un profesional
           </h1>
 
-          <p className="animate-fade-up delay-200 text-gray-400 text-lg md:text-xl max-w-2xl mx-auto mb-10 leading-relaxed">
+          <p className="animate-fade-up delay-200 text-gray-400 text-lg md:text-xl max-w-2xl mx-auto lg:mx-0 mb-10 leading-relaxed">
             Cada buy-in, cada cashout, el pago a dealers y el reparto a socios — registrado desde el celular, con auditoría que detecta el descuadre <b className="text-gray-200">antes</b> de cerrar la noche.
           </p>
 
-          <div className="animate-fade-up delay-300 flex flex-col sm:flex-row gap-4 justify-center">
+          <div className="animate-fade-up delay-300 flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
             <Link to="/register" className="group bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold text-lg px-8 py-4 rounded-xl shadow-[0_0_30px_rgba(16,185,129,0.3)] hover:shadow-[0_0_50px_rgba(16,185,129,0.4)] transition-all active:scale-[0.98] flex items-center justify-center gap-2 animate-pulse-glow">
               Probar 14 días gratis <ArrowRightIcon className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
             </Link>
@@ -170,16 +196,16 @@ export default function Landing() {
             </a>
           </div>
 
-          <div className="animate-fade-up delay-500 flex flex-wrap items-center justify-center gap-6 mt-10 text-gray-500 text-sm">
+          <div className="animate-fade-up delay-500 flex flex-wrap items-center justify-center lg:justify-start gap-x-6 gap-y-2 mt-10 text-gray-500 text-sm">
             <span className="flex items-center gap-1.5 hover:text-gray-300 transition-colors"><CheckIcon className="w-4 h-4 text-emerald-500" /> Sin tarjeta de crédito</span>
             <span className="flex items-center gap-1.5 hover:text-gray-300 transition-colors"><CheckIcon className="w-4 h-4 text-emerald-500" /> Listo en 2 minutos</span>
             <span className="flex items-center gap-1.5 hover:text-gray-300 transition-colors"><DeviceTabletIcon className="w-4 h-4 text-emerald-500" /> Celular, tablet o PC</span>
           </div>
         </div>
 
-        {/* HERO MOCKUP — Browser frame con UI simulada */}
-        <div className="max-w-5xl mx-auto mt-16 px-4 relative z-10 animate-fade-up delay-600">
-          <div className="relative group">
+        {/* HERO MOCKUP — la demo viva, columna derecha en desktop */}
+        <div className="relative animate-fade-up delay-400">
+          <div className="relative group lg:rotate-1 lg:hover:rotate-0 transition-transform duration-700">
             {/* Glow detrás */}
             <div className="absolute -inset-4 bg-gradient-to-r from-emerald-500/10 via-cyan-500/5 to-violet-500/10 rounded-3xl blur-2xl opacity-60 group-hover:opacity-100 transition-opacity duration-1000"></div>
 
@@ -263,16 +289,18 @@ export default function Landing() {
                     ))}
                   </div>
                 </div>
+
+                {/* Evento en vivo: la mesa nunca está quieta */}
+                <div key={demoTick} className="animate-demo-pop">
+                  <div className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[11px] font-bold ${DEMO_EVENTS[demoTick % DEMO_EVENTS.length].tone}`}>
+                    <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
+                    {DEMO_EVENTS[demoTick % DEMO_EVENTS.length].text}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
         </div>
-
-        {/* Scroll indicator */}
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 animate-fade-in-view delay-800">
-          <div className="w-6 h-10 rounded-full border-2 border-gray-600 flex justify-center pt-2">
-            <div className="w-1 h-3 bg-gray-500 rounded-full animate-bounce"></div>
-          </div>
         </div>
       </section>
 
@@ -281,14 +309,22 @@ export default function Landing() {
         <div className="max-w-5xl mx-auto">
           <AnimatedSection className="text-center mb-14">
             <p className="text-emerald-400 text-xs font-bold uppercase tracking-widest mb-3">¿Te suena?</p>
-            <h2 className="text-3xl md:text-4xl font-black text-white tracking-tight">Las tres cosas que todo club sufre</h2>
+            <h2 className="font-display text-3xl md:text-4xl font-bold text-white">Las tres cosas que todo club sufre</h2>
           </AnimatedSection>
-          <div className="space-y-4">
+          {/* Tres cartas repartidas sobre la mesa: cada dolor es una mano que
+              el dueño ya jugó. Rotación leve que se endereza al pasar. */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-5">
             {pains.map((it, i) => (
               <AnimatedSection key={i} animation={`animate-fade-up delay-${(i + 1) * 100}`}>
-                <div className="flex flex-col md:flex-row md:items-center gap-3 md:gap-8 bg-gray-800/30 border border-gray-700/50 rounded-2xl p-6">
-                  <p className="md:w-64 shrink-0 text-white font-black text-lg leading-snug">{it.pain}</p>
-                  <p className="text-gray-400 text-sm md:text-base leading-relaxed md:border-l md:border-emerald-500/30 md:pl-8">{it.fix}</p>
+                <div
+                  className={`relative h-full bg-gradient-to-b from-gray-800/60 to-gray-900/80 border border-gray-700/60 rounded-2xl p-6 pt-14 shadow-xl shadow-black/30 transition-transform duration-500 hover:-translate-y-1 hover:rotate-0 ${['md:-rotate-2', 'md:rotate-1', 'md:rotate-2'][i]}`}
+                >
+                  <span className="absolute top-4 left-5 text-2xl leading-none select-none" aria-hidden="true">
+                    <span className={i === 1 ? 'text-red-400/80' : 'text-gray-500'}>{['♠', '♥', '♣'][i]}</span>
+                  </span>
+                  <span className="absolute top-4 right-5 font-display font-bold text-gray-600 text-sm select-none" aria-hidden="true">{i + 1}</span>
+                  <p className="font-display text-white font-bold text-xl leading-snug mb-3">{it.pain}</p>
+                  <p className="text-gray-400 text-sm leading-relaxed">{it.fix}</p>
                 </div>
               </AnimatedSection>
             ))}
@@ -301,27 +337,58 @@ export default function Landing() {
         <div className="max-w-6xl mx-auto">
           <AnimatedSection className="text-center mb-16">
             <p className="text-emerald-400 text-xs font-bold uppercase tracking-widest mb-3">Funcionalidades</p>
-            <h2 className="text-3xl md:text-4xl font-black text-white tracking-tight">Todo lo que necesita tu club</h2>
+            <h2 className="font-display text-3xl md:text-4xl font-bold text-white">Todo lo que necesita tu club</h2>
             <div className="w-16 h-1 bg-gradient-to-r from-emerald-500 to-cyan-500 rounded-full mx-auto mt-4"></div>
           </AnimatedSection>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {features.map((f, i) => (
-              <AnimatedSection key={i} animation={`animate-fade-up delay-${(i + 1) * 100}`}>
-                <div className={`bg-gray-800/30 border border-gray-700/50 rounded-2xl p-6 hover:border-gray-600 transition-all duration-500 group cursor-default hover:shadow-2xl ${f.glow} hover:-translate-y-1 relative overflow-hidden h-full`}>
-                  {/* Hover glow effect */}
-                  <div className={`absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700 ${f.bg} blur-3xl`}></div>
-
-                  <div className="relative z-10">
-                    <div className={`w-12 h-12 ${f.bg} border ${f.border} rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 group-hover:rotate-3 transition-all duration-300`}>
-                      <f.icon className={`w-6 h-6 ${f.color}`} />
-                    </div>
-                    <h3 className="text-white font-black text-lg mb-2 group-hover:text-emerald-50 transition-colors">{f.title}</h3>
-                    <p className="text-gray-400 text-sm leading-relaxed group-hover:text-gray-300 transition-colors">{f.desc}</p>
-                  </div>
+          {/* Bento: los dos pilares (control financiero, torneos) grandes con
+              viñeta de producto dibujada; el resto compacto. Nada de seis
+              cards iguales. */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {/* Pilar 1: la cuenta que cuadra */}
+            <AnimatedSection animation="animate-fade-up delay-100">
+              <div className="group h-full bg-gray-800/30 border border-emerald-500/25 rounded-2xl p-6 hover:border-emerald-500/50 transition-all duration-500 hover:shadow-2xl hover:shadow-emerald-500/10">
+                <h3 className="font-display text-white font-bold text-xl mb-2">{features[0].title}</h3>
+                <p className="text-gray-400 text-sm leading-relaxed mb-5">{features[0].desc}</p>
+                {/* Viñeta: la ecuación del cierre */}
+                <div className="bg-gray-900/70 border border-gray-700/60 rounded-xl p-4 font-mono text-sm space-y-1.5">
+                  <div className="flex justify-between text-gray-400"><span>Rake bruto</span><span className="text-white">$ 1.240.000</span></div>
+                  <div className="flex justify-between text-gray-400"><span>− Dealers y cortesías</span><span className="text-red-300">$ 310.000</span></div>
+                  <div className="flex justify-between border-t border-gray-700/60 pt-1.5 font-bold"><span className="text-gray-300">= Neto a repartir</span><span className="text-emerald-300">$ 930.000</span></div>
+                  <p className="text-[10px] text-emerald-400/80 font-sans font-bold pt-1">✓ La caja cuadró al peso</p>
                 </div>
-              </AnimatedSection>
-            ))}
+              </div>
+            </AnimatedSection>
+
+            {/* Pilar 2: torneos */}
+            <AnimatedSection animation="animate-fade-up delay-200">
+              <div className="group h-full bg-gray-800/30 border border-violet-500/25 rounded-2xl p-6 hover:border-violet-500/50 transition-all duration-500 hover:shadow-2xl hover:shadow-violet-500/10">
+                <h3 className="font-display text-white font-bold text-xl mb-2">{features[1].title}</h3>
+                <p className="text-gray-400 text-sm leading-relaxed mb-5">{features[1].desc}</p>
+                {/* Viñeta: el reloj del torneo */}
+                <div className="bg-gray-900/70 border border-violet-500/30 rounded-xl p-4 text-center">
+                  <p className="text-[10px] text-violet-300 font-bold uppercase tracking-[0.25em]">Nivel 4 / 14</p>
+                  <p className="font-mono font-black text-4xl text-white tabular-nums my-1">08:42</p>
+                  <p className="text-xs text-gray-400 font-mono">Blinds 400 / 800 · <span className="text-gray-500">sigue 500/1.000</span></p>
+                  <div className="mt-3 h-1 rounded-full bg-gray-800 overflow-hidden"><div className="h-full w-2/3 bg-violet-500/80 rounded-full" /></div>
+                </div>
+              </div>
+            </AnimatedSection>
+
+            {/* Los otros cuatro, compactos en fila */}
+            <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+              {features.slice(2).map((f, i) => (
+                <AnimatedSection key={i} animation={`animate-fade-up delay-${(i + 1) * 100}`}>
+                  <div className={`h-full bg-gray-800/30 border border-gray-700/50 rounded-2xl p-5 hover:border-gray-600 transition-all duration-500 group cursor-default hover:-translate-y-1`}>
+                    <div className={`w-10 h-10 ${f.bg} border ${f.border} rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform duration-300`}>
+                      <f.icon className={`w-5 h-5 ${f.color}`} />
+                    </div>
+                    <h3 className="text-white font-bold text-base mb-1.5">{f.title}</h3>
+                    <p className="text-gray-400 text-[13px] leading-relaxed">{f.desc}</p>
+                  </div>
+                </AnimatedSection>
+              ))}
+            </div>
           </div>
         </div>
       </section>
@@ -333,7 +400,7 @@ export default function Landing() {
         <div className="max-w-4xl mx-auto relative z-10">
           <AnimatedSection className="text-center mb-16">
             <p className="text-violet-400 text-xs font-bold uppercase tracking-widest mb-3">Como funciona</p>
-            <h2 className="text-3xl md:text-4xl font-black text-white tracking-tight">Listo en 3 pasos</h2>
+            <h2 className="font-display text-3xl md:text-4xl font-bold text-white">Listo en 3 pasos</h2>
             <div className="w-16 h-1 bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-full mx-auto mt-4"></div>
           </AnimatedSection>
 
@@ -364,7 +431,7 @@ export default function Landing() {
         <div className="max-w-5xl mx-auto">
           <AnimatedSection className="text-center mb-16">
             <p className="text-emerald-400 text-xs font-bold uppercase tracking-widest mb-3">Planes</p>
-            <h2 className="text-3xl md:text-4xl font-black text-white tracking-tight">Menos de lo que deja una buena noche</h2>
+            <h2 className="font-display text-3xl md:text-4xl font-bold text-white">Menos de lo que deja una buena noche</h2>
             <p className="text-gray-400 text-sm mt-3 max-w-md mx-auto">Un solo plan con todo. Lo pruebas gratis 14 días con tu operación real y decides.</p>
             <div className="w-16 h-1 bg-gradient-to-r from-emerald-500 to-cyan-500 rounded-full mx-auto mt-4"></div>
           </AnimatedSection>
@@ -418,7 +485,7 @@ export default function Landing() {
         <div className="max-w-3xl mx-auto">
           <AnimatedSection className="text-center mb-12">
             <p className="text-cyan-400 text-xs font-bold uppercase tracking-widest mb-3">Preguntas frecuentes</p>
-            <h2 className="text-3xl md:text-4xl font-black text-white tracking-tight">Lo que todo dueño pregunta</h2>
+            <h2 className="font-display text-3xl md:text-4xl font-bold text-white">Lo que todo dueño pregunta</h2>
           </AnimatedSection>
           <div className="space-y-3">
             {FAQ.map((f, i) => (
@@ -451,7 +518,7 @@ export default function Landing() {
 
             <div className="relative z-10">
               <div className="text-5xl mb-6 animate-float">♠️</div>
-              <h2 className="text-3xl md:text-4xl font-black text-white tracking-tight mb-4">
+              <h2 className="font-display text-3xl md:text-4xl font-bold text-white mb-4">
                 Deja de contar fichas a mano
               </h2>
               <p className="text-gray-400 text-lg mb-8 max-w-xl mx-auto">
@@ -492,13 +559,26 @@ export default function Landing() {
         </div>
       </footer>
 
-      {/* WhatsApp FAB — contacto de ventas siempre visible */}
+      {/* CTA móvil fijo: pasada la primera pantalla, la oferta viaja contigo */}
+      <div className={`sm:hidden fixed bottom-0 inset-x-0 z-50 transition-transform duration-300 ${showMobileCta ? 'translate-y-0' : 'translate-y-full'}`}>
+        <div className="flex gap-2 px-3 pt-2 pb-[calc(0.75rem+env(safe-area-inset-bottom))] bg-[#0a0f1a]/95 backdrop-blur-xl border-t border-gray-800">
+          <Link to="/register" className="flex-1 min-h-12 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 text-white font-bold text-sm uppercase tracking-wide flex items-center justify-center gap-2 active:scale-[0.98]">
+            Probar 14 días gratis
+          </Link>
+          <a href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer" aria-label="Hablar por WhatsApp"
+            className="min-h-12 min-w-12 rounded-xl bg-[#25D366] text-white flex items-center justify-center active:scale-95">
+            <WhatsAppIcon className="w-6 h-6" />
+          </a>
+        </div>
+      </div>
+
+      {/* WhatsApp FAB — contacto de ventas siempre visible (desktop) */}
       <a
         href={WHATSAPP_URL}
         target="_blank"
         rel="noopener noreferrer"
         aria-label="Agendar demo por WhatsApp"
-        className="group/fab fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] right-6 z-50 flex items-center gap-2.5 bg-[#25D366] hover:bg-[#20bd5a] text-white font-bold rounded-full pl-4 pr-5 py-3.5 shadow-[0_8px_30px_rgba(37,211,102,0.4)] hover:shadow-[0_8px_45px_rgba(37,211,102,0.65)] hover:-translate-y-0.5 transition-all duration-300 active:scale-95"
+        className="group/fab hidden sm:flex fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] right-6 z-50 items-center gap-2.5 bg-[#25D366] hover:bg-[#20bd5a] text-white font-bold rounded-full pl-4 pr-5 py-3.5 shadow-[0_8px_30px_rgba(37,211,102,0.4)] hover:shadow-[0_8px_45px_rgba(37,211,102,0.65)] hover:-translate-y-0.5 transition-all duration-300 active:scale-95"
       >
         <span className="absolute inset-0 rounded-full bg-[#25D366] animate-ping opacity-20 group-hover/fab:opacity-0"></span>
         <WhatsAppIcon className="w-6 h-6 relative z-10 shrink-0" />
