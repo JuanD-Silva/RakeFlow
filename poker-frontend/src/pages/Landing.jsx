@@ -44,7 +44,7 @@ function useInView(threshold = 0.15) {
 const pains = [
   { pain: 'El cuaderno de fiados', fix: 'Cada "luego te pago" queda en la ficha del jugador: quién debe, cuánto y desde cuándo. Nada se olvida al cerrar.' },
   { pain: 'El descuadre de las 3 a.m.', fix: 'Antes de cerrar, RakeFlow compara la plata física contra lo registrado y te muestra la diferencia en pesos. El descuadre se encuentra, no se descubre.' },
-  { pain: '"¿Cuánto le toca a cada socio?"', fix: 'Defines las reglas una vez (fijos, porcentajes, meta) y cada cierre reparte solo: rake, menos dealers y cortesías, entre los socios. Al peso.' },
+  { pain: '"¿Cuánto ganó el club esta noche?"', fix: 'Cada cierre te da la utilidad real: rake menos dealers y cortesías, por noche, semana y mes. Y si tienes socios, el reparto se calcula solo con tus reglas.' },
 ];
 
 const features = [
@@ -150,9 +150,9 @@ export default function Landing() {
           </div>
 
           <h1 className="animate-fade-up delay-100 text-5xl md:text-7xl font-black text-white tracking-tight leading-[1.1] mb-6">
-            La caja de tu club,{' '}
+            Sabe cuánto deja tu club,{' '}
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-cyan-400 to-emerald-400 animate-shimmer" style={{ backgroundSize: '200% 100%' }}>
-              cuadrada al peso
+              al peso y en tiempo real
             </span>
           </h1>
 
