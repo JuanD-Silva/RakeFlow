@@ -150,10 +150,11 @@ export default function Landing() {
           </div>
 
           <h1 className="animate-fade-up delay-100 text-5xl md:text-7xl font-black text-white tracking-tight leading-[1.1] mb-6">
-            Sabe cuánto deja tu club,{' '}
+            Controla el{' '}
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-cyan-400 to-emerald-400 animate-shimmer" style={{ backgroundSize: '200% 100%' }}>
-              al peso y en tiempo real
+              rake
             </span>
+            {' '}de tu club como un profesional
           </h1>
 
           <p className="animate-fade-up delay-200 text-gray-400 text-lg md:text-xl max-w-2xl mx-auto mb-10 leading-relaxed">
