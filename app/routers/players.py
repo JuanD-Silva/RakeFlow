@@ -180,7 +180,7 @@ async def players_insights(
           FROM tournament_players tp JOIN tournaments tr ON tr.id = tp.tournament_id
           WHERE tr.club_id = :cid AND tp.player_id IS NOT NULL
         ) x GROUP BY pid
-    """), {"cid": current_club.id, "tz": current_club.timezone or "America/Bogota"})).all()
+    """), {"cid": current_club.id, "tz": player_stats.club_tz(current_club).key})).all()
     last_map = {r.pid: r.last_d for r in last_rows}
 
     # Neto cash del jugador (cashout − buyin/rebuy) sobre sesiones CERRADAS —
@@ -257,7 +257,7 @@ async def player_insights_detail(
           FROM tournament_players tp JOIN tournaments tr ON tr.id = tp.tournament_id
           WHERE tr.club_id = :cid AND tp.player_id = :pid
         ) x
-    """), {"cid": current_club.id, "pid": player.id, "tz": current_club.timezone or "America/Bogota"})).first()
+    """), {"cid": current_club.id, "pid": player.id, "tz": player_stats.club_tz(current_club).key})).first()
     today = datetime.now(player_stats.club_tz(current_club)).date()
 
     # played=False = fila solo-corrección (cuenta la plata, no como visita).
