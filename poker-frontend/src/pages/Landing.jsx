@@ -39,24 +39,41 @@ function useInView(threshold = 0.15) {
   return [ref, inView];
 }
 
+// Los dolores del dueño, con nombre propio — la sección que convierte es la
+// que le dice "esto te pasa a ti", no la lista de funciones.
+const pains = [
+  { pain: 'El cuaderno de fiados', fix: 'Cada "luego te pago" queda en la ficha del jugador: quién debe, cuánto y desde cuándo. Nada se olvida al cerrar.' },
+  { pain: 'El descuadre de las 3 a.m.', fix: 'Antes de cerrar, RakeFlow compara la plata física contra lo registrado y te muestra la diferencia en pesos. El descuadre se encuentra, no se descubre.' },
+  { pain: '"¿Cuánto le toca a cada socio?"', fix: 'Defines las reglas una vez (fijos, porcentajes, meta) y cada cierre reparte solo: rake, menos dealers y cortesías, entre los socios. Al peso.' },
+];
+
 const features = [
-  { icon: BanknotesIcon, title: 'Control de Rake', desc: 'Registra buy-ins, cashouts, propinas y gastos en tiempo real. Calcula el rake automaticamente al cerrar cada sesion.', color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20', glow: 'group-hover:shadow-emerald-500/10' },
-  { icon: TrophyIcon, title: 'Gestion de Torneos', desc: 'Crea torneos con estructura de premios, rebuys, add-ons y asigna ganadores con un solo toque.', color: 'text-violet-400', bg: 'bg-violet-500/10', border: 'border-violet-500/20', glow: 'group-hover:shadow-violet-500/10' },
-  { icon: ChartBarIcon, title: 'Reportes Financieros', desc: 'Visualiza ingresos semanales y mensuales. Controla metas, distribuciones a socios y fondos operativos.', color: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/20', glow: 'group-hover:shadow-blue-500/10' },
-  { icon: UserGroupIcon, title: 'Gestion de Jugadores', desc: 'Base de datos de jugadores con historial, ranking mensual de ganadores, consumidores y tiempo en mesa.', color: 'text-pink-400', bg: 'bg-pink-500/10', border: 'border-pink-500/20', glow: 'group-hover:shadow-pink-500/10' },
-  { icon: Cog6ToothIcon, title: 'Reglas Personalizables', desc: 'Define como se reparte el dinero: montos fijos, porcentajes o metas mensuales. Cambia las reglas cuando quieras.', color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/20', glow: 'group-hover:shadow-amber-500/10' },
-  { icon: ShieldCheckIcon, title: 'Auditoria y Cierre', desc: 'Sistema de auditoria pre-cierre que detecta descuadres antes de cerrar caja. Sin sorpresas.', color: 'text-cyan-400', bg: 'bg-cyan-500/10', border: 'border-cyan-500/20', glow: 'group-hover:shadow-cyan-500/10' }
+  { icon: BanknotesIcon, title: 'Control de Rake', desc: 'Buy-ins, cashouts, propinas y gastos en tiempo real. El rake se calcula solo al cerrar cada mesa.', color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20', glow: 'group-hover:shadow-emerald-500/10' },
+  { icon: TrophyIcon, title: 'Torneos completos', desc: 'Reloj de blinds con pantalla para TV, sorteo de sillas, re-entradas y premios. El torneo corre solo.', color: 'text-violet-400', bg: 'bg-violet-500/10', border: 'border-violet-500/20', glow: 'group-hover:shadow-violet-500/10' },
+  { icon: ChartBarIcon, title: 'La caja, clara', desc: 'Caja diaria, semanal y mensual. Metas, reparto a socios y pago a dealers, cuadrados con el cierre.', color: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/20', glow: 'group-hover:shadow-blue-500/10' },
+  { icon: UserGroupIcon, title: 'Jugadores que vuelven', desc: 'Cada jugador con su historial, ranking mensual y su propia app: logros, retos y estatus VIP para que vuelva.', color: 'text-pink-400', bg: 'bg-pink-500/10', border: 'border-pink-500/20', glow: 'group-hover:shadow-pink-500/10' },
+  { icon: Cog6ToothIcon, title: 'Tus reglas de reparto', desc: 'Define cómo se reparte la plata: fijos, porcentajes o metas mensuales. Cambia las reglas cuando quieras.', color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/20', glow: 'group-hover:shadow-amber-500/10' },
+  { icon: ShieldCheckIcon, title: 'Auditoría y cierre', desc: 'Auditoría pre-cierre que detecta el descuadre antes de cerrar caja, y registro de quién hizo cada movimiento.', color: 'text-cyan-400', bg: 'bg-cyan-500/10', border: 'border-cyan-500/20', glow: 'group-hover:shadow-cyan-500/10' }
 ];
 
 const steps = [
-  { number: '01', title: 'Crea tu Club', desc: 'Registrate con tu email en menos de 30 segundos.', emoji: '♠️' },
-  { number: '02', title: 'Configura las Reglas', desc: 'Define tu meta mensual y como se reparten las ganancias.', emoji: '♦️' },
-  { number: '03', title: 'Abre tu Primera Mesa', desc: 'Registra jugadores, buy-ins y empieza a controlar el rake.', emoji: '♣️' },
+  { number: '01', title: 'Crea tu Club', desc: 'Regístrate con tu correo en menos de 30 segundos. Sin tarjeta.', emoji: '♠️' },
+  { number: '02', title: 'Configura las Reglas', desc: 'Define tu meta mensual y cómo se reparte entre los socios.', emoji: '♦️' },
+  { number: '03', title: 'Abre tu Primera Mesa', desc: 'Sienta jugadores, registra buy-ins y cierra tu primera caja cuadrada.', emoji: '♣️' },
 ];
 
 const plans = [
-  { name: 'Pro', price: '$199.000', period: '/mes', desc: 'Para clubes activos', popular: true, color: 'border-emerald-500/50', btn: 'bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white shadow-lg shadow-emerald-900/30', features: ['Mesas ilimitadas', 'Jugadores ilimitados', 'Reportes avanzados', 'Torneos ilimitados', 'Soporte prioritario', 'Multi-usuario (cajeros)', '14 dias de prueba gratis'] },
+  { name: 'Pro', price: '$199.000', period: '/mes', desc: 'Para clubes activos', popular: true, color: 'border-emerald-500/50', btn: 'bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white shadow-lg shadow-emerald-900/30', features: ['Mesas ilimitadas', 'Jugadores ilimitados', 'Reportes avanzados', 'Torneos ilimitados', 'Soporte prioritario', 'Multi-usuario (cajeros)', '14 días de prueba gratis'] },
   { name: 'Enterprise', price: 'Contacto', period: '', desc: 'Para cadenas de clubes', color: 'border-violet-500/50', btn: 'bg-violet-700 hover:bg-violet-600 text-white', features: ['Todo de Pro', 'Multi-sede', 'API personalizada', 'Dashboard corporativo', 'Soporte dedicado', 'SLA garantizado'] }
+];
+
+const FAQ = [
+  { q: '¿Necesito tarjeta para probar?', a: 'No. Creas tu club con tu correo y tienes 14 días con todo habilitado. Solo pagas si decides quedarte.' },
+  { q: '¿Qué pasa cuando se acaba la prueba?', a: 'Nada se borra. Tus datos quedan guardados y eliges si activas el plan. No hay cobros automáticos sorpresa.' },
+  { q: '¿Sirve si mi club también hace torneos?', a: 'Sí — es de las pocas herramientas que maneja cash y torneos juntos: reloj de blinds con pantalla para TV, sorteo de sillas, re-entradas, y el rake del torneo entra a la misma caja.' },
+  { q: '¿Quién puede ver las finanzas del club?', a: 'Tú decides. Hay roles: el dueño ve todo, el cajero solo opera la mesa, el dealer solo su turno. Cada movimiento queda registrado con quién lo hizo.' },
+  { q: '¿Es complicado para mi cajero?', a: 'Se opera desde el celular con botones grandes: entrada, cobro, gasto. Si tu cajero maneja WhatsApp, maneja RakeFlow.' },
+  { q: '¿En qué moneda y en qué idioma?', a: 'Pesos colombianos y español, de punta a punta. Soporte por WhatsApp con nosotros directamente.' },
 ];
 
 function AnimatedSection({ children, className = '', animation = 'animate-fade-up' }) {
@@ -91,9 +108,7 @@ export default function Landing() {
       <nav className={`fixed top-0 w-full z-50 pt-[env(safe-area-inset-top)] transition-all duration-500 ${navSolid ? 'bg-[#0a0f1a]/95 backdrop-blur-xl border-b border-gray-800/50 shadow-2xl shadow-black/20' : 'bg-transparent'}`}>
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 group cursor-pointer">
-            <div className="bg-gradient-to-br from-emerald-600 to-green-900 p-1.5 rounded-lg border border-emerald-500/30 group-hover:shadow-lg group-hover:shadow-emerald-500/20 transition-all duration-300">
-              <span className="text-lg leading-none">💸</span>
-            </div>
+            <img src="/rakeflow-logo.svg" alt="" className="w-8 h-8 rounded-lg" />
             <span className="text-white font-black text-xl tracking-tighter uppercase">
               Rake<span className="text-emerald-500">Flow</span>
             </span>
@@ -131,34 +146,33 @@ export default function Landing() {
         <div className="max-w-4xl mx-auto text-center relative z-10">
           <div className="animate-fade-up inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-5 py-2 mb-8 hover:bg-emerald-500/15 transition-colors cursor-default">
             <BoltIcon className="w-4 h-4 text-emerald-400 animate-pulse" />
-            <span className="text-emerald-400 text-xs font-bold uppercase tracking-wider">Sistema de gestion para clubes de poker</span>
+            <span className="text-emerald-400 text-xs font-bold uppercase tracking-wider">Hecho para clubes de poker en Colombia</span>
           </div>
 
           <h1 className="animate-fade-up delay-100 text-5xl md:text-7xl font-black text-white tracking-tight leading-[1.1] mb-6">
-            Controla el{' '}
+            La caja de tu club,{' '}
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-cyan-400 to-emerald-400 animate-shimmer" style={{ backgroundSize: '200% 100%' }}>
-              rake
+              cuadrada al peso
             </span>
-            {' '}de tu club como un profesional
           </h1>
 
           <p className="animate-fade-up delay-200 text-gray-400 text-lg md:text-xl max-w-2xl mx-auto mb-10 leading-relaxed">
-            RakeFlow automatiza el cierre de caja, distribuye ganancias entre socios y te da visibilidad total sobre las finanzas de tu club de poker.
+            Cada buy-in, cada cashout, el pago a dealers y el reparto a socios — registrado desde el celular, con auditoría que detecta el descuadre <b className="text-gray-200">antes</b> de cerrar la noche.
           </p>
 
           <div className="animate-fade-up delay-300 flex flex-col sm:flex-row gap-4 justify-center">
             <Link to="/register" className="group bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold text-lg px-8 py-4 rounded-xl shadow-[0_0_30px_rgba(16,185,129,0.3)] hover:shadow-[0_0_50px_rgba(16,185,129,0.4)] transition-all active:scale-[0.98] flex items-center justify-center gap-2 animate-pulse-glow">
-              Probar 14 Dias Gratis <ArrowRightIcon className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+              Probar 14 días gratis <ArrowRightIcon className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
             </Link>
-            <a href="#features" className="bg-gray-800/60 hover:bg-gray-700/80 text-gray-300 hover:text-white font-bold text-lg px-8 py-4 rounded-xl border border-gray-700 hover:border-gray-500 transition-all flex items-center justify-center gap-2 backdrop-blur-sm">
-              Ver Funciones
+            <a href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer" className="bg-gray-800/60 hover:bg-gray-700/80 text-gray-300 hover:text-white font-bold text-lg px-8 py-4 rounded-xl border border-gray-700 hover:border-emerald-500/40 transition-all flex items-center justify-center gap-2 backdrop-blur-sm">
+              <WhatsAppIcon className="w-5 h-5 text-emerald-400" /> Hablar con nosotros
             </a>
           </div>
 
           <div className="animate-fade-up delay-500 flex flex-wrap items-center justify-center gap-6 mt-10 text-gray-500 text-sm">
-            <span className="flex items-center gap-1.5 hover:text-gray-300 transition-colors"><CheckIcon className="w-4 h-4 text-emerald-500" /> 14 dias de prueba gratis</span>
+            <span className="flex items-center gap-1.5 hover:text-gray-300 transition-colors"><CheckIcon className="w-4 h-4 text-emerald-500" /> Sin tarjeta de crédito</span>
             <span className="flex items-center gap-1.5 hover:text-gray-300 transition-colors"><CheckIcon className="w-4 h-4 text-emerald-500" /> Listo en 2 minutos</span>
-            <span className="flex items-center gap-1.5 hover:text-gray-300 transition-colors"><DeviceTabletIcon className="w-4 h-4 text-emerald-500" /> Funciona en tablet</span>
+            <span className="flex items-center gap-1.5 hover:text-gray-300 transition-colors"><DeviceTabletIcon className="w-4 h-4 text-emerald-500" /> Celular, tablet o PC</span>
           </div>
         </div>
 
@@ -261,6 +275,26 @@ export default function Landing() {
         </div>
       </section>
 
+      {/* DOLORES — "esto te pasa a ti" antes de la lista de funciones */}
+      <section className="py-24 px-6 relative">
+        <div className="max-w-5xl mx-auto">
+          <AnimatedSection className="text-center mb-14">
+            <p className="text-emerald-400 text-xs font-bold uppercase tracking-widest mb-3">¿Te suena?</p>
+            <h2 className="text-3xl md:text-4xl font-black text-white tracking-tight">Las tres cosas que todo club sufre</h2>
+          </AnimatedSection>
+          <div className="space-y-4">
+            {pains.map((it, i) => (
+              <AnimatedSection key={i} animation={`animate-fade-up delay-${(i + 1) * 100}`}>
+                <div className="flex flex-col md:flex-row md:items-center gap-3 md:gap-8 bg-gray-800/30 border border-gray-700/50 rounded-2xl p-6">
+                  <p className="md:w-64 shrink-0 text-white font-black text-lg leading-snug">{it.pain}</p>
+                  <p className="text-gray-400 text-sm md:text-base leading-relaxed md:border-l md:border-emerald-500/30 md:pl-8">{it.fix}</p>
+                </div>
+              </AnimatedSection>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* FEATURES */}
       <section id="features" className="py-24 px-6 relative">
         <div className="max-w-6xl mx-auto">
@@ -329,7 +363,8 @@ export default function Landing() {
         <div className="max-w-5xl mx-auto">
           <AnimatedSection className="text-center mb-16">
             <p className="text-emerald-400 text-xs font-bold uppercase tracking-widest mb-3">Planes</p>
-            <h2 className="text-3xl md:text-4xl font-black text-white tracking-tight">Simple y transparente</h2>
+            <h2 className="text-3xl md:text-4xl font-black text-white tracking-tight">Menos de lo que deja una buena noche</h2>
+            <p className="text-gray-400 text-sm mt-3 max-w-md mx-auto">Un solo plan con todo. Lo pruebas gratis 14 días con tu operación real y decides.</p>
             <div className="w-16 h-1 bg-gradient-to-r from-emerald-500 to-cyan-500 rounded-full mx-auto mt-4"></div>
           </AnimatedSection>
 
@@ -363,14 +398,43 @@ export default function Landing() {
                       <WhatsAppIcon className="w-4 h-4" /> Contactar
                     </a>
                   ) : (
-                    <Link to="/register" className={`w-full py-3.5 rounded-xl font-bold text-sm uppercase tracking-wider text-center transition-all active:scale-[0.98] block hover:-translate-y-0.5 ${plan.btn}`}>
-                      Comenzar
-                    </Link>
+                    <>
+                      <Link to="/register" className={`w-full py-3.5 rounded-xl font-bold text-sm uppercase tracking-wider text-center transition-all active:scale-[0.98] block hover:-translate-y-0.5 ${plan.btn}`}>
+                        Probar 14 días gratis
+                      </Link>
+                      <p className="text-center text-[11px] text-gray-500 mt-2">Sin tarjeta · cancelas cuando quieras</p>
+                    </>
                   )}
                 </div>
               </AnimatedSection>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* FAQ — las objeciones respondidas donde nacen */}
+      <section className="py-24 px-6">
+        <div className="max-w-3xl mx-auto">
+          <AnimatedSection className="text-center mb-12">
+            <p className="text-cyan-400 text-xs font-bold uppercase tracking-widest mb-3">Preguntas frecuentes</p>
+            <h2 className="text-3xl md:text-4xl font-black text-white tracking-tight">Lo que todo dueño pregunta</h2>
+          </AnimatedSection>
+          <div className="space-y-3">
+            {FAQ.map((f, i) => (
+              <AnimatedSection key={i} animation="animate-fade-up">
+                <details className="group bg-gray-800/30 border border-gray-700/50 rounded-2xl open:border-emerald-500/30 transition-colors">
+                  <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden flex items-center justify-between gap-4 px-6 py-4 min-h-14 text-white font-bold text-sm md:text-base">
+                    {f.q}
+                    <span className="shrink-0 text-emerald-400 transition-transform group-open:rotate-45 text-xl leading-none" aria-hidden="true">+</span>
+                  </summary>
+                  <p className="px-6 pb-5 text-gray-400 text-sm leading-relaxed">{f.a}</p>
+                </details>
+              </AnimatedSection>
+            ))}
+          </div>
+          <p className="text-center text-sm text-gray-500 mt-8">
+            ¿Otra pregunta? <a href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:text-emerald-300 font-bold">Escríbenos por WhatsApp</a> — respondemos personas, no bots.
+          </p>
         </div>
       </section>
 
@@ -390,11 +454,11 @@ export default function Landing() {
                 Deja de contar fichas a mano
               </h2>
               <p className="text-gray-400 text-lg mb-8 max-w-xl mx-auto">
-                Unete a los clubes que ya gestionan sus finanzas con RakeFlow. Configuracion en menos de 2 minutos.
+                Pruébalo esta misma semana con tu operación real: abre una mesa, cierra la caja y mira cómo cuadra. En 2 minutos estás adentro.
               </p>
               <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
                 <Link to="/register" className="group/btn inline-flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold text-lg px-10 py-4 rounded-xl shadow-[0_0_30px_rgba(16,185,129,0.3)] hover:shadow-[0_0_50px_rgba(16,185,129,0.5)] transition-all active:scale-[0.98]">
-                  Crear Mi Club Gratis <ArrowRightIcon className="w-5 h-5 group-hover/btn:translate-x-1 transition-transform" />
+                  Crear mi club gratis <ArrowRightIcon className="w-5 h-5 group-hover/btn:translate-x-1 transition-transform" />
                 </Link>
                 <a href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer" className="group/wa inline-flex items-center gap-2 bg-gray-800/60 hover:bg-gray-700/80 text-gray-300 hover:text-white font-bold text-lg px-10 py-4 rounded-xl border border-gray-700 hover:border-emerald-500/40 transition-all active:scale-[0.98] backdrop-blur-sm">
                   <WhatsAppIcon className="w-5 h-5 text-emerald-400 group-hover/wa:scale-110 transition-transform" /> Agendar una demo
@@ -409,7 +473,7 @@ export default function Landing() {
       <footer className="border-t border-gray-800/50 py-10 px-6">
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <span className="text-lg">💸</span>
+            <img src="/rakeflow-logo.svg" alt="" className="w-5 h-5 rounded" />
             <span className="text-gray-500 font-bold text-sm uppercase tracking-wider">
               Rake<span className="text-emerald-500">Flow</span>
             </span>
