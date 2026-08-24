@@ -423,7 +423,7 @@ export default function Landing() {
             {FAQ.map((f, i) => (
               <AnimatedSection key={i} animation="animate-fade-up">
                 <details className="group bg-gray-800/30 border border-gray-700/50 rounded-2xl open:border-emerald-500/30 transition-colors">
-                  <summary className="cursor-pointer list-none flex items-center justify-between gap-4 px-6 py-4 min-h-14 text-white font-bold text-sm md:text-base">
+                  <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden flex items-center justify-between gap-4 px-6 py-4 min-h-14 text-white font-bold text-sm md:text-base">
                     {f.q}
                     <span className="shrink-0 text-emerald-400 transition-transform group-open:rotate-45 text-xl leading-none" aria-hidden="true">+</span>
                   </summary>
