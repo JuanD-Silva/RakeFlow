@@ -96,6 +96,21 @@ function useDemoTick(intervalMs = 2600) {
   return tick;
 }
 
+// Aislado en su propio componente: el tick re-renderiza SOLO el chip, no la
+// landing entera (la promesa de fluidez en Android bajo se mantiene).
+function LiveDemoChip() {
+  const tick = useDemoTick();
+  const ev = DEMO_EVENTS[tick % DEMO_EVENTS.length];
+  return (
+    <div key={tick} className="animate-demo-pop">
+      <div className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[11px] font-bold ${ev.tone}`}>
+        <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
+        {ev.text}
+      </div>
+    </div>
+  );
+}
+
 function AnimatedSection({ children, className = '', animation = 'animate-fade-up' }) {
   const [ref, inView] = useInView();
   return (
@@ -107,7 +122,6 @@ function AnimatedSection({ children, className = '', animation = 'animate-fade-u
 
 export default function Landing() {
   const [navSolid, setNavSolid] = useState(false);
-  const demoTick = useDemoTick();
   // En móvil, pasada la primera pantalla, el CTA viaja contigo: barra fija
   // abajo con la oferta + WhatsApp. En desktop basta el FAB.
   const [showMobileCta, setShowMobileCta] = useState(false);
@@ -291,12 +305,7 @@ export default function Landing() {
                 </div>
 
                 {/* Evento en vivo: la mesa nunca está quieta */}
-                <div key={demoTick} className="animate-demo-pop">
-                  <div className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[11px] font-bold ${DEMO_EVENTS[demoTick % DEMO_EVENTS.length].tone}`}>
-                    <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
-                    {DEMO_EVENTS[demoTick % DEMO_EVENTS.length].text}
-                  </div>
-                </div>
+                <LiveDemoChip />
               </div>
             </div>
           </div>
@@ -538,7 +547,7 @@ export default function Landing() {
       </section>
 
       {/* FOOTER */}
-      <footer className="border-t border-gray-800/50 py-10 px-6">
+      <footer className="border-t border-gray-800/50 py-10 pb-28 sm:pb-10 px-6">
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <img src="/rakeflow-logo.svg" alt="" className="w-5 h-5 rounded" />
