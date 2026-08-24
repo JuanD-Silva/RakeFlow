@@ -139,8 +139,18 @@ async def my_profile(
     m_tour = [r for r in tour_rows if r["date"] and r["date"] >= month_start]
     m = _totals(m_cash, m_tour)
 
+    _club_reg = (await db.execute(
+        select(models.Club.timezone, models.Club.currency, models.Club.locale)
+        .where(models.Club.id == user.club_id)
+    )).first()
     out = {
         "player_name": player.name,
+        # Región del club: el panel formatea plata y horas con esto.
+        "regional": {
+            "timezone": (_club_reg and _club_reg[0]) or "America/Bogota",
+            "currency": (_club_reg and _club_reg[1]) or "COP",
+            "locale": (_club_reg and _club_reg[2]) or "es-CO",
+        },
         "totals": totals,
         "level": level,
         "is_vip": vip,

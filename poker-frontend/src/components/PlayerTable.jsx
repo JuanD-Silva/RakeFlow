@@ -1,7 +1,7 @@
 import { useState, useEffect, Fragment, useCallback } from 'react';
 import { ChevronDownIcon, ChevronUpIcon, ClockIcon } from '@heroicons/react/24/solid';
 import api from '../api/axios';
-import { formatMoney, parseServerDate } from '../utils/formatters';
+import { formatMoney, fmtTime } from '../utils/formatters';
 import { norm } from '../utils/text';
 import { useToast, Toast } from './Toast';
 import { transactionService, playerService } from '../api/services';
@@ -151,7 +151,7 @@ export default function PlayerTable({ refreshTrigger, sessionId, onPlayerSelect,
   const formatTime = (dateString) => {
     if (!dateString) return '--:--';
     // El servidor manda UTC sin 'Z': sin parseServerDate el quebró salía +5h.
-    return parseServerDate(dateString).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' });
+    return fmtTime(dateString);
   };
 
   const toggleRow = (playerId) => {

@@ -5,6 +5,7 @@ import api from './api/axios';
 
 // IMPORTACIONES
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { setRegional } from './utils/formatters';
 import ErrorBoundary from './components/ErrorBoundary';
 import OnboardingWizard from './components/OnboardingWizard';
 import GameControl from './components/GameControl';
@@ -66,6 +67,8 @@ function PokerManagerApp() {
         }
         setEmailVerified(res.data.email_verified);
         setClubName(res.data.name || '');
+        // Siembra moneda/hora del club para TODOS los formatos de la app.
+        setRegional(res.data);
 
         // Verificar suscripcion
         try {

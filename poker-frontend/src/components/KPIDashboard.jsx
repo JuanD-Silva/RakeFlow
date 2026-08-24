@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import api from '../api/axios';
 import { historyService } from '../api/services';
-import { formatMoney, parseServerDate } from '../utils/formatters';
+import { formatMoney, parseServerDate, clubLocale, clubTimeZone } from '../utils/formatters';
 import {
   XMarkIcon,
   ClockIcon,
@@ -26,7 +26,7 @@ function formatDuration(minutes) {
 
 function formatDate(iso) {
   if (!iso) return '-';
-  return parseServerDate(iso).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'America/Bogota' });
+  return parseServerDate(iso).toLocaleDateString(clubLocale(), { day: '2-digit', month: 'short', year: 'numeric', timeZone: clubTimeZone() });
 }
 
 export default function KPIDashboard({ startDate, endDate, netPeriodo = null } = {}) {

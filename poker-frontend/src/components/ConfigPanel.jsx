@@ -15,6 +15,7 @@ import {
 } from '@heroicons/react/24/outline';
 import DealerManager from './DealerManager';
 import ClubPublicLink from './ClubPublicLink';
+import RegionalSettings from './RegionalSettings';
 import MonthlyChallengeManager from './MonthlyChallengeManager';
 
 const RULE_OPTIONS = [
@@ -391,6 +392,9 @@ export default function ConfigPanel() {
           )}
         </div>
       )}
+
+      {/* REGIÓN Y MONEDA (autocontenido) */}
+      <RegionalSettings />
 
       {/* LINK PÚBLICO DEL CLUB (autocontenido) */}
       <ClubPublicLink />
