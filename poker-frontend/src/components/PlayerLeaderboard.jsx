@@ -3,7 +3,7 @@ import api from '../api/axios';
 import { TrophyIcon, StarIcon, ClockIcon, ArrowPathIcon, ShareIcon } from '@heroicons/react/24/solid';
 import PlayerProfileModal from './PlayerProfileModal';
 import RankingShareCard from './RankingShareCard';
-import { formatMoney } from '../utils/formatters';
+import { formatMoney, clubLocale, clubTimeZone } from '../utils/formatters';
 
 const MONTH_NAMES = [
   'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
@@ -29,7 +29,7 @@ function getRecentMonths(n = 6) {
 const fmtDia = (iso) => {
   if (!iso) return '';
   const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z');
-  return d.toLocaleDateString('es-CO', { day: 'numeric', month: 'long', timeZone: 'America/Bogota' });
+  return d.toLocaleDateString(clubLocale(), { day: 'numeric', month: 'long', timeZone: clubTimeZone() });
 };
 
 // Las tres preguntas del dueño, con la medida literal debajo del título.

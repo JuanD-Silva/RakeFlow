@@ -222,8 +222,9 @@ async def operation_bi(
     db: AsyncSession = Depends(get_db),
 ):
     cid = current_club.id
+    tz = player_stats.club_tz(current_club)
     now_utc = datetime.utcnow()
-    hoy = player_stats.col_date_of(now_utc)
+    hoy = player_stats.col_date_of(now_utc, tz)
     mes_ini = _month_start(hoy)
     mes_prev_ini = _prev_month_start(hoy)
     dia_del_mes = hoy.day
@@ -262,20 +263,20 @@ async def operation_bi(
     # Por fecha Colombia: rake bruto, gastos, neto, #mesas, #torneos
     noches = defaultdict(lambda: {"bruto": 0.0, "gastos": 0.0, "cash": 0, "torneos": 0, "jugadores": set()})
     for s in sesiones:
-        d = player_stats.col_date_of(s.end_time or s.start_time)
+        d = player_stats.col_date_of(s.end_time or s.start_time, tz)
         n = noches[d]
         n["bruto"] += float(s.declared_rake_cash or 0)
         n["gastos"] += float((s.dealer_cost or 0) + (s.courtesy_cost or 0))
         n["cash"] += 1
     for t in torneos:
-        d = player_stats.col_date_of(t.end_time or t.start_time)
+        d = player_stats.col_date_of(t.end_time or t.start_time, tz)
         n = noches[d]
         n["bruto"] += services.tournament_rake_of(t)
         n["torneos"] += 1
         for p in t.players:
             if p.player_id: n["jugadores"].add(p.player_id)
     for sh in t_shifts:
-        d = player_stats.col_date_of(sh.end_time)
+        d = player_stats.col_date_of(sh.end_time, tz)
         elapsed_min = max(0, int((sh.end_time - sh.start_time).total_seconds() // 60))
         bd = services.shift_payment_breakdown(round(elapsed_min / 60.0, 2), sh.tournament_hourly_rate_cop or 0, 0, None)
         noches[d]["gastos"] += float(bd["club_payment"])
@@ -291,7 +292,7 @@ async def operation_bi(
         """), {"sids": sess_ids})).all()
     else:
         rows = []
-    sess_date = {s.id: player_stats.col_date_of(s.end_time or s.start_time) for s in sesiones}
+    sess_date = {s.id: player_stats.col_date_of(s.end_time or s.start_time, tz) for s in sesiones}
     buyins = []
     for pid, ts, sid, amount, tp in rows:
         d = sess_date.get(sid)
@@ -316,7 +317,7 @@ async def operation_bi(
            WHERE tr.club_id = :cid AND tr.status = 'COMPLETED' AND tp.player_id IS NOT NULL
         ) x WHERE ts IS NOT NULL GROUP BY player_id
     """), {"cid": cid})).all()
-    primera = {pid: player_stats.col_date_of(ts) for pid, ts in first_rows}
+    primera = {pid: player_stats.col_date_of(ts, tz) for pid, ts in first_rows}
 
     # ---- 1. PULSO: mes en curso vs mismos días del mes anterior ----
     def resumen(ini: date, fin: date):

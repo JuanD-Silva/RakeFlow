@@ -18,11 +18,11 @@ _COL_TZ = ZoneInfo("America/Bogota")
 _UTC = ZoneInfo("UTC")
 
 
-def _start_of_month_col_as_utc() -> datetime:
+def _start_of_month_col_as_utc(tz=None) -> datetime:
     """Inicio del mes en hora Colombia, expresado como UTC naive para
     comparar con Session.end_time / Tournament.end_time (que se guardan
     con datetime.utcnow() — naive UTC)."""
-    col_now = datetime.now(_COL_TZ)
+    col_now = datetime.now(tz or _COL_TZ)
     col_start = col_now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     return col_start.astimezone(_UTC).replace(tzinfo=None)
 
@@ -75,7 +75,7 @@ async def get_dashboard_stats(
             range_start = datetime.combine(datetime.strptime(start_date, "%Y-%m-%d").date(), time.min)
             range_end = datetime.combine(datetime.strptime(end_date, "%Y-%m-%d").date(), time.max)
         else:
-            range_start = _start_of_month_col_as_utc()
+            range_start = _start_of_month_col_as_utc(player_stats.club_tz(current_club))
             range_end = now
             if current_club.rankings_reset_at and current_club.rankings_reset_at > range_start:
                 range_start = current_club.rankings_reset_at
@@ -390,7 +390,7 @@ async def get_monthly_debt_quota(
         range_start = datetime.combine(datetime.strptime(start_date, "%Y-%m-%d").date(), time.min)
         range_end = datetime.combine(datetime.strptime(end_date, "%Y-%m-%d").date(), time.max)
     else:
-        range_start = _start_of_month_col_as_utc()
+        range_start = _start_of_month_col_as_utc(player_stats.club_tz(current_club))
         range_end = now
 
     current = await _get_net_profit_in_range(db, current_club.id, range_start, range_end)
@@ -585,7 +585,7 @@ async def get_dealer_payments(
     """
     # 1. Rango (default: mes en curso, hora Colombia)
     if not start_date or not end_date:
-        start_dt = _start_of_month_col_as_utc()
+        start_dt = _start_of_month_col_as_utc(player_stats.club_tz(current_club))
         end_dt = datetime.utcnow()
     else:
         start_dt = datetime.combine(datetime.strptime(start_date, "%Y-%m-%d").date(), time.min)

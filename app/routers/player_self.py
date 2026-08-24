@@ -133,14 +133,24 @@ async def my_profile(
         standings = await player_stats.compute_club_standings(db, user.club_id)
         vip = player_stats.is_vip(standings, player.id)
 
-    # Resumen del mes en curso (hora Colombia), sobre las filas ya cortadas
-    month_start = player_stats.start_of_month_col_as_utc()
+    # Resumen del mes en curso (hora del club), sobre las filas ya cortadas
+    month_start = player_stats.start_of_month_col_as_utc(await player_stats.club_tz_by_id(db, user.club_id))
     m_cash = [r for r in cash_rows if r["date"] and r["date"] >= month_start]
     m_tour = [r for r in tour_rows if r["date"] and r["date"] >= month_start]
     m = _totals(m_cash, m_tour)
 
+    _club_reg = (await db.execute(
+        select(models.Club.timezone, models.Club.currency, models.Club.locale)
+        .where(models.Club.id == user.club_id)
+    )).first()
     out = {
         "player_name": player.name,
+        # Región del club: el panel formatea plata y horas con esto.
+        "regional": {
+            "timezone": (_club_reg and _club_reg[0]) or "America/Bogota",
+            "currency": (_club_reg and _club_reg[1]) or "COP",
+            "locale": (_club_reg and _club_reg[2]) or "es-CO",
+        },
         "totals": totals,
         "level": level,
         "is_vip": vip,
@@ -375,7 +385,8 @@ async def my_challenges(
     Lista vacía si el club no definió retos este mes. Combate el desgaste de los
     badges fijos (novelty effect)."""
     player = await _my_player(db, user)
-    now_col = datetime.now(player_stats.COL_TZ)
+    _tz = await player_stats.club_tz_by_id(db, user.club_id)
+    now_col = datetime.now(_tz)
     rows = (await db.execute(
         select(models.MonthlyChallenge).where(
             models.MonthlyChallenge.club_id == user.club_id,
@@ -392,7 +403,7 @@ async def my_challenges(
     since = player.stats_since
     cash_rows = await player_stats.cash_rows_for_player(db, user.club_id, player.id, since)
     tour_rows = await player_stats.tournament_rows_for_player(db, user.club_id, player.id, since)
-    month_start = player_stats.start_of_month_col_as_utc()
+    month_start = player_stats.start_of_month_col_as_utc(_tz)
     m_cash = [r for r in cash_rows if r["date"] and r["date"] >= month_start]
     m_tour = [r for r in tour_rows if r["date"] and r["date"] >= month_start]
 
@@ -442,7 +453,7 @@ async def monthly_summary(
         start = datetime(year, month, 1)
         end = datetime(year + 1, 1, 1) if month == 12 else datetime(year, month + 1, 1)
     else:
-        start = player_stats.start_of_month_col_as_utc()
+        start = player_stats.start_of_month_col_as_utc(await player_stats.club_tz_by_id(db, user.club_id))
         end = now
     period = {"year": start.year, "month": start.month}  # SIEMPRE el mes pedido
     # El corte de la venta manda: no mostrar plata anterior a stats_since.

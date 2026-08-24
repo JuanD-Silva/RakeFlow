@@ -8,7 +8,7 @@ import AchievementShareCard from '../components/AchievementShareCard';
 import InstallAppBanner from '../components/InstallAppBanner';
 import AccountSwitcher from '../components/AccountSwitcher';
 import PushToggle from '../components/PushToggle';
-import { cop, signCop, fmtDate, monthName } from '../utils/formatters';
+import { cop, signCop, fmtDate, monthName, setRegional } from '../utils/formatters';
 
 // Panel del Jugador (clon estructural de DealerWorkspace: móvil-first, max-w-md,
 // bottom-nav). PR3: Inicio + Historial. PR4: Logros (badges + confetti),
@@ -128,6 +128,8 @@ export default function PlayerWorkspace() {
   // El perfil se sube acá (un solo fetch, se pasa a HomeTab): además de alimentar
   // el Inicio, decide el AURA VIP que envuelve TODA la pantalla del pilar del club.
   const { data: profile, loadedOnce: profileLoaded, error: profileError } = usePlayerResource(playerSelfService.getProfile);
+  // Siembra moneda/hora del club del jugador para todos los formatos del panel.
+  useEffect(() => { if (profile?.regional) setRegional(profile.regional); }, [profile]);
   const isVip = !!profile?.is_vip;
 
   return (

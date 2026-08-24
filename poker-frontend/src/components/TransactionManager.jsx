@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import api from '../api/axios';
 import { useEscape } from '../hooks/useEscape';
-import { parseServerDate } from '../utils/formatters';
+import { fmtTime } from '../utils/formatters';
 import { 
   PencilSquareIcon, 
   TrashIcon, 
@@ -148,7 +148,7 @@ export default function TransactionManager({ player, onClose, onUpdate }) {
                       {typeMap[tx.type] || tx.type}
                     </span>
                     <span className="text-xs text-gray-500 font-mono">
-                      {parseServerDate(tx.created_at).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' })}
+                      {fmtTime(tx.created_at)}
                     </span>
                   </div>
 
