@@ -54,6 +54,12 @@ class Club(Base):
     
     is_active = Column(Boolean, default=True)
     plan_type = Column(String, default="BASIC")
+    # Internacionalización del club (defaults = Colombia; Mambo no nota nada).
+    # timezone: IANA ("America/Bogota"); currency: ISO 4217 ("COP");
+    # locale: BCP-47 para formatear números/fechas ("es-CO").
+    timezone = Column(String, nullable=False, default="America/Bogota", server_default=text("'America/Bogota'"))
+    currency = Column(String, nullable=False, default="COP", server_default=text("'COP'"))
+    locale = Column(String, nullable=False, default="es-CO", server_default=text("'es-CO'"))
     jackpot_adjustment = Column(Float, default=0.0)
     # Mostrar el jackpot a los jugadores (link público /c/{token} + panel).
     # Default TRUE: el jackpot es el gancho del club, los jugadores lo piden;

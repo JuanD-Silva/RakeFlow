@@ -171,16 +171,16 @@ async def players_insights(
     last_rows = (await db.execute(text("""
         SELECT pid, MAX(d) AS last_d FROM (
           SELECT t.player_id AS pid,
-                 ((s.start_time AT TIME ZONE 'UTC') AT TIME ZONE 'America/Bogota')::date AS d
+                 ((s.start_time AT TIME ZONE 'UTC') AT TIME ZONE :tz)::date AS d
           FROM transactions t JOIN sessions s ON s.id = t.session_id
           WHERE s.club_id = :cid AND t.player_id IS NOT NULL
           UNION ALL
           SELECT tp.player_id,
-                 ((tr.start_time AT TIME ZONE 'UTC') AT TIME ZONE 'America/Bogota')::date
+                 ((tr.start_time AT TIME ZONE 'UTC') AT TIME ZONE :tz)::date
           FROM tournament_players tp JOIN tournaments tr ON tr.id = tp.tournament_id
           WHERE tr.club_id = :cid AND tp.player_id IS NOT NULL
         ) x GROUP BY pid
-    """), {"cid": current_club.id})).all()
+    """), {"cid": current_club.id, "tz": current_club.timezone or "America/Bogota"})).all()
     last_map = {r.pid: r.last_d for r in last_rows}
 
     # Neto cash del jugador (cashout − buyin/rebuy) sobre sesiones CERRADAS —
@@ -198,7 +198,7 @@ async def players_insights(
     volume_map = standings.get("volume", {})
     rake_yield = await _club_rake_yield(db, current_club.id, volume_map)
 
-    today = datetime.now(player_stats.COL_TZ).date()
+    today = datetime.now(player_stats.club_tz(current_club)).date()
     ids = set(volume_map) | set(last_map) | set(net_map) | set(standings.get("visits", {}))
     players_out = {}
     for pid in ids:
@@ -249,16 +249,16 @@ async def player_insights_detail(
     # mismo criterio que la lista, para que la ficha y la card digan lo mismo.
     fr = (await db.execute(text("""
         SELECT MIN(d) AS first_d, MAX(d) AS last_d FROM (
-          SELECT ((s.start_time AT TIME ZONE 'UTC') AT TIME ZONE 'America/Bogota')::date AS d
+          SELECT ((s.start_time AT TIME ZONE 'UTC') AT TIME ZONE :tz)::date AS d
           FROM transactions t JOIN sessions s ON s.id = t.session_id
           WHERE s.club_id = :cid AND t.player_id = :pid
           UNION ALL
-          SELECT ((tr.start_time AT TIME ZONE 'UTC') AT TIME ZONE 'America/Bogota')::date
+          SELECT ((tr.start_time AT TIME ZONE 'UTC') AT TIME ZONE :tz)::date
           FROM tournament_players tp JOIN tournaments tr ON tr.id = tp.tournament_id
           WHERE tr.club_id = :cid AND tp.player_id = :pid
         ) x
-    """), {"cid": current_club.id, "pid": player.id})).first()
-    today = datetime.now(player_stats.COL_TZ).date()
+    """), {"cid": current_club.id, "pid": player.id, "tz": current_club.timezone or "America/Bogota"})).first()
+    today = datetime.now(player_stats.club_tz(current_club)).date()
 
     # played=False = fila solo-corrección (cuenta la plata, no como visita).
     cash_played = [r for r in cash_rows if r["played"]]
@@ -308,7 +308,7 @@ async def player_insights_detail(
     # OJO timezone (hallazgo del review): end_time es naive-UTC; serializarlo
     # crudo corre el día para el juego nocturno (20:00 COL = 01:00 UTC del día
     # siguiente). Fecha calendario Colombia, consistente con first/last/monthly.
-    recent = [{**r, "date": player_stats.col_date_of(r["date"]).isoformat() if r["date"] else None}
+    recent = [{**r, "date": player_stats.col_date_of(r["date"], player_stats.club_tz(current_club)).isoformat() if r["date"] else None}
               for r in recent[:10]]
 
     return {

@@ -1,11 +1,12 @@
 # app/routers/config.py
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import delete, text
 from typing import List
 
 from .. import models, schemas, push_triggers
+from ..audit import log_action, AuditAction
 from ..dependencies import get_db, get_current_club, require_role
 
 router = APIRouter(
@@ -233,7 +234,7 @@ async def get_monthly_challenges(
     _: models.User = Depends(require_role([models.UserRole.OWNER, models.UserRole.MANAGER])),
 ):
     """Retos activos del mes en curso (hora Colombia), hasta 3, en orden estable."""
-    now_col = datetime.now(player_stats.COL_TZ)
+    now_col = datetime.now(player_stats.club_tz(current_club))
     rows = (await db.execute(
         select(models.MonthlyChallenge)
         .where(*_active_month_stmt(current_club.id, now_col))
@@ -254,7 +255,7 @@ async def replace_monthly_challenges(
     activos y reinserta el set nuevo. Lista vacía => quita todos. Un advisory lock
     por club serializa PUTs concurrentes del MISMO club (raro: acción de admin),
     así el 'desactivar-luego-insertar' es atómico."""
-    now_col = datetime.now(player_stats.COL_TZ)
+    now_col = datetime.now(player_stats.club_tz(current_club))
     await db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": current_club.id})
     await db.execute(
         models.MonthlyChallenge.__table__.update()
@@ -280,10 +281,70 @@ async def clear_monthly_challenges(
     _: models.User = Depends(require_role([models.UserRole.OWNER, models.UserRole.MANAGER])),
 ):
     """Quita todos los retos del mes en curso (los desactiva; historial se conserva)."""
-    now_col = datetime.now(player_stats.COL_TZ)
+    now_col = datetime.now(player_stats.club_tz(current_club))
     await db.execute(
         models.MonthlyChallenge.__table__.update()
         .where(*_active_month_stmt(current_club.id, now_col))
         .values(active=False)
     )
     await db.commit()
+
+
+# ---------------------------------------------------------------------------
+# AJUSTES REGIONALES DEL CLUB: zona horaria, moneda y locale. Colombia es el
+# default; un club de otro país los cambia una vez y toda la app (staff y
+# panel del jugador) formatea con ellos. Solo OWNER.
+# ---------------------------------------------------------------------------
+from zoneinfo import ZoneInfo as _ZoneInfo
+from pydantic import BaseModel as _BM, Field as _Field
+
+_CURRENCIES = {"COP", "USD", "MXN", "EUR", "PEN", "ARS", "BRL", "CLP", "UYU", "PYG", "BOB", "GTQ", "DOP", "CRC"}
+_LOCALES = {"es-CO", "es-MX", "es-AR", "es-CL", "es-PE", "es-UY", "es-PY", "es-BO", "es-GT", "es-DO", "es-CR", "es-ES", "en-US", "pt-BR"}
+
+
+class RegionalSettings(_BM):
+    timezone: str = _Field(min_length=1, max_length=64)
+    currency: str = _Field(min_length=3, max_length=3)
+    locale: str = _Field(min_length=2, max_length=10)
+
+
+@router.get("/regional")
+async def get_regional(
+    current_club: models.Club = Depends(get_current_club),
+    _: models.User = Depends(require_role([models.UserRole.OWNER, models.UserRole.MANAGER])),
+):
+    return {
+        "timezone": current_club.timezone or "America/Bogota",
+        "currency": current_club.currency or "COP",
+        "locale": current_club.locale or "es-CO",
+    }
+
+
+@router.put("/regional")
+async def put_regional(
+    data: RegionalSettings,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+    current_user: models.User = Depends(require_role([models.UserRole.OWNER])),
+):
+    try:
+        _ZoneInfo(data.timezone)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Zona horaria inválida. Usa un nombre IANA, ej. America/Mexico_City.")
+    cur = data.currency.upper()
+    if cur not in _CURRENCIES:
+        raise HTTPException(status_code=400, detail=f"Moneda no soportada. Disponibles: {', '.join(sorted(_CURRENCIES))}.")
+    if data.locale not in _LOCALES:
+        raise HTTPException(status_code=400, detail=f"Formato regional no soportado. Disponibles: {', '.join(sorted(_LOCALES))}.")
+    current_club.timezone = data.timezone
+    current_club.currency = cur
+    current_club.locale = data.locale
+    await log_action(
+        db, request=request, club=current_club,
+        action=AuditAction.REGIONAL_UPDATE,
+        entity_type="Club", entity_id=current_club.id,
+        meta={"regional": data.model_dump(), "by": current_user.email},
+    )
+    await db.commit()
+    return {"timezone": current_club.timezone, "currency": current_club.currency, "locale": current_club.locale}

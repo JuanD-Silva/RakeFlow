@@ -310,6 +310,10 @@ async def get_current_club_info(
         "email_verified": current_club.email_verified or False,
         "subscription_active": current_club.subscription_active or False,
         "plan_type": current_club.plan_type,
+        # i18n del club: el frontend formatea TODA la plata y las horas con esto.
+        "timezone": current_club.timezone or "America/Bogota",
+        "currency": current_club.currency or "COP",
+        "locale": current_club.locale or "es-CO",
         # Datos del Usuario autenticado
         "user": {
             "id": current_user.id,

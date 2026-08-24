@@ -26,7 +26,19 @@ from sqlalchemy.orm import selectinload
 
 from . import models
 
-COL_TZ = ZoneInfo("America/Bogota")
+COL_TZ = ZoneInfo("America/Bogota")  # default histórico; los helpers aceptan tz
+
+
+def club_tz(club) -> ZoneInfo:
+    """Zona horaria del club (columna clubs.timezone). Fallback Colombia si
+    falta o es inválida: jamás romper una request por un tz mal guardado."""
+    name = getattr(club, "timezone", None)
+    if not name:
+        return COL_TZ
+    try:
+        return ZoneInfo(name)
+    except Exception:
+        return COL_TZ
 UTC = ZoneInfo("UTC")
 
 # Fecha "cero" para queries con corte opcional: si since es None se usa esto
@@ -42,18 +54,31 @@ TOURNEY_BASE_WEIGHT = 0.5
 LEVEL_TIERS = [("Bronce", 0), ("Plata", 10), ("Oro", 30), ("Diamante", 75)]
 
 
-def start_of_month_col_as_utc() -> datetime:
-    """Inicio del mes en hora Colombia, como UTC naive (las columnas se guardan
-    con datetime.utcnow()). Ver comentario homólogo en stats.py."""
-    col_now = datetime.now(COL_TZ)
+async def club_tz_by_id(db, club_id: int) -> ZoneInfo:
+    """tz del club cuando solo se tiene el id (panel del jugador, cron).
+    Un select PK barato; fallback Colombia."""
+    try:
+        name = (await db.execute(
+            select(models.Club.timezone).where(models.Club.id == club_id)
+        )).scalar()
+        return ZoneInfo(name) if name else COL_TZ
+    except Exception:
+        return COL_TZ
+
+
+def start_of_month_col_as_utc(tz: ZoneInfo | None = None) -> datetime:
+    """Inicio del mes en hora del CLUB (default Colombia), como UTC naive (las
+    columnas se guardan con datetime.utcnow())."""
+    tz = tz or COL_TZ
+    col_now = datetime.now(tz)
     col_start = col_now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     return col_start.astimezone(UTC).replace(tzinfo=None)
 
 
-def _col_week_monday(dt_utc_naive):
-    """Lunes (date, hora Colombia) de la semana ISO a la que pertenece un
+def _col_week_monday(dt_utc_naive, tz: ZoneInfo | None = None):
+    """Lunes (date, hora del club) de la semana ISO a la que pertenece un
     timestamp naive-UTC. Mismo criterio de semana que visit_weeks."""
-    col = dt_utc_naive.replace(tzinfo=UTC).astimezone(COL_TZ)
+    col = dt_utc_naive.replace(tzinfo=UTC).astimezone(tz or COL_TZ)
     return (col - timedelta(days=col.weekday())).date()
 
 
@@ -72,9 +97,9 @@ def start_of_week_col_as_utc(today=None) -> datetime:
     return monday.astimezone(UTC).replace(tzinfo=None)
 
 
-def col_date_of(dt_utc_naive):
-    """Fecha calendario (date) en hora Colombia de un timestamp naive-UTC."""
-    return dt_utc_naive.replace(tzinfo=UTC).astimezone(COL_TZ).date()
+def col_date_of(dt_utc_naive, tz: ZoneInfo | None = None):
+    """Fecha calendario (date) en hora del club de un timestamp naive-UTC."""
+    return dt_utc_naive.replace(tzinfo=UTC).astimezone(tz or COL_TZ).date()
 
 
 def should_log_panel_open(last_seen_at, now_utc=None) -> bool:
@@ -153,16 +178,17 @@ async def compute_monthly_rankings(
     """Devuelve (winners_map, spenders_map, active_map, names_map, period_dict)
     con TODOS los jugadores del club en el período (no solo el top 3)."""
     now = datetime.utcnow()
+    tz = club_tz(club)
     if year and month:
-        # Mes historico explicito — limites en hora COLOMBIA pasados a UTC naive,
+        # Mes historico explicito — limites en hora del CLUB pasados a UTC naive,
         # igual que el mes en curso. Antes eran UTC puro: una sesion cerrada el
         # 31 a las 10pm Bogota (03:00 UTC del 1) caia en el mes siguiente y el
         # ranking cambiaba al pasar de mes.
-        col_start = datetime(year, month, 1, tzinfo=COL_TZ)
-        col_end = datetime(year + 1, 1, 1, tzinfo=COL_TZ) if month == 12 else datetime(year, month + 1, 1, tzinfo=COL_TZ)
+        col_start = datetime(year, month, 1, tzinfo=tz)
+        col_end = datetime(year + 1, 1, 1, tzinfo=tz) if month == 12 else datetime(year, month + 1, 1, tzinfo=tz)
         start_date = col_start.astimezone(UTC).replace(tzinfo=None)
         end_date = col_end.astimezone(UTC).replace(tzinfo=None)
-        col_now = datetime.now(COL_TZ)
+        col_now = datetime.now(tz)
         is_current_month = (year == col_now.year and month == col_now.month)
         # Si es el mes en curso pedido explicitamente, respeta el reset igual
         # que el default (mismo mes = mismo ranking, venga de donde venga).
@@ -170,8 +196,8 @@ async def compute_monthly_rankings(
             start_date = club.rankings_reset_at
     else:
         # Mes en curso (default): respeta rankings_reset_at del club.
-        # Mes en hora Colombia para coincidir con la UI del cliente.
-        start_date = start_of_month_col_as_utc()
+        # Mes en hora del club para coincidir con la UI del cliente.
+        start_date = start_of_month_col_as_utc(tz)
         if club.rankings_reset_at and club.rankings_reset_at > start_date:
             start_date = club.rankings_reset_at
         end_date = now

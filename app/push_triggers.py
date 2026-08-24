@@ -112,7 +112,7 @@ async def _weekly_payload_for(db: AsyncSession, club_id: int,
     if payload:
         return payload, "streak"
 
-    now_col = datetime.now(player_stats.COL_TZ)
+    now_col = datetime.now(await player_stats.club_tz_by_id(db, club_id))
     challenges = (await db.execute(
         select(models.MonthlyChallenge).where(
             models.MonthlyChallenge.club_id == club_id,
@@ -126,7 +126,7 @@ async def _weekly_payload_for(db: AsyncSession, club_id: int,
 
     cash_rows = await player_stats.cash_rows_for_player(db, club_id, player.id, since)
     tour_rows = await player_stats.tournament_rows_for_player(db, club_id, player.id, since)
-    month_start = player_stats.start_of_month_col_as_utc()
+    month_start = player_stats.start_of_month_col_as_utc(await player_stats.club_tz_by_id(db, club_id))
     m_cash = [r for r in cash_rows if r["date"] and r["date"] >= month_start]
     m_tour = [r for r in tour_rows if r["date"] and r["date"] >= month_start]
     for ch in challenges:
@@ -219,9 +219,9 @@ def spawn(coro) -> None:
     task.add_done_callback(_done)
 
 
-def _start_of_today_col_utc() -> datetime:
-    """Medianoche de HOY Colombia en UTC naive (formato de la DB)."""
-    start_col = datetime.now(player_stats.COL_TZ).replace(
+def _start_of_today_col_utc(tz=None) -> datetime:
+    """Medianoche de HOY (hora del club) en UTC naive (formato de la DB)."""
+    start_col = datetime.now(tz or player_stats.COL_TZ).replace(
         hour=0, minute=0, second=0, microsecond=0)
     return start_col.astimezone(timezone.utc).replace(tzinfo=None)
 
@@ -232,7 +232,7 @@ async def _sent_today(db: AsyncSession, club_id: int, action: str) -> bool:
         WHERE club_id = :cid AND action = :action AND created_at >= :since
         LIMIT 1
     """), {"cid": club_id, "action": action,
-           "since": _start_of_today_col_utc()})).first()
+           "since": _start_of_today_col_utc(await player_stats.club_tz_by_id(db, club_id))})).first()
     return row is not None
 
 
