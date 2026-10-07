@@ -135,7 +135,16 @@ export default function TransactionForm({ type, onSuccess }) {
 
     } catch (err) {
       console.error(err);
-      setError(err.message || "Error al procesar.");
+      
+      // 1. Verificamos si es un error de Axios con respuesta del servidor
+      if (err.response && err.response.data && err.response.data.detail) {
+        // 2. Aquí capturamos el mensaje que pusiste en Python: detail="Fondos insuficientes..."
+        setError(err.response.data.detail);
+      } else {
+        // 3. Si es otro tipo de error (red, etc.), mantenemos el mensaje genérico
+        setError(err.message || "Error al procesar la transacción.");
+      }
+      
     } finally {
       setLoading(false);
     }
