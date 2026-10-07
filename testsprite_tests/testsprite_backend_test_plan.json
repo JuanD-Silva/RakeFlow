@@ -1,0 +1,52 @@
+[
+  {
+    "id": "TC001",
+    "title": "postauthregister",
+    "description": "Verify that registering a new club with valid name, email, and password returns 201 with message, club_id, and email, and that registering with an already-registered email returns 400 with appropriate error message."
+  },
+  {
+    "id": "TC002",
+    "title": "postauthlogin",
+    "description": "Verify that logging in with valid credentials returns 200 with access_token and token_type, and logging in with invalid credentials returns 401 with invalid credentials message."
+  },
+  {
+    "id": "TC003",
+    "title": "deletemedeleteaccount",
+    "description": "Verify that deleting the current club account with valid authorization returns 200 with confirmation message, and without authorization returns 401 unauthorized."
+  },
+  {
+    "id": "TC004",
+    "title": "postplayers",
+    "description": "Verify that creating a new player with valid name and phone under authorized club returns 200 with player data, and creating a player with invalid (empty after trimming) name returns 400 validation error."
+  },
+  {
+    "id": "TC005",
+    "title": "getsessionsactive",
+    "description": "Verify that fetching the active open session with valid authorization returns 200 with session data or null if none active."
+  },
+  {
+    "id": "TC006",
+    "title": "postsessionssessionidclose",
+    "description": "Verify that closing a session with matching declared rake and jackpot cash returns 200 with close result, and closing with mismatched declared totals returns 409 mismatch error."
+  },
+  {
+    "id": "TC007",
+    "title": "posttransactions",
+    "description": "Verify that creating a transaction with valid player_id, session_id, amount > 0, and method returns 200 with transaction data, and creating with amount 0 returns 400 validation error."
+  },
+  {
+    "id": "TC008",
+    "title": "posttournaments",
+    "description": "Verify that creating a tournament with valid name, buyin_amount, rake_percentage, and payout_structure returns 200 with tournament data, and creating when another active tournament exists returns 409 conflict."
+  },
+  {
+    "id": "TC009",
+    "title": "getstatsdashboard",
+    "description": "Verify that fetching dashboard KPIs with valid authorization returns 200 with dashboard stats, and with invalid or expired token returns 401 unauthorized."
+  },
+  {
+    "id": "TC010",
+    "title": "postconfiginitialsetup",
+    "description": "Verify that posting initial setup with monthly_goal and partners list with valid authorization returns 200 with confirmation message."
+  }
+]

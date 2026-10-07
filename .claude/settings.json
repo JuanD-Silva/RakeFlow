@@ -1,0 +1,124 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./venv/bin/python -c ':*)",
+      "Bash(curl -s -X POST http://0.0.0.0:8000/auth/register -H \"Content-Type: application/json\" -d '{\"name\":\"Test Payments\",\"email\":\"testpay@rakeflow.com\",\"password\":\"test123456\"}')",
+      "WebFetch(domain:docs.epayco.co)",
+      "Bash(curl -sL -o /tmp/epayco_docs.html -w \"%{http_code}\" \"https://docs.epayco.com/\")",
+      "Bash(curl -sL -o /tmp/epayco_checkout.html -w \"%{http_code}\" \"https://docs.epayco.com/docs/checkout\")",
+      "Bash(curl -sL -o /tmp/epayco_dev.html -w \"%{http_code}\" \"https://epayco.com/desarrolladores\")",
+      "WebFetch(domain:epayco.com)",
+      "WebFetch(domain:codesandbox.io)",
+      "WebFetch(domain:www.drupal.org)",
+      "WebFetch(domain:epayco.co)",
+      "WebFetch(domain:www.b4x.com)",
+      "WebFetch(domain:web.archive.org)",
+      "WebFetch(domain:api.epayco.co)",
+      "Bash(python3 -c \"from app import auth_utils; print\\('auth_utils import OK'\\)\")",
+      "Bash(grep -n \"auth_utils\" /home/juan_silva/RakeFlow/app/routers/*.py)",
+      "Bash(npm run:*)",
+      "Bash(python3 -c \"from app.main import app; print\\('Backend imports OK'\\)\")",
+      "Bash(railway --version)",
+      "Bash(vercel --version)",
+      "Bash(vercel env:*)",
+      "Bash(vercel link:*)",
+      "Bash(git commit -m ':*)",
+      "Bash(git push:*)",
+      "Bash(ssh -T git@github.com)",
+      "Read(//home/juan_silva/.ssh/**)",
+      "Bash(git remote:*)",
+      "Bash(git checkout:*)",
+      "Bash(git merge:*)",
+      "Bash(git stash:*)",
+      "Bash(railway logs:*)",
+      "Bash(curl -s https://rakeflow-production.up.railway.app/)",
+      "Bash(vercel ls:*)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\('DATABASE_URL',''\\)[:50]+'...'\\)\")",
+      "Bash(python3 -c ':*)",
+      "Bash(curl -s https://rakeflow-production.up.railway.app/auth/login -H 'Content-Type: application/json' -d '{\"username\":\"\",\"password\":\"\"}')",
+      "Bash(curl -s -X POST https://rakeflow-production.up.railway.app/auth/login -H 'Content-Type: application/x-www-form-urlencoded' -d 'username=admin@mambo.com&password=test')",
+      "Bash(railway connect:*)",
+      "Bash(sudo apt-get:*)",
+      "Bash(pip install:*)",
+      "Bash(curl -s -X POST http://localhost:8000/tournaments/1/players/1/eliminate -H \"Authorization: Bearer test\")",
+      "Bash(curl -s http://localhost:8000/tournaments/1/players/1/eliminate -X POST -H \"Content-Type: application/json\")",
+      "Bash(curl -s --connect-timeout 3 http://0.0.0.0:8000/)",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(python3 -m venv /home/juan_silva/RakeFlow/venv)",
+      "Bash(/home/juan_silva/RakeFlow/venv/bin/pip install:*)",
+      "Bash(curl -s http://0.0.0.0:8000/)",
+      "Bash(./venv/bin/python3 -c ':*)",
+      "Bash(git pull:*)",
+      "Bash(git commit -m ' *)",
+      "Bash(./venv/bin/python3 -c ' *)",
+      "Bash(apt list *)",
+      "Read(//usr/lib/**)",
+      "Read(//home/linuxbrew/.linuxbrew/bin/**)",
+      "Read(//home/juan_silva/Documentos/Obsidian/Proyectos/**)",
+      "Read(//home/juan_silva/Documentos/Obsidian/**)",
+      "Bash(git commit *)",
+      "Bash(npm install *)",
+      "Bash(./venv/bin/python -c \"from app.main import app; print\\('OK', len\\(app.routes\\), 'routes'\\)\")",
+      "Bash(./venv/bin/python -c \"from app.main import app; print\\('OK', len\\(app.routes\\)\\)\")",
+      "Bash(./venv/bin/python -c ' *)",
+      "Bash(./venv/bin/python -c \"from app.main import app; from app.schemas import ClubCreate; print\\('OK', len\\(app.routes\\), 'routes'\\)\")",
+      "Bash(grep -oE '\"[^\"]{10,200}\"')",
+      "Bash(./venv/bin/python -c \"from app.main import app; print\\('OK', len\\(app.routes\\), 'routes'\\); from app.schemas import UserInvite, AcceptInvitation, UserResponse; print\\('schemas OK'\\)\")",
+      "Bash(curl -sS -o /dev/null -w \"Root: HTTP %{http_code} \\(%{time_total}s\\)\\\\n\" --max-time 10 https://rakeflow-production.up.railway.app/)",
+      "Bash(curl -sS -o /dev/null -w \"wompi/config: HTTP %{http_code}\\\\n\" --max-time 10 https://rakeflow-production.up.railway.app/payments/wompi/config)",
+      "Bash(python3 -c ' *)",
+      "mcp__plugin_railway_railway__environment_status",
+      "mcp__plugin_railway_railway__list_projects",
+      "WebFetch(domain:status.railway.com)",
+      "Bash(curl -sS -o /dev/null -w \"  / → HTTP %{http_code} \\(%{time_total}s\\)\\\\n\" --max-time 12 https://rakeflow-production.up.railway.app/)",
+      "Bash(curl -sS -o /dev/null -w \"  / → HTTP %{http_code}\\\\n\" --max-time 12 https://rake-flow.vercel.app/)",
+      "mcp__postgres-ro__query",
+      "Bash(./venv/bin/python)",
+      "Bash(which convert *)",
+      "Bash(grep -rn \"rakeflow-logo\\\\|favicon-192\\\\|favicon-48\\\\|apple-touch\\\\|favicon.svg\" src index.html)",
+      "Bash(identify \"public/ChatGPT Image 25 jun 2026, 11_43_20.png\")",
+      "Bash(cat vite.config.*)",
+      "Bash(ls public/*.webmanifest public/manifest*)",
+      "Bash(ls public/*.png)",
+      "Read(//home/juan_silva/.claude/plans/**)",
+      "Bash(cd /home/juan_silva/rakeflow-pr12 *)",
+      "Read(//home/juan_silva/rakeflow-pr12/**)",
+      "Bash(curl -sS --max-time 12 \"https://rakeflow-production.up.railway.app/public/clubs/70e6110a71c44a748a49e17342cdd2e4/tournaments/999999/seating\")",
+      "Bash(curl -sS -o /dev/null -w \"backend / -> HTTP %{http_code} \\(%{time_total}s\\)\\\\n\" --max-time 12 https://rakeflow-production.up.railway.app/)",
+      "Bash(railway deployment *)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); [print\\(x['id'][:8], x['status'], x['meta'].get\\('commitHash',''\\)[:8], x['createdAt'][:19]\\) for x in d[:4]]\")"
+    ],
+    "additionalDirectories": [
+      "/home/juan_silva/RakeFlow",
+      "/home/juan_silva/RakeFlow/venv",
+      "/home/juan_silva/Documentos/Obsidian/wiki/sources",
+      "/home/juan_silva/Documentos/Obsidian/wiki/entities",
+      "/home/juan_silva/Documentos/Obsidian/wiki/concepts",
+      "/home/juan_silva/Documentos/Obsidian/wiki"
+    ],
+    "hooks": {
+      "PreToolUse": [
+        {
+          "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+          "hooks": [
+            {
+              "type": "command",
+              "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/protect-paths.py\""
+            }
+          ]
+        }
+      ],
+      "PostToolUse": [
+        {
+          "matcher": "Edit|Write|MultiEdit",
+          "hooks": [
+            {
+              "type": "command",
+              "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/validate-file.py\""
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

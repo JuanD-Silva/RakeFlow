@@ -1,2 +1,10 @@
 {
+  "scripts": {
+    "dev": "concurrently -n back,front -c blue,green \"sh -c 'kill $(lsof -ti:8000) 2>/dev/null; set -a && . ./.env && set +a && ./venv/bin/uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8000'\" \"npm run dev --prefix poker-frontend\"",
+    "dev:back": "sh -c 'kill $(lsof -ti:8000) 2>/dev/null; set -a && . ./.env && set +a && ./venv/bin/uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8000'",
+    "dev:front": "npm run dev --prefix poker-frontend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
 }
