@@ -20,6 +20,8 @@ def main() -> None:
         data = json.load(sys.stdin)
     except Exception:
         sys.exit(0)
+    if not isinstance(data, dict):
+        sys.exit(0)
 
     ti = data.get("tool_input", {}) or {}
     fp = ti.get("file_path") or ""

@@ -5,8 +5,8 @@
                                    .env.example se permite
 - lockfiles / pins      -> deny  (usar npm/pip, no editar a mano)
 - alembic/versions/*.py -> deny  (editar una migracion existente rompe el
-                                   historial de Alembic contra la DB de Mambo
-                                   en prod; crear una nueva si se permite).
+                                   historial de Alembic contra la DB de
+                                   produccion; crear una nueva si se permite).
                                    Era "ask", pero en modo bypass el ask se
                                    auto-aprueba sin mostrar nada.
 
@@ -44,8 +44,9 @@ def main() -> None:
     if not fp or not isinstance(fp, str):
         sys.exit(0)
 
-    # Ruta absoluta para que "alembic/versions/x.py" relativo tambien caiga.
-    fp = os.path.abspath(fp)
+    # Ruta absoluta (relativa al proyecto) para que "alembic/versions/x.py"
+    # relativo tambien caiga.
+    fp = os.path.abspath(os.path.join(os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd()), fp))
     base = os.path.basename(fp)
 
     # .env, .env.local, .env.production, ... (pero no .env.example).
@@ -62,7 +63,7 @@ def main() -> None:
     if "/alembic/versions/" in fp and fp.endswith(".py") and os.path.exists(fp):
         decide("deny",
                "Editar una migracion existente esta bloqueado. Si ya se aplico a la "
-               "DB de Mambo (prod), editarla rompe el historial de Alembic. Crea una "
+               "DB de produccion, editarla rompe el historial de Alembic. Crea una "
                "migracion nueva (/crear-migracion). Si es recien generada y aun no "
                "aplicada, editala a mano fuera de Claude.")
 

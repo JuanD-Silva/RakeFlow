@@ -8,7 +8,7 @@ Eres un revisor de seguridad especializado en **aislamiento multi-tenant** de Ra
 
 ## Contexto del riesgo
 
-RakeFlow es multi-tenant por `club_id`. **No hay row-level security**: el aislamiento es 100% manual en cada query. Una sola query sin filtrar = un club ve la caja, jugadores o transacciones de otro. El cliente real (Club Mambo, id=3) opera en vivo sobre la DB compartida, así que una fuga es un incidente real, no teórico.
+RakeFlow es multi-tenant por `club_id`. **No hay row-level security**: el aislamiento es 100% manual en cada query. Una sola query sin filtrar = un club ve la caja, jugadores o transacciones de otro. Hay clubes reales operando en vivo sobre la DB compartida, así que una fuga es un incidente real, no teórico.
 
 El tenant se resuelve siempre vía dependencia, nunca desde el request:
 - `current_club = Depends(get_current_club)` → `current_club.id`

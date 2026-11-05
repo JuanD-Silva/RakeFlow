@@ -1,12 +1,12 @@
 ---
 name: crear-migracion
-description: Crea una migración Alembic para RakeFlow siguiendo el patrón de SQL manual idempotente. Úsalo cuando haya que cambiar el schema de la DB (agregar columna/tabla/índice). Solo invocable por el usuario porque toca la DB compartida dev/prod de Mambo.
+description: Crea una migración Alembic para RakeFlow siguiendo el patrón de SQL manual idempotente. Úsalo cuando haya que cambiar el schema de la DB (agregar columna/tabla/índice). Solo invocable por el usuario porque toca la DB compartida dev/prod.
 disable-model-invocation: true
 ---
 
 # Crear migración Alembic (RakeFlow)
 
-⚠️ **La DB de dev ES la de prod.** Las migraciones se aplican local con `./venv/bin/alembic upgrade head` y, por ser la misma Postgres de Railway, quedan en prod (Club Mambo en vivo). Por eso:
+⚠️ **La DB de dev ES la de prod.** Las migraciones se aplican local con `./venv/bin/alembic upgrade head` y, por ser la misma Postgres de Railway, quedan en prod (clubes reales en vivo). Por eso:
 - **Aditivo (ADD COLUMN/TABLE/INDEX) = seguro.** Procede.
 - **Destructivo (DROP/RENAME/ALTER TYPE) = coordinar primero.** Detente y confírmalo con el usuario antes de aplicar.
 
@@ -30,7 +30,7 @@ disable-model-invocation: true
 
    Reglas:
    - Siempre `IF NOT EXISTS` / `IF EXISTS` (idempotente: la migración puede correr sobre una DB donde alguien ya aplicó el cambio a mano).
-   - Columnas nuevas: `nullable` o con `DEFAULT`, nunca `NOT NULL` sin default sobre tabla con datos (rompería las filas de Mambo).
+   - Columnas nuevas: `nullable` o con `DEFAULT`, nunca `NOT NULL` sin default sobre tabla con datos (rompería las filas existentes).
    - Para enums nuevos/valores: `ALTER TYPE ... ADD VALUE IF NOT EXISTS`.
 
 3. **Si agregaste/cambiaste un modelo**, refleja el cambio en [app/models.py](app/models.py) (las tablas se auto-crean en startup vía `metadata.create_all`, así que el modelo y la migración deben coincidir).
@@ -48,6 +48,6 @@ disable-model-invocation: true
 ## Checklist final
 - [ ] `down_revision` apunta al head anterior (no rompiste la cadena).
 - [ ] SQL idempotente (`IF [NOT] EXISTS`).
-- [ ] Columnas nuevas no rompen filas existentes de Mambo.
+- [ ] Columnas nuevas no rompen filas existentes en producción.
 - [ ] `models.py` coincide con la migración.
 - [ ] Si es destructivo, lo confirmaste con el usuario.
