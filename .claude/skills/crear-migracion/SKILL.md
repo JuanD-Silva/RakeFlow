@@ -1,14 +1,18 @@
 ---
 name: crear-migracion
-description: Crea una migración Alembic para RakeFlow siguiendo el patrón de SQL manual idempotente. Úsalo cuando haya que cambiar el schema de la DB (agregar columna/tabla/índice). Solo invocable por el usuario porque toca la DB compartida dev/prod.
+description: Crea una migración Alembic para RakeFlow siguiendo el patrón de SQL manual idempotente. Úsalo cuando haya que cambiar el schema de la DB (agregar columna/tabla/índice). Solo invocable por el usuario porque la migración se aplica sola en prod en el siguiente deploy.
 disable-model-invocation: true
 ---
 
 # Crear migración Alembic (RakeFlow)
 
-⚠️ **La DB de dev ES la de prod.** Las migraciones se aplican local con `./venv/bin/alembic upgrade head` y, por ser la misma Postgres de Railway, quedan en prod (clubes reales en vivo). Por eso:
+⚠️ **Dev y prod son DBs distintas, pero prod migra sola.**
+- **Local:** Postgres en Docker (`docker compose up -d`, puerto 5433). `./venv/bin/alembic upgrade head` solo toca esa DB. Para probar con datos reales: `scripts/refresh-local-db.sh` (copia prod → local, solo lee de prod).
+- **Prod:** el `Procfile` corre `alembic upgrade head && uvicorn ...` en cada deploy de Railway (auto-deploy desde `main`). Mergear el PR = aplicar la migración sobre clubes reales en vivo. Si la migración falla, el `&&` corta y el backend no arranca.
+
+Por eso:
 - **Aditivo (ADD COLUMN/TABLE/INDEX) = seguro.** Procede.
-- **Destructivo (DROP/RENAME/ALTER TYPE) = coordinar primero.** Detente y confírmalo con el usuario antes de aplicar.
+- **Destructivo (DROP/RENAME/ALTER TYPE) = coordinar primero.** Detente y confírmalo con el usuario antes de mergear.
 
 ## Pasos
 
@@ -35,10 +39,12 @@ disable-model-invocation: true
 
 3. **Si agregaste/cambiaste un modelo**, refleja el cambio en [app/models.py](app/models.py) (las tablas se auto-crean en startup vía `metadata.create_all`, así que el modelo y la migración deben coincidir).
 
-4. **Aplica local** (queda en prod por DB compartida):
+4. **Aplica local** (solo la DB de Docker; prod se migra al deploy):
    ```bash
    ./venv/bin/alembic upgrade head
+   ./venv/bin/alembic heads   # debe salir UNA sola línea
    ```
+   Si hay otro PR abierto con migración, el segundo en mergear re-apunta su `down_revision` al primero. Dos heads hacen que `alembic upgrade head` falle en el deploy y el backend no arranque.
 
 5. **Verifica** que el backend importa y arranca:
    ```bash
@@ -46,8 +52,8 @@ disable-model-invocation: true
    ```
 
 ## Checklist final
-- [ ] `down_revision` apunta al head anterior (no rompiste la cadena).
+- [ ] `down_revision` apunta al head anterior y `alembic heads` da uno solo (no rompiste la cadena).
 - [ ] SQL idempotente (`IF [NOT] EXISTS`).
 - [ ] Columnas nuevas no rompen filas existentes en producción.
 - [ ] `models.py` coincide con la migración.
-- [ ] Si es destructivo, lo confirmaste con el usuario.
+- [ ] Si es destructivo, lo confirmaste con el usuario antes de mergear.
