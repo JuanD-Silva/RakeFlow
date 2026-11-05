@@ -36,3 +36,6 @@ backups/
 # Impeccable: cache de sesión (config.json con los ignores compartidos SÍ se versiona)
 .impeccable/hook.cache.json
 .impeccable/critique/
+
+# Claude Code: permisos y rutas personales, no se versionan
+.claude/settings.local.json
