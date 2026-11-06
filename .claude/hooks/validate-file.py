@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """PostToolUse hook — valida el archivo recien tocado.
 
-- *.py            -> ruff check solo de errores reales (sintaxis, nombres no
-                     definidos: E9,F63,F7,F82), no estilo. Sin ruff, compila
+- *.py            -> ruff check solo de errores reales (RUFF_SELECT), no
+                     estilo. Sin ruff, o si ruff falla por config, compila
                      en memoria con compile() (no deja __pycache__).
 - *.jsx / *.js    -> eslint local de poker-frontend (best-effort)
 
@@ -16,9 +16,27 @@ import shutil
 import subprocess
 import sys
 
-# Solo errores que rompen el codigo; el estilo previo del archivo no es
-# asunto de esta edicion.
-RUFF_SELECT = "E9,F63,F7,F82"
+# Solo errores que rompen el codigo (sintaxis, formato de strings que falla
+# en runtime, comparaciones invalidas, nombres no definidos); el estilo
+# previo del archivo no es asunto de esta edicion.
+RUFF_SELECT = "E9,F50,F52,F63,F7,F82"
+
+
+def compile_check(fp: str) -> str:
+    """Sintaxis via compile() en memoria (no deja __pycache__).
+
+    Compila bytes, no str: asi Python respeta BOM y cookie de encoding
+    (PEP 263) igual que py_compile, y un byte invalido es SyntaxError.
+    """
+    try:
+        with open(fp, "rb") as f:
+            compile(f.read(), fp, "exec")
+    except SyntaxError as e:
+        pos = f":{e.lineno}:{e.offset}" if e.lineno else ""
+        return f"{fp}{pos}: SyntaxError: {e.msg}"
+    except (ValueError, OSError):
+        return ""
+    return ""
 
 
 def check_python(fp: str, proj: str) -> str:
@@ -27,24 +45,19 @@ def check_python(fp: str, proj: str) -> str:
             r = subprocess.run(
                 ["ruff", "check", "--no-cache", "--select", RUFF_SELECT, fp],
                 capture_output=True, text=True, timeout=60, cwd=proj)
+            # ruff: 0 = limpio, 1 = hallazgos, 2 = config/crash
+            if r.returncode == 0:
+                return ""
+            if r.returncode == 1:
+                return (r.stdout + r.stderr).strip()
         except Exception:
-            return ""
-        # ruff: 0 = limpio, 1 = hallazgos, 2 = config/crash -> ignorar
-        return (r.stdout + r.stderr).strip() if r.returncode == 1 else ""
-
-    try:
-        with open(fp, encoding="utf-8") as f:
-            src = f.read()
-        compile(src, fp, "exec")
-    except SyntaxError as e:
-        return f"{fp}:{e.lineno}:{e.offset}: SyntaxError: {e.msg}"
-    except Exception:
-        return ""
-    return ""
+            pass
+        # ruff roto o ausente en la practica: no perder el chequeo de sintaxis.
+    return compile_check(fp)
 
 
 def check_js(fp: str, proj: str) -> str:
-    fdir = os.path.abspath(os.path.join(proj, "poker-frontend"))
+    fdir = os.path.realpath(os.path.join(proj, "poker-frontend"))
     eslint = os.path.join(fdir, "node_modules", ".bin", "eslint")
     # Con separador: "poker-frontend-old/x.js" no debe contar como poker-frontend.
     if not os.path.exists(eslint) or not fp.startswith(fdir + os.sep):
@@ -73,7 +86,8 @@ def main() -> None:
         sys.exit(0)
 
     proj = os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd())
-    fp = os.path.abspath(os.path.join(proj, fp))
+    # realpath: un poker-frontend accedido por symlink sigue contando.
+    fp = os.path.realpath(os.path.join(proj, fp))
     if not os.path.isfile(fp):
         sys.exit(0)
 
