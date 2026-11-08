@@ -199,6 +199,9 @@ export default function PreregistrationsPanel({ tournament, canConfirm = false, 
           {[['En cupo', inCupo], ['Lista de espera', waiting]].map(([title, list]) => list.length > 0 && (
             <div key={title}>
               <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1.5">{title} · {list.length}</p>
+              {canConfirm && title === 'Lista de espera' && (
+                <p className="text-[11px] text-amber-300/80 -mt-1 mb-1.5">Puedes confirmarlos igual: el cupo es una guía, no un bloqueo.</p>
+              )}
               <ul className="space-y-1.5">
                 {list.map((p) => (
                   <li key={p.id} className="flex items-center justify-between gap-2 bg-gray-900/60 rounded-lg px-3 py-2">

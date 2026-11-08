@@ -1124,6 +1124,15 @@ async def _register_core(db: AsyncSession, club: models.Club, tournament: models
     if not player_result.scalars().first():
         raise HTTPException(status_code=404, detail="Jugador no encontrado")
 
+    # B2. Serializa las inscripciones de ESTE jugador en ESTE torneo. El
+    # FOR UPDATE de abajo solo bloquea si ya existe la fila: sin ella, dos
+    # requests simultáneos (Inscribir a mano + "Llegó" de una reserva, o dos
+    # cajeros) verían cero filas y cobrarían dos entradas. El advisory lock es
+    # de transacción: se libera solo en el commit/rollback del caller.
+    await db.execute(
+        select(func.pg_advisory_xact_lock(tournament.id, player_id))
+    )
+
     # C. Verificar duplicados. Un ELIMINATED sí puede volver: RE-ENTRADA — paga
     # otra entrada (cuenta en el pozo vía entries_count) y vuelve ACTIVE con sus
     # rebuys/addons históricos intactos. El lock evita re-entrar dos veces en

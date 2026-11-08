@@ -400,8 +400,24 @@ async def preregister(public_token: str, tournament_id: int, data: Preregistrati
             existing = prereg
 
     if existing.status == "CONFIRMED":
-        return {"already_entered": True, "spot": "ENTERED", "waitlist_position": None,
-                "occupancy": _public_occupancy(await tournament_prereg.occupancy(db, t))}
+        if await tournament_prereg.player_active_in(db, t.id, existing.player_id):
+            return {"already_entered": True, "spot": "ENTERED", "waitlist_position": None,
+                    "occupancy": _public_occupancy(await tournament_prereg.occupancy(db, t))}
+        # Confirmada antes pero ya no juega (eliminado que quiere re-entrar, o el
+        # staff le quitó la inscripción): la reserva se REABRE como nueva, al
+        # final de la fila. El índice único (no CANCELLED) impide crear otra.
+        existing.status = "PENDING"
+        existing.name = name
+        existing.created_at = datetime.utcnow()
+        existing.confirmed_at = None
+        created = True
+        await log_action(
+            db, request=request, club=club,
+            action=AuditAction.TOURNAMENT_PREREG_CREATE,
+            entity_type="TournamentPreregistration", entity_id=existing.id,
+            actor_type="PUBLIC", meta={"tournament_id": t.id, "reopened": True},
+        )
+        await db.commit()
 
     entered = await tournament_prereg.entered_count(db, t.id)
     pending = await tournament_prereg.pending_preregs(db, t.id)
@@ -409,7 +425,9 @@ async def preregister(public_token: str, tournament_id: int, data: Preregistrati
     return {
         "already_entered": False,
         "created": created,
-        "name": existing.name,
+        # El nombre que ESTA persona escribió, nunca el guardado: devolver
+        # existing.name dejaría a cualquiera leer el nombre ligado a un teléfono.
+        "name": name,
         **place,
         "occupancy": _public_occupancy(await tournament_prereg.occupancy(db, t)),
     }

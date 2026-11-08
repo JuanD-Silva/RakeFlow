@@ -172,6 +172,7 @@ def main():
             check(r.json()["occupancy"]["full"] is True and r.json()["occupancy"]["waitlist"] == 1, "contador lleno 2/2 + 1 en espera")
             r = pre("Ana otra vez", f"+57 {A[:3]} {A[3:]}")
             check(r.json()["spot"] == "CUPO" and r.json()["created"] is False, "repetir A (otro formato) → mismo lugar, sin duplicar")
+            check(r.json()["name"] == "Ana otra vez" and "Ana Pérez" not in r.text, "repetir teléfono NO revela el nombre guardado (anti-enumeración)")
             check(psql(f"SELECT count(*) FROM tournament_preregistrations WHERE tournament_id={tid}") == "3", "3 pre-inscripciones en DB")
             check(pre("Xavi", "123").status_code == 422, "teléfono corto → 422")
             check(pre("Yoli", "abcdefghij").status_code == 400, "teléfono sin dígitos → 400")
@@ -224,6 +225,27 @@ def main():
             r = pre("Ana de nuevo", A)
             check(r.json()["already_entered"] is True, "A ya inscrito → el formulario lo dice")
 
+            # Carrera: 4 inscripciones simultáneas del MISMO jugador (dos cajeros, o
+            # Inscribir + "Llegó"). El advisory lock de _register_core deja pasar una.
+            from concurrent.futures import ThreadPoolExecutor
+            r = c.post("/tournaments/", headers=h1, json={
+                "name": f"Carrera {SUF}", "buyin_amount": BUYIN, "rake_percentage": 10,
+                "dealer_tip_amount": 0, "bounty_amount": 0, "rebuy_price": 0, "double_rebuy_price": 0,
+                "addon_price": 0, "double_addon_price": 0, "payout_structure": [100]})
+            tid_race = r.json()["id"]
+            r = c.post("/players/", headers=h1, json={"name": f"Carrera {SUF}", "phone": phone(7), "club_id": c1})
+            pid_race = r.json()["id"]
+
+            def reg_once(_):
+                with httpx.Client(base_url=BASE, timeout=30) as cc:
+                    return cc.post(f"/tournaments/{tid_race}/register", headers=h1,
+                                   json={"player_id": pid_race, "pay_buyin": True}).status_code
+            with ThreadPoolExecutor(4) as ex:
+                codes = list(ex.map(reg_once, range(4)))
+            check(codes.count(200) == 1, f"carrera x4 → exactamente una inscripción OK (got {codes})")
+            check(money_in(tid_race, "TOURNAMENT_ENTRY") == BUYIN, "carrera x4 → un solo buy-in cobrado")
+            check(psql(f"SELECT count(*) FROM tournament_players WHERE tournament_id={tid_race}") == "1", "carrera x4 → una sola fila de jugador")
+
             step(5, "Cupo, espera y cancelar")
             occ = c.get(f"/tournaments/{tid}/preregistrations", headers=h1).json()["occupancy"]
             check(occ["entered"] == 2 and occ["waitlist"] == 1 and occ["full"], f"2 inscritos llenan el cupo; C sigue en espera (got {occ})")
@@ -241,6 +263,20 @@ def main():
             check(c.patch(f"/tournaments/{tid}/max-entries", headers=h1, json={"max_entries": None}).json()["max_entries"] is None, "quitar cupo → sin límite")
             check(c.patch(f"/tournaments/{tid}/max-entries", headers=h1, json={"max_entries": 0}).status_code == 422, "cupo 0 → 422")
             check(c.patch(f"/tournaments/{tid}/max-entries", headers=h2, json={"max_entries": 5}).status_code == 404, "cupo de torneo ajeno → 404")
+
+            # Re-entrada por el link: A (confirmada) queda eliminada y vuelve a reservar.
+            pidA = int(psql(f"SELECT player_id FROM tournament_preregistrations WHERE id={pa}"))
+            antes = money_in(tid, "TOURNAMENT_ENTRY")
+            r = c.post(f"/tournaments/{tid}/players/{pidA}/eliminate", headers=h1)
+            check(r.status_code == 200, f"eliminar a A → 200 (got {r.status_code})")
+            r = pre("Ana re-entra", A)
+            check(r.json()["already_entered"] is False and r.json()["spot"] in ("CUPO", "WAITLIST") and r.json()["created"] is True,
+                  f"A eliminada → puede reservar re-entrada (got {r.text[:120]})")
+            check(psql(f"SELECT status FROM tournament_preregistrations WHERE id={pa}") == "PENDING", "su reserva se reabre (sin duplicar fila)")
+            r = c.post(f"/tournaments/{tid}/preregistrations/{pa}/confirm", headers=h1, json={"pay_buyin": True})
+            check(r.status_code == 200 and r.json()["status"] == "ACTIVE", "Llegó → A vuelve ACTIVE")
+            check(money_in(tid, "TOURNAMENT_ENTRY") == antes + BUYIN, "la re-entrada cobra un buy-in más")
+            check(pre("Ana otra vez", A).json()["already_entered"] is True, "A jugando de nuevo → 'ya inscrito'")
 
             step(6, "Cerrado cuando corre + borrar torneo con pre-inscritos")
             psql(f"UPDATE tournaments SET status='RUNNING' WHERE id={tid};")

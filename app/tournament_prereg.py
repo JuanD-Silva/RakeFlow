@@ -97,11 +97,28 @@ async def find_club_player_by_phone(db: AsyncSession, club_id: int, phone: str):
 
 
 async def phone_already_entered(db: AsyncSession, tournament_id: int, phone: str) -> bool:
-    """¿Esa persona ya está inscrita de verdad en el torneo (TournamentPlayer)?"""
+    """¿Esa persona está JUGANDO el torneo (TournamentPlayer no eliminado)?
+    Un ELIMINATED no cuenta: puede reservar otra vez para re-entrar pagando,
+    igual que en confirm_preregistration."""
     phones = (await db.execute(
         select(models.Player.phone)
         .join(models.TournamentPlayer, models.TournamentPlayer.player_id == models.Player.id)
         .where(models.TournamentPlayer.tournament_id == tournament_id,
+               models.TournamentPlayer.status != "ELIMINATED",
                models.Player.phone.isnot(None))
     )).scalars().all()
     return any(normalize_phone(p) == phone for p in phones)
+
+
+async def player_active_in(db: AsyncSession, tournament_id: int, player_id) -> bool:
+    """¿Ese jugador tiene una inscripción viva (no ELIMINATED) en el torneo?"""
+    if player_id is None:
+        return False
+    row = (await db.execute(
+        select(models.TournamentPlayer.id).where(
+            models.TournamentPlayer.tournament_id == tournament_id,
+            models.TournamentPlayer.player_id == player_id,
+            models.TournamentPlayer.status != "ELIMINATED",
+        ).limit(1)
+    )).scalar()
+    return row is not None
