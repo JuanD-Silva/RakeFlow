@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 import logging
 from ..dependencies import get_db, get_current_club, require_role
 from ..audit import log_action, AuditAction
-from .. import tournament_clock, tournament_prereg
+from .. import tournament_clock, tournament_prereg, services
 
 logger = logging.getLogger(__name__)
 
@@ -580,11 +580,42 @@ async def delete_tournament_table(
     for tp in seated:
         tp.table_id = None
         tp.seat_number = None
-    await db.delete(table)
-    await log_action(
-        db, request=request, club=current_club, action=AuditAction.TOURNAMENT_TABLE_DELETE,
-        entity_type="TournamentTable", entity_id=table_id, meta={"unseated": len(seated)},
-    )
+
+    # ¿La mesa tuvo dealer? Sus turnos son PLATA (pago por horas, resta del
+    # neto): no se pueden borrar, y la FK impide borrar la mesa (antes = 500).
+    # Se CIERRA en su lugar, igual que la consolidación: termina el turno
+    # abierto y la mesa sale del juego conservando el historial de pago.
+    shifts = (await db.execute(
+        select(models.TournamentDealerShift)
+        .where(models.TournamentDealerShift.club_id == current_club.id)
+        .where(models.TournamentDealerShift.table_id == table_id)
+    )).scalars().all()
+    if shifts:
+        now = datetime.utcnow()
+        for sh in shifts:
+            if sh.end_time is None:
+                sh.end_time = now
+                # Igual que end_table_dealer: queda constancia de qué turno se cerró.
+                await log_action(
+                    db, request=request, club=current_club, action=AuditAction.TOURNAMENT_DEALER_END,
+                    entity_type="TournamentTable", entity_id=table_id,
+                    meta={"dealer_id": sh.dealer_id, "reason": "table-delete"},
+                )
+        table.status = "CLOSED"
+        await log_action(
+            db, request=request, club=current_club, action=AuditAction.TOURNAMENT_TABLE_UPDATE,
+            entity_type="TournamentTable", entity_id=table_id,
+            meta={"status": "CLOSED", "reason": "delete-with-dealer-history", "unseated": len(seated)},
+        )
+    else:
+        await db.execute(
+            delete(models.DealerAlert).where(models.DealerAlert.tournament_table_id == table_id)
+        )
+        await db.delete(table)
+        await log_action(
+            db, request=request, club=current_club, action=AuditAction.TOURNAMENT_TABLE_DELETE,
+            entity_type="TournamentTable", entity_id=table_id, meta={"unseated": len(seated)},
+        )
     await db.commit()
     return await _tables_response(db, tournament_id)
 
@@ -877,7 +908,11 @@ async def assign_table_dealer(
     """Asigna un dealer a una mesa de torneo (abre un turno). Reemplaza al dealer
     anterior de la mesa si había. Snapshotea la tarifa de torneo del dealer."""
     await _get_owned_tournament(db, tournament_id, current_club.id)
-    await _get_owned_table(db, tournament_id, table_id, current_club.id)
+    table = await _get_owned_table(db, tournament_id, table_id, current_club.id)
+    if table.status != "OPEN":
+        # Un turno en una mesa cerrada correría horas pagas sin que nadie lo vea
+        # (la UI solo muestra mesas abiertas).
+        raise HTTPException(status_code=409, detail="La mesa está cerrada. Ábrela antes de asignarle dealer.")
     dealer = (await db.execute(
         select(models.Dealer)
         .where(models.Dealer.id == data.dealer_id)
@@ -2103,6 +2138,40 @@ async def delete_tournament(
     if tournament.club_id != current_club.id:
         raise HTTPException(status_code=403, detail="No tienes permiso para eliminar este torneo")
 
+    # Snapshot financiero ANTES de borrar (coherente con borrar sesión de cash):
+    # todo lo del torneo se evapora; queda en la auditoría para poder
+    # reconstruir el efecto de la eliminación.
+    money_rows = (await db.execute(
+        select(models.Transaction.type, func.count(models.Transaction.id), func.coalesce(func.sum(models.Transaction.amount), 0))
+        .where(models.Transaction.tournament_id == tournament_id)
+        .group_by(models.Transaction.type)
+    )).all()
+    shifts = (await db.execute(
+        select(models.TournamentDealerShift).where(models.TournamentDealerShift.tournament_id == tournament_id)
+    )).scalars().all()
+    dealer_cost = 0.0
+    for sh in shifts:
+        if sh.end_time is None:
+            continue
+        # Misma fórmula que services.tournament_dealer_cost_in_range (fuente única).
+        elapsed_min = max(0, int((sh.end_time - sh.start_time).total_seconds() // 60))
+        dealer_cost += services.shift_payment_breakdown(
+            round(elapsed_min / 60.0, 2), sh.tournament_hourly_rate_cop or 0, 0, None
+        )["club_payment"]
+    players_count = (await db.execute(
+        select(func.count(models.TournamentPlayer.id)).where(models.TournamentPlayer.tournament_id == tournament_id)
+    )).scalar() or 0
+    snapshot = {
+        "name": tournament.name,
+        "status": tournament.status,
+        "players": players_count,
+        "transactions_deleted": sum(int(n) for _, n, _ in money_rows),
+        "money_by_type": {str(getattr(ty, "value", ty)): float(total) for ty, _, total in money_rows},
+        "rake_percentage": tournament.rake_percentage,
+        "dealer_shifts": len(shifts),
+        "dealer_cost": round(dealer_cost, 2),
+    }
+
     try:
         # C. LIMPIEZA EN CASCADA (El orden es vital) 🧹
         
@@ -2125,13 +2194,31 @@ async def delete_tournament(
             .where(models.TournamentPreregistration.tournament_id == tournament_id)
         )
 
+        # 2.c Mesas del torneo y lo que cuelga de ellas. Sin esto, borrar un
+        # torneo que alguna vez tuvo mesas reventaba con FK (500). Orden:
+        # alertas de dealer y turnos apuntan a la mesa; la mesa al torneo. Los
+        # TournamentPlayer (table_id) ya se borraron en el paso 2.
+        table_ids = select(models.TournamentTable.id).where(
+            models.TournamentTable.tournament_id == tournament_id
+        )
+        await db.execute(
+            delete(models.DealerAlert).where(models.DealerAlert.tournament_table_id.in_(table_ids))
+        )
+        await db.execute(
+            delete(models.TournamentDealerShift)
+            .where(models.TournamentDealerShift.tournament_id == tournament_id)
+        )
+        await db.execute(
+            delete(models.TournamentTable).where(models.TournamentTable.tournament_id == tournament_id)
+        )
+
         # 3. Borrar el Torneo
         await db.execute(delete(models.Tournament).where(models.Tournament.id == tournament_id))
         await log_action(
             db, request=request, club=current_club,
             action=AuditAction.TOURNAMENT_DELETE,
             entity_type="Tournament", entity_id=tournament_id,
-            meta={"name": tournament.name, "status": tournament.status},
+            meta=snapshot,
         )
         await db.commit()
 

@@ -58,6 +58,7 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
     message: t.seated_count > 0
       ? `Tiene ${t.seated_count} jugador${t.seated_count === 1 ? '' : 'es'} sentado${t.seated_count === 1 ? '' : 's'}: quedarán en lista de espera.`
       : 'La mesa está vacía.',
+    subMessage: 'Si la mesa tuvo dealer, se cierra en vez de borrarse: su pago queda registrado.',
     confirmText: 'Sí, borrar',
     run: () => tournamentService.deleteTable(tId, t.id),
   });
@@ -305,7 +306,7 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
       )}
 
       {closedCount > 0 && (
-        <p className="mt-2 text-[10px] text-gray-500 text-center">{closedCount} mesa{closedCount === 1 ? '' : 's'} cerrada{closedCount === 1 ? '' : 's'} por consolidación.</p>
+        <p className="mt-2 text-[10px] text-gray-500 text-center">{closedCount} mesa{closedCount === 1 ? '' : 's'} cerrada{closedCount === 1 ? '' : 's'}.</p>
       )}
 
       {/* MODAL: previsualización del balanceo (sugerir + aplicar) */}
@@ -349,6 +350,7 @@ export default function TournamentTables({ tournament, refreshTrigger, onUpdate 
         onConfirm={() => { const { run } = confirm; setConfirm(null); act(run); }}
         title={confirm?.title}
         message={confirm?.message}
+        subMessage={confirm?.subMessage}
         confirmText={confirm?.confirmText}
         isDeleting={busy}
         loadingText="Aplicando..."
