@@ -150,6 +150,11 @@ def main():
             check(psql(f"SELECT count(*) FROM tournament_dealer_shifts WHERE table_id={t_dealer} AND end_time IS NOT NULL") == "1",
                   "su turno se cerró y se conserva (pago del dealer intacto)")
 
+            check(psql(f"SELECT count(*) FROM audit_logs WHERE club_id={cid} AND action='TOURNAMENT_DEALER_END'") == "1",
+                  "auditoría: el cierre del turno queda registrado")
+            r = c.post(f"/tournaments/{tid2}/tables/{t_dealer}/dealer", headers=headers,
+                       json={"dealer_id": int(psql(f"SELECT dealer_id FROM tournament_dealer_shifts WHERE table_id={t_dealer}"))})
+            check(r.status_code == 409, f"asignar dealer a mesa CERRADA → 409 (got {r.status_code})")
             r = c.delete(f"/tournaments/{tid2}", headers=headers)
             check(r.status_code == 204, "y el torneo completo se borra limpio después")
     finally:

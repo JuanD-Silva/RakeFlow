@@ -595,6 +595,12 @@ async def delete_tournament_table(
         for sh in shifts:
             if sh.end_time is None:
                 sh.end_time = now
+                # Igual que end_table_dealer: queda constancia de qué turno se cerró.
+                await log_action(
+                    db, request=request, club=current_club, action=AuditAction.TOURNAMENT_DEALER_END,
+                    entity_type="TournamentTable", entity_id=table_id,
+                    meta={"dealer_id": sh.dealer_id, "reason": "table-delete"},
+                )
         table.status = "CLOSED"
         await log_action(
             db, request=request, club=current_club, action=AuditAction.TOURNAMENT_TABLE_UPDATE,
@@ -902,7 +908,11 @@ async def assign_table_dealer(
     """Asigna un dealer a una mesa de torneo (abre un turno). Reemplaza al dealer
     anterior de la mesa si había. Snapshotea la tarifa de torneo del dealer."""
     await _get_owned_tournament(db, tournament_id, current_club.id)
-    await _get_owned_table(db, tournament_id, table_id, current_club.id)
+    table = await _get_owned_table(db, tournament_id, table_id, current_club.id)
+    if table.status != "OPEN":
+        # Un turno en una mesa cerrada correría horas pagas sin que nadie lo vea
+        # (la UI solo muestra mesas abiertas).
+        raise HTTPException(status_code=409, detail="La mesa está cerrada. Ábrela antes de asignarle dealer.")
     dealer = (await db.execute(
         select(models.Dealer)
         .where(models.Dealer.id == data.dealer_id)
