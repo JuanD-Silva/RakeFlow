@@ -392,6 +392,8 @@ class TournamentCreate(BaseModel):
     addon_until_level: Optional[int] = Field(default=None, ge=1)
     # Programación (T4): si viene, el torneo se crea como SCHEDULED (no cuenta como activo).
     scheduled_start: Optional[datetime] = None
+    # Cupo de inscritos (pre-inscripción pública). None = sin límite.
+    max_entries: Optional[int] = Field(default=None, ge=1, le=1000)
 
 class BlindStructureUpdate(BaseModel):
     """Editar la estructura de blinds (y opcionalmente el stack inicial) de un torneo."""
@@ -522,6 +524,7 @@ class TournamentResponse(BaseModel):
     current_level: int = 1
     clock_status: str = "STOPPED"
     public_token: Optional[str] = None
+    max_entries: Optional[int] = None
 
     @computed_field
     @property

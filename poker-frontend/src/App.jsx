@@ -29,6 +29,7 @@ import Terms from './pages/Terms';
 import Privacy from './pages/Privacy';
 import AcceptInvitation from './pages/AcceptInvitation';
 import PublicClub from './pages/PublicClub';
+import PublicTournament from './pages/PublicTournament';
 import DealerView from './pages/DealerView';
 import TournamentTV from './pages/TournamentTV';
 import DealerWorkspace from './pages/DealerWorkspace';
@@ -235,6 +236,7 @@ function AppRoutes() {
 
       {/* Capa publica (sin auth): link del club + vista dealer + TV de torneo */}
       <Route path="/c/:token" element={<PublicClub />} />
+      <Route path="/c/:token/torneo/:id" element={<PublicTournament />} />
       <Route path="/c/:token/entrar" element={<PlayerSelfRegister />} />
       <Route path="/mesa/:token/dealer" element={<DealerView />} />
       <Route path="/torneo/:token/tv" element={<TournamentTV />} />

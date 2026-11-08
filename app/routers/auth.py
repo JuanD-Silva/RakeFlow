@@ -413,6 +413,10 @@ async def delete_my_account(
         await db.execute(delete(models.TournamentPlayer).where(
             models.TournamentPlayer.tournament_id.in_(tournament_ids)
         ))
+        # Pre-inscripciones (FK -> clubs/tournaments/players): antes de players y torneos.
+        await db.execute(delete(models.TournamentPreregistration).where(
+            models.TournamentPreregistration.club_id == cid
+        ))
         await db.execute(delete(models.TournamentTable).where(models.TournamentTable.club_id == cid))
         await db.execute(delete(models.Tournament).where(models.Tournament.club_id == cid))
 

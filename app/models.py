@@ -488,6 +488,10 @@ class Tournament(Base):
     clock_elapsed_seconds = Column(Integer, default=0)  # segundos acumulados antes de la última pausa
     # Token del link público de la vista TV (rakeflow.site/torneo/{public_token}/tv)
     public_token = Column(String, unique=True, index=True, nullable=True)
+    # Cupo de inscritos (pre-inscripción pública). NULL = sin límite. Ocupan cupo
+    # los inscritos al torneo + las pre-inscripciones pendientes; el resto queda
+    # en lista de espera (ver app/tournament_prereg.py).
+    max_entries = Column(Integer, nullable=True)
 
     # Relaciones
     club = relationship("Club", back_populates="tournaments")
@@ -588,6 +592,44 @@ class TournamentPlayer(Base):
     tournament = relationship("Tournament", back_populates="players")
     player = relationship("Player")
     table = relationship("TournamentTable", back_populates="players")
+
+
+class TournamentPreregistration(Base):
+    """Pre-inscripción pública a un torneo (formulario del link público).
+
+    NO es un TournamentPlayer: no toca el pozo ni crea transacciones. Queda
+    PENDING hasta que el staff la confirma al llegar el jugador (CONFIRMED: ahí
+    recién se busca/crea la ficha por teléfono y se inscribe con el flujo normal,
+    que cobra el buy-in) o la cancela (CANCELLED). Así un no-show nunca infla el
+    pozo y el formulario anónimo no ensucia el directorio con fichas falsas.
+
+    Cupo / espera no se guarda: se deriva por orden de llegada (created_at) en
+    app/tournament_prereg.py, así una cancelación sube la espera sola."""
+    __tablename__ = "tournament_preregistrations"
+    # Un teléfono, una pre-inscripción viva por torneo (las canceladas no cuentan).
+    __table_args__ = (
+        Index(
+            "uq_tournament_prereg_phone", "tournament_id", "phone", unique=True,
+            postgresql_where=text("status != 'CANCELLED'"),
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False, index=True)
+    tournament_id = Column(Integer, ForeignKey("tournaments.id", ondelete="CASCADE"),
+                           nullable=False, index=True)
+
+    name = Column(String, nullable=False)
+    phone = Column(String, nullable=False)  # normalizado (phone_utils.normalize_phone)
+
+    status = Column(String, nullable=False, default="PENDING")  # PENDING | CONFIRMED | CANCELLED
+
+    # Se llenan al confirmar (llegó al club y el staff lo inscribió).
+    player_id = Column(Integer, ForeignKey("players.id", ondelete="SET NULL"), nullable=True)
+    confirmed_at = Column(DateTime, nullable=True)
+    cancelled_at = Column(DateTime, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
 class TournamentTable(Base):
