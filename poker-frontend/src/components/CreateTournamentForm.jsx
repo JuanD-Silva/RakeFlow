@@ -58,6 +58,8 @@ export default function CreateTournamentForm({ onSuccess, onCancel }) {
     const [addonUntil, setAddonUntil] = useState('');
     // Programación (T4): fecha/hora de inicio. Vacío = arranca ahora (en juego).
     const [scheduledStart, setScheduledStart] = useState('');
+    // Cupo máximo (opcional). Vacío = sin límite; lleno => el link público anota en lista de espera.
+    const [maxEntries, setMaxEntries] = useState('');
 
     const [costs, setCosts] = useState({
         buyin: 0, tip: 0, rebuy: 0, doubleRebuy: 0, addon: 0, doubleAddon: 0,
@@ -130,6 +132,7 @@ export default function CreateTournamentForm({ onSuccess, onCancel }) {
             rebuy_until_level: rebuyUntil ? Number(rebuyUntil) : null,
             addon_until_level: addonUntil ? Number(addonUntil) : null,
             scheduled_start: scheduledStart || null,
+            max_entries: Number(maxEntries) > 0 ? Math.min(Number(maxEntries), 1000) : null,
         };
         try {
             await onSuccess(formData);
@@ -189,6 +192,14 @@ export default function CreateTournamentForm({ onSuccess, onCancel }) {
                             <input type="datetime-local" value={scheduledStart} onChange={(e) => setScheduledStart(e.target.value)}
                                 className="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-white focus:border-violet-500 outline-none" />
                             <p className="text-[11px] text-gray-600 mt-1.5">Vacío = arranca ahora. Con fecha = queda en "Programados" hasta que lo abras.</p>
+                        </div>
+                        <div>
+                            <label htmlFor="ct-max-entries" className="block text-gray-400 text-sm font-bold mb-1.5">🎟️ Cupo máximo <span className="text-gray-600 font-normal">(opcional)</span></label>
+                            <input id="ct-max-entries" type="number" inputMode="numeric" min="1" max="1000" value={maxEntries}
+                                onChange={(e) => setMaxEntries(e.target.value)}
+                                className="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-white focus:border-violet-500 outline-none"
+                                placeholder="Sin límite" />
+                            <p className="text-[11px] text-gray-600 mt-1.5">Con cupo, quien se inscribe por el link cuando ya está lleno queda en lista de espera.</p>
                         </div>
                     </div>
                 )}

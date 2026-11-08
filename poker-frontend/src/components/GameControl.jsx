@@ -15,6 +15,7 @@ import ConfirmModal from './ConfirmModal';
 import { useToast, Toast } from './Toast';
 import { shareCardImage } from '../utils/shareImage';
 import TournamentPlayerTable from './TournamentPlayerTable';
+import PreregistrationsPanel from './PreregistrationsPanel';
 import TournamentClock from './TournamentClock';
 import TournamentTables from './TournamentTables';
 import { useAuth } from '../context/AuthContext';
@@ -117,6 +118,7 @@ export default function GameControl() {
   const showNotice = (message, type = "error") => showAppToast(message, type);
   // Confirmación propia para borrar un torneo programado (era window.confirm)
   const [scheduledToDelete, setScheduledToDelete] = useState(null); // objeto torneo
+  const [scheduledPrereg, setScheduledPrereg] = useState(null); // torneo programado cuyas reservas se ven
   const [isDeletingScheduled, setIsDeletingScheduled] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   
@@ -797,6 +799,7 @@ const handleCreateTournament = async (formData) => {
                          </p>
                        </div>
                        <div className="flex gap-1.5 shrink-0">
+                         <button onClick={() => setScheduledPrereg(t)} className="text-[10px] font-bold uppercase px-3 py-1.5 rounded-lg border border-violet-500/40 text-violet-200 hover:bg-violet-500/10 transition-colors">Reservas</button>
                          <button onClick={() => handleOpenScheduled(t.id)} className="text-[10px] font-bold uppercase px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-colors">Abrir</button>
                          <button onClick={() => setScheduledToDelete(t)} aria-label={`Eliminar ${t.name}`} className="text-xs font-bold uppercase px-3 py-1.5 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors">Eliminar</button>
                        </div>
@@ -816,6 +819,9 @@ const handleCreateTournament = async (formData) => {
       )}
 
       {/* MODALES */}
+      <Modal isOpen={!!scheduledPrereg} onClose={() => setScheduledPrereg(null)} title={scheduledPrereg ? `Reservas · ${scheduledPrereg.name}` : ''}>
+        {scheduledPrereg && <PreregistrationsPanel tournament={scheduledPrereg} compact showToast={showAppToast} />}
+      </Modal>
       <Modal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setPendingSessionOpen(false); setPendingTableName(null); }} title={modalTitle}>
         {modalType === "close" ? (
           <CloseSessionForm sessionId={activeSession?.id} onSuccess={handleTransactionSuccess} />

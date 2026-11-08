@@ -23,6 +23,11 @@ export const publicService = {
         (await publicApi.post('/players/self-register', { club_token, name, phone, password })).data,
     // Vista TV pública del torneo (reloj + blinds + conteos, sin login)
     getTournamentTV: async (token) => (await publicApi.get(`/public/tournaments/${token}/tv`)).data,
+    // Ficha pública del torneo + pre-inscripción (nombre + teléfono, sin cuenta)
+    getPublicTournament: async (token, tournamentId) =>
+        (await publicApi.get(`/public/clubs/${token}/tournaments/${tournamentId}`)).data,
+    preregister: async (token, tournamentId, { name, phone }) =>
+        (await publicApi.post(`/public/clubs/${token}/tournaments/${tournamentId}/preregister`, { name, phone })).data,
 };
 
 // --- LINK PÚBLICO DEL CLUB + ALERTAS (lado staff, autenticado) ---
@@ -390,6 +395,14 @@ export const tournamentService = {
     catch (e) { console.error("Error listando programados:", e); return []; }
   },
   openScheduled: async (tournamentId) => (await api.post(`/tournaments/${tournamentId}/open`)).data,
+  // Pre-inscripciones del link público (lista, confirmar al llegar, cancelar) + cupo
+  getPreregistrations: async (tournamentId) => (await api.get(`/tournaments/${tournamentId}/preregistrations`)).data,
+  confirmPreregistration: async (tournamentId, preregId, { pay_buyin, pay_tip, player_id = null }) =>
+    (await api.post(`/tournaments/${tournamentId}/preregistrations/${preregId}/confirm`, { pay_buyin, pay_tip, player_id })).data,
+  cancelPreregistration: async (tournamentId, preregId) =>
+    (await api.post(`/tournaments/${tournamentId}/preregistrations/${preregId}/cancel`)).data,
+  setMaxEntries: async (tournamentId, maxEntries) =>
+    (await api.patch(`/tournaments/${tournamentId}/max-entries`, { max_entries: maxEntries })).data,
   deleteTournament: async (tournamentId) => (await api.delete(`/tournaments/${tournamentId}`)).data,
 
 endTournament: async (tournamentId) => {

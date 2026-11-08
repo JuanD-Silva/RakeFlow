@@ -10,6 +10,7 @@ import { formatMoney } from '../utils/formatters';
 import { norm } from '../utils/text';
 import { useEscape } from '../hooks/useEscape';
 import ConfirmModal from './ConfirmModal';
+import PreregistrationsPanel from './PreregistrationsPanel';
 import { useToast, Toast } from './Toast';
 
 export default function TournamentPlayerTable({ tournament, onUpdate, onFinalized }) {
@@ -31,13 +32,16 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
     const [listSearch, setListSearch] = useState(""); // buscador de la lista de inscritos
     const [showFinance, setShowFinance] = useState(false); // HUD financiero en móvil (md+ siempre visible)
     const [regOptions, setRegOptions] = useState({ payBuyin: true, payTip: false });
+    // Sube al confirmar una reserva del link: esa confirmación puede crear una
+    // ficha nueva y sin recargar el directorio saldría como "Jugador #id".
+    const [playersVersion, setPlayersVersion] = useState(0);
 
     useEffect(() => {
         const fetchPlayers = async () => {
             try { setAllPlayers(await playerService.getAll()); } catch (e) { console.error(e); }
         };
         fetchPlayers();
-    }, [isRegisterOpen, isPayoutOpen]); 
+    }, [isRegisterOpen, isPayoutOpen, playersVersion]); 
 
     // --- UTILIDADES ---
     const formatCurrency = formatMoney;
@@ -369,6 +373,11 @@ export default function TournamentPlayerTable({ tournament, onUpdate, onFinalize
                     </button>
                 )}
             </div>
+
+            {/* RESERVAS DEL LINK PÚBLICO (confirmar al llegar = inscribir + cobrar) */}
+            {!['COMPLETED', 'FINISHED'].includes(tournament.status) && (
+                <PreregistrationsPanel tournament={tournament} canConfirm onConfirmed={() => { setPlayersVersion((v) => v + 1); onUpdate(); }} showToast={showToast} />
+            )}
 
             {/* TABLA JUGADORES */}
             <div className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden shadow-xl">

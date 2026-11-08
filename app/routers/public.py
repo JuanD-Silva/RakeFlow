@@ -20,8 +20,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from pydantic import BaseModel, Field
 
-from .. import models, tournament_clock, tournament_chips, services
+from .. import models, tournament_clock, tournament_chips, services, tournament_prereg
 from ..dependencies import get_db
+from ..phone_utils import normalize_phone
+from ..rate_limit import limiter
 from .tournaments import TERMINAL_STATUSES
 from ..audit import log_action, AuditAction
 
@@ -171,6 +173,8 @@ async def get_club_activity(public_token: str, db: AsyncSession = Depends(get_db
         ).order_by(models.Tournament.scheduled_start.asc().nullslast())
     )).scalars().all()
     scheduled = [{
+        # id: para abrir la ficha + formulario de pre-inscripción.
+        "id": t.id,
         "name": t.name,
         "scheduled_start": t.scheduled_start.isoformat() if t.scheduled_start else None,
         "buyin": t.buyin_amount,
@@ -252,6 +256,183 @@ async def get_tournament_seating(public_token: str, tournament_id: int,
 # Sólo datos no sensibles: nombre del club/torneo, reloj, blinds y conteo de
 # jugadores. NUNCA plata, rake, premios ni jugadores nominales.
 # ---------------------------------------------------------
+# ---------------------------------------------------------
+# 1.c FICHA DEL TORNEO + PRE-INSCRIPCIÓN (formulario público)
+# Ver app/tournament_prereg.py para las reglas de cupo/espera. Excepción
+# deliberada a "no plata" (igual que el buyin de los programados): se exponen
+# los PRECIOS que paga el jugador (entrada, rebuy, add-on, propina, bounty)
+# porque los necesita para decidir si va. Nunca rake, premiación, pozo, nombres
+# ni teléfonos (decisión de Juan, 2026-11-06).
+# ---------------------------------------------------------
+# Tope duro de pre-inscripciones vivas por torneo: un formulario anónimo no
+# puede llenar la tabla aunque esquive el rate limit cambiando de IP.
+MAX_PENDING_PREREGS = 500
+
+
+class PreregistrationIn(BaseModel):
+    name: str = Field(..., min_length=2, max_length=80)
+    phone: str = Field(..., min_length=7, max_length=20)
+
+
+async def _get_club_tournament(db: AsyncSession, public_token: str, tournament_id: int):
+    """Torneo NO terminado de ESTE club (el token identifica al club; el id solo
+    no basta: sin el filtro por club se podría leer un torneo ajeno)."""
+    club = await _get_club_by_token(db, public_token)
+    t = (await db.execute(
+        select(models.Tournament).where(
+            models.Tournament.id == tournament_id,
+            models.Tournament.club_id == club.id,
+            models.Tournament.status.notin_(TERMINAL_STATUSES),
+            models.Tournament.end_time.is_(None),
+        )
+    )).scalars().first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Torneo no encontrado")
+    return t, club
+
+
+def _public_occupancy(occ: dict) -> dict:
+    # Solo el contador; el desglose inscritos/pre-inscritos es del staff.
+    return {k: occ[k] for k in ("max_entries", "taken", "waitlist", "full")}
+
+
+@router.get("/clubs/{public_token}/tournaments/{tournament_id}")
+async def get_public_tournament(public_token: str, tournament_id: int,
+                                db: AsyncSession = Depends(get_db)):
+    """Ficha completa del torneo para el link público (sin datos sensibles)."""
+    t, club = await _get_club_tournament(db, public_token, tournament_id)
+    blinds = t.blind_structure or []
+    return {
+        "club_name": club.name,
+        "currency": club.currency,
+        "locale": club.locale,
+        "timezone": club.timezone,
+        "tournament": {
+            "id": t.id,
+            "name": t.name,
+            "status": t.status,
+            # SIN offset, igual que /activity: scheduled_start sale de un
+            # <input datetime-local> y se guarda como hora de pared del club (no
+            # UTC). Marcarlo +00:00 lo correría 5h en Colombia.
+            "scheduled_start": t.scheduled_start.isoformat() if t.scheduled_start else None,
+            "registration_open": tournament_prereg.registration_open(t),
+            "buyin": t.buyin_amount or 0,
+            "dealer_tip": t.dealer_tip_amount or 0,
+            "bounty": t.bounty_amount or 0,
+            "rebuy_price": t.rebuy_price or 0,
+            "double_rebuy_price": t.double_rebuy_price or 0,
+            "rebuy_until_level": t.rebuy_until_level,
+            "addon_price": t.addon_price or 0,
+            "double_addon_price": t.double_addon_price or 0,
+            "addon_until_level": t.addon_until_level,
+            "starting_stack": t.starting_stack or 0,
+            "rebuy_chips": t.rebuy_chips or 0,
+            "double_rebuy_chips": t.double_rebuy_chips or 0,
+            "addon_chips": t.addon_chips or 0,
+            "double_addon_chips": t.double_addon_chips or 0,
+            "tip_chips": t.tip_chips or 0,
+            "blind_structure": blinds,
+        },
+        "occupancy": _public_occupancy(await tournament_prereg.occupancy(db, t)),
+    }
+
+
+@router.post("/clubs/{public_token}/tournaments/{tournament_id}/preregister")
+@limiter.limit("60/hour")  # igual que self-register: el link circula por
+                           # WhatsApp y muchos lo abren desde el WiFi del club.
+async def preregister(public_token: str, tournament_id: int, data: PreregistrationIn,
+                      request: Request, db: AsyncSession = Depends(get_db)):
+    """Pre-inscripción pública. Idempotente por teléfono: repetirla devuelve el
+    lugar que ya tenía en vez de duplicar."""
+    t, club = await _get_club_tournament(db, public_token, tournament_id)
+    if not tournament_prereg.registration_open(t):
+        raise HTTPException(status_code=400,
+                            detail="Las inscripciones por link ya cerraron. Inscríbete en el club.")
+
+    phone = normalize_phone(data.phone)
+    if not phone or len(phone) < 10:
+        raise HTTPException(status_code=400, detail="Teléfono inválido")
+    name = " ".join(data.name.split())
+    if len(name) < 2:
+        raise HTTPException(status_code=400, detail="Nombre inválido")
+
+    if await tournament_prereg.phone_already_entered(db, t.id, phone):
+        return {"already_entered": True, "spot": "ENTERED", "waitlist_position": None,
+                "occupancy": _public_occupancy(await tournament_prereg.occupancy(db, t))}
+
+    Prereg = models.TournamentPreregistration
+    existing = (await db.execute(select(Prereg).where(
+        Prereg.tournament_id == t.id, Prereg.phone == phone, Prereg.status != "CANCELLED",
+    ))).scalars().first()
+
+    created = False
+    if existing is None:
+        pending_total = (await db.execute(select(func.count(Prereg.id)).where(
+            Prereg.tournament_id == t.id, Prereg.status == "PENDING",
+        ))).scalar() or 0
+        if pending_total >= MAX_PENDING_PREREGS:
+            raise HTTPException(status_code=400, detail="La lista de inscritos está llena.")
+        prereg = Prereg(club_id=club.id, tournament_id=t.id, name=name, phone=phone,
+                        status="PENDING", created_at=datetime.utcnow())
+        db.add(prereg)
+        try:
+            await db.flush()
+        except IntegrityError:
+            # Doble envío en paralelo con el mismo teléfono: ganó el otro. El
+            # rollback expira TODO lo cargado (t, club): se recargan antes de
+            # tocarlos, o el acceso lazy revienta en async (MissingGreenlet).
+            await db.rollback()
+            t, club = await _get_club_tournament(db, public_token, tournament_id)
+            existing = (await db.execute(select(Prereg).where(
+                Prereg.tournament_id == t.id, Prereg.phone == phone, Prereg.status != "CANCELLED",
+            ))).scalars().first()
+            if existing is None:
+                raise HTTPException(status_code=409, detail="Intenta de nuevo")
+        else:
+            created = True
+            await log_action(
+                db, request=request, club=club,
+                action=AuditAction.TOURNAMENT_PREREG_CREATE,
+                entity_type="TournamentPreregistration", entity_id=prereg.id,
+                actor_type="PUBLIC", meta={"tournament_id": t.id},
+            )
+            await db.commit()
+            existing = prereg
+
+    if existing.status == "CONFIRMED":
+        if await tournament_prereg.player_active_in(db, t.id, existing.player_id):
+            return {"already_entered": True, "spot": "ENTERED", "waitlist_position": None,
+                    "occupancy": _public_occupancy(await tournament_prereg.occupancy(db, t))}
+        # Confirmada antes pero ya no juega (eliminado que quiere re-entrar, o el
+        # staff le quitó la inscripción): la reserva se REABRE como nueva, al
+        # final de la fila. El índice único (no CANCELLED) impide crear otra.
+        existing.status = "PENDING"
+        existing.name = name
+        existing.created_at = datetime.utcnow()
+        existing.confirmed_at = None
+        created = True
+        await log_action(
+            db, request=request, club=club,
+            action=AuditAction.TOURNAMENT_PREREG_CREATE,
+            entity_type="TournamentPreregistration", entity_id=existing.id,
+            actor_type="PUBLIC", meta={"tournament_id": t.id, "reopened": True},
+        )
+        await db.commit()
+
+    entered = await tournament_prereg.entered_count(db, t.id)
+    pending = await tournament_prereg.pending_preregs(db, t.id)
+    place = tournament_prereg.place_of(existing.id, t.max_entries, entered, pending)
+    return {
+        "already_entered": False,
+        "created": created,
+        # El nombre que ESTA persona escribió, nunca el guardado: devolver
+        # existing.name dejaría a cualquiera leer el nombre ligado a un teléfono.
+        "name": name,
+        **place,
+        "occupancy": _public_occupancy(await tournament_prereg.occupancy(db, t)),
+    }
+
+
 async def _get_tournament_by_token(db: AsyncSession, token: str) -> tuple[models.Tournament, models.Club]:
     tournament = (await db.execute(
         select(models.Tournament).where(models.Tournament.public_token == token)

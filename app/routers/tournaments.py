@@ -9,11 +9,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from app import models, schemas
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import logging
 from ..dependencies import get_db, get_current_club, require_role
 from ..audit import log_action, AuditAction
-from .. import tournament_clock
+from .. import tournament_clock, tournament_prereg
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +87,7 @@ async def create_tournament(
         clock_status="STOPPED",
         clock_elapsed_seconds=0,
         public_token=secrets.token_urlsafe(16),
+        max_entries=tournament_data.max_entries,
     )
 
     db.add(new_tournament)
@@ -1094,16 +1095,43 @@ async def register_player(
     if not tournament or tournament.status in TERMINAL_STATUSES:
         raise HTTPException(status_code=400, detail="Torneo no válido o finalizado")
 
+    new_player = await _register_core(
+        db, current_club, tournament, registration.player_id,
+        pay_buyin=registration.pay_buyin, pay_tip=registration.pay_tip,
+    )
+    await db.commit()
+    await db.refresh(new_player)
+    return await _auto_seat_after_register(db, tournament.id, new_player)
+
+
+async def _register_core(db: AsyncSession, club: models.Club, tournament: models.Tournament,
+                         player_id: int, *, pay_buyin: bool, pay_tip: bool) -> models.TournamentPlayer:
+    """Inscribe (o re-entra) a un jugador y agrega las transacciones de entrada/
+    propina. NO hace commit: el que llama decide (register_player solo, o la
+    confirmación de una pre-inscripción junto con marcarla CONFIRMED, atómico).
+    El torneo ya viene validado como del club y no terminado."""
+    registration = PlayerRegistration(player_id=player_id, pay_buyin=pay_buyin, pay_tip=pay_tip)
+    tournament_id = tournament.id
+
     # B. El jugador debe ser del club: sin este check se podía inscribir un
     # player_id ajeno, creando Transaction/TournamentPlayer cross-tenant (y de
     # paso rompiendo el borrado de cuenta del otro club por FK huérfana).
     player_result = await db.execute(
         select(models.Player)
         .where(models.Player.id == registration.player_id)
-        .where(models.Player.club_id == current_club.id)
+        .where(models.Player.club_id == club.id)
     )
     if not player_result.scalars().first():
         raise HTTPException(status_code=404, detail="Jugador no encontrado")
+
+    # B2. Serializa las inscripciones de ESTE jugador en ESTE torneo. El
+    # FOR UPDATE de abajo solo bloquea si ya existe la fila: sin ella, dos
+    # requests simultáneos (Inscribir a mano + "Llegó" de una reserva, o dos
+    # cajeros) verían cero filas y cobrarían dos entradas. El advisory lock es
+    # de transacción: se libera solo en el commit/rollback del caller.
+    await db.execute(
+        select(func.pg_advisory_xact_lock(tournament.id, player_id))
+    )
 
     # C. Verificar duplicados. Un ELIMINATED sí puede volver: RE-ENTRADA — paga
     # otra entrada (cuenta en el pozo vía entries_count) y vuelve ACTIVE con sus
@@ -1175,15 +1203,19 @@ async def register_player(
             is_buyin_paid=bool(registration.pay_buyin) or tournament.buyin_amount <= 0,
         )
         db.add(new_player)
-    await db.commit()
-    await db.refresh(new_player)
+    await db.flush()
+    return new_player
 
+
+async def _auto_seat_after_register(db: AsyncSession, tournament_id: int,
+                                    new_player: models.TournamentPlayer) -> models.TournamentPlayer:
+    """Corre DESPUÉS del commit de la inscripción."""
     # Auto-sentar en la mesa OPEN más vacía con cupo (no-op si no hay mesas). Es
     # best-effort y va en commit aparte: si una carrera choca el asiento (índice
     # único), el jugador queda sin mesa (el staff usa "Auto-sentar"), pero el
     # registro NUNCA falla por esto.
     try:
-        if await _auto_seat_one(db, tournament.id, new_player):
+        if await _auto_seat_one(db, tournament_id, new_player):
             await db.commit()
             await db.refresh(new_player)
     except IntegrityError:
@@ -1191,6 +1223,202 @@ async def register_player(
         await db.refresh(new_player)
 
     return new_player
+
+
+# 4.b PRE-INSCRIPCIONES (formulario público) — lista, confirmar, cancelar, cupo.
+# Reglas en app/tournament_prereg.py. Confirmar = el jugador llegó: se busca su
+# ficha por teléfono (o se crea) y se inscribe con _register_core, el MISMO
+# camino de cobro que la inscripción manual, en un solo commit con el CONFIRMED.
+class PreregConfirmIn(BaseModel):
+    pay_buyin: bool = True
+    pay_tip: bool = False
+    # Opcional: el staff eligió a mano a qué ficha corresponde (homónimos,
+    # teléfono cambiado). Debe ser del club; _register_core lo valida.
+    player_id: Optional[int] = None
+
+
+class MaxEntriesIn(BaseModel):
+    # None = sin cupo. Tope generoso para frenar typos (4000 en vez de 40).
+    max_entries: Optional[int] = Field(default=None, ge=1, le=1000)
+
+
+async def _get_owned_prereg(db: AsyncSession, tournament_id: int, prereg_id: int,
+                            club_id: int, *, lock: bool = False):
+    q = select(models.TournamentPreregistration).where(
+        models.TournamentPreregistration.id == prereg_id,
+        models.TournamentPreregistration.tournament_id == tournament_id,
+        models.TournamentPreregistration.club_id == club_id,
+    )
+    if lock:
+        q = q.with_for_update()
+    prereg = (await db.execute(q)).scalars().first()
+    if not prereg:
+        raise HTTPException(status_code=404, detail="Pre-inscripción no encontrada")
+    return prereg
+
+
+@router.get("/{tournament_id}/preregistrations")
+async def list_preregistrations(
+    tournament_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+):
+    """Pre-inscritos PENDING (en cupo y en espera) + contador. Las confirmadas y
+    canceladas no se listan: las confirmadas ya están en la tabla del torneo."""
+    tournament = await _get_owned_tournament(db, tournament_id, current_club.id)
+    entered = await tournament_prereg.entered_count(db, tournament.id)
+    pending = await tournament_prereg.pending_preregs(db, tournament.id)
+    in_cupo, waitlist = tournament_prereg.split_pending(tournament.max_entries, entered, pending)
+
+    async def row(p, spot, pos):
+        match = await tournament_prereg.find_club_player_by_phone(db, current_club.id, p.phone)
+        return {
+            "id": p.id, "name": p.name, "phone": p.phone,
+            "created_at": p.created_at.isoformat() + "Z" if p.created_at else None,
+            "spot": spot, "waitlist_position": pos,
+            # Sugerencia: ficha del directorio con ese teléfono (si existe).
+            "match_player": {"id": match.id, "name": match.name} if match else None,
+        }
+
+    rows = [await row(p, "CUPO", None) for p in in_cupo]
+    rows += [await row(p, "WAITLIST", i + 1) for i, p in enumerate(waitlist)]
+    return {
+        "registration_open": tournament_prereg.registration_open(tournament),
+        "public_token_club": current_club.public_token,
+        "occupancy": await tournament_prereg.occupancy(db, tournament),
+        "preregistrations": rows,
+    }
+
+
+@router.post("/{tournament_id}/preregistrations/{prereg_id}/confirm",
+             response_model=schemas.TournamentPlayerSchema)
+async def confirm_preregistration(
+    tournament_id: int,
+    prereg_id: int,
+    data: PreregConfirmIn,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+):
+    tournament = await _get_owned_tournament(db, tournament_id, current_club.id)
+    if tournament.status in TERMINAL_STATUSES:
+        raise HTTPException(status_code=400, detail="Torneo no válido o finalizado")
+    if tournament.status == "SCHEDULED":
+        raise HTTPException(status_code=400,
+                            detail="Abre el torneo antes de confirmar a los pre-inscritos")
+
+    # Lock: dos toques seguidos en "Confirmar" no deben cobrar dos veces.
+    prereg = await _get_owned_prereg(db, tournament.id, prereg_id, current_club.id, lock=True)
+    if prereg.status != "PENDING":
+        raise HTTPException(status_code=400, detail="Esta pre-inscripción ya fue atendida")
+
+    if data.player_id is not None:
+        player_id = data.player_id  # _register_core valida que sea del club
+        via = "manual"
+    else:
+        player = await tournament_prereg.find_club_player_by_phone(db, current_club.id, prereg.phone)
+        if player is None:
+            # Recién ahora nace la ficha: el formulario anónimo no crea fichas.
+            player = models.Player(club_id=current_club.id, name=prereg.name, phone=prereg.phone)
+            db.add(player)
+            await db.flush()
+            via = "new-ficha"
+        else:
+            via = "match-phone"
+        player_id = player.id
+
+    # ¿Ya está jugando (el staff lo inscribió a mano antes de ver la lista)?
+    # Se marca CONFIRMED sin cobrar otra vez. Un ELIMINATED sí sigue el flujo
+    # normal: sería una re-entrada pagada.
+    already = (await db.execute(
+        select(models.TournamentPlayer).where(
+            models.TournamentPlayer.tournament_id == tournament.id,
+            models.TournamentPlayer.player_id == player_id,
+            models.TournamentPlayer.status != "ELIMINATED",
+        )
+    )).scalars().first()
+    if already is not None:
+        prereg.status = "CONFIRMED"
+        prereg.player_id = player_id
+        prereg.confirmed_at = datetime.utcnow()
+        await log_action(
+            db, request=request, club=current_club,
+            action=AuditAction.TOURNAMENT_PREREG_CONFIRM,
+            entity_type="TournamentPreregistration", entity_id=prereg.id,
+            meta={"tournament_id": tournament.id, "player_id": player_id,
+                  "via": f"{via}:already-entered"},
+        )
+        await db.commit()
+        await db.refresh(already)
+        return already
+
+    new_player = await _register_core(
+        db, current_club, tournament, player_id,
+        pay_buyin=data.pay_buyin, pay_tip=data.pay_tip,
+    )
+    prereg.status = "CONFIRMED"
+    prereg.player_id = player_id
+    prereg.confirmed_at = datetime.utcnow()
+    await log_action(
+        db, request=request, club=current_club,
+        action=AuditAction.TOURNAMENT_PREREG_CONFIRM,
+        entity_type="TournamentPreregistration", entity_id=prereg.id,
+        meta={"tournament_id": tournament.id, "player_id": player_id, "via": via,
+              "pay_buyin": data.pay_buyin, "pay_tip": data.pay_tip},
+    )
+    await db.commit()
+    await db.refresh(new_player)
+    return await _auto_seat_after_register(db, tournament.id, new_player)
+
+
+@router.post("/{tournament_id}/preregistrations/{prereg_id}/cancel", status_code=200)
+async def cancel_preregistration(
+    tournament_id: int,
+    prereg_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+):
+    tournament = await _get_owned_tournament(db, tournament_id, current_club.id)
+    prereg = await _get_owned_prereg(db, tournament.id, prereg_id, current_club.id, lock=True)
+    if prereg.status != "PENDING":
+        raise HTTPException(status_code=400, detail="Esta pre-inscripción ya fue atendida")
+    prereg.status = "CANCELLED"
+    prereg.cancelled_at = datetime.utcnow()
+    await log_action(
+        db, request=request, club=current_club,
+        action=AuditAction.TOURNAMENT_PREREG_CANCEL,
+        entity_type="TournamentPreregistration", entity_id=prereg.id,
+        meta={"tournament_id": tournament.id},
+    )
+    await db.commit()
+    return {"ok": True}
+
+
+@router.patch("/{tournament_id}/max-entries", response_model=schemas.TournamentResponse)
+async def update_max_entries(
+    tournament_id: int,
+    data: MaxEntriesIn,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+):
+    """Cupo de inscritos. Bajarlo no saca a nadie: los que no caben pasan a
+    lista de espera (se deriva, ver app/tournament_prereg.py)."""
+    tournament = await _get_owned_tournament(db, tournament_id, current_club.id)
+    if tournament.status in TERMINAL_STATUSES:
+        raise HTTPException(status_code=400, detail="Torneo no válido o finalizado")
+    old = tournament.max_entries
+    tournament.max_entries = data.max_entries
+    await log_action(
+        db, request=request, club=current_club,
+        action=AuditAction.TOURNAMENT_MAX_ENTRIES_UPDATE,
+        entity_type="Tournament", entity_id=tournament.id,
+        meta={"from": old, "to": data.max_entries},
+    )
+    await db.commit()
+    await db.refresh(tournament)
+    return tournament
 
 # 5. PAGAR DEALER TIP TARDE
 @router.post("/{tournament_id}/players/{player_id}/pay-tip", response_model=schemas.TournamentPlayerSchema)
@@ -1888,6 +2116,13 @@ async def delete_tournament(
         # Esto es único de torneos. Si no borras la lista de inscritos, no puedes borrar el torneo.
         await db.execute(
             delete(models.TournamentPlayer).where(models.TournamentPlayer.tournament_id == tournament_id)
+        )
+
+        # 2.b Pre-inscripciones del formulario público (la FK ya es ON DELETE
+        # CASCADE; explícito igual, como el resto de esta limpieza).
+        await db.execute(
+            delete(models.TournamentPreregistration)
+            .where(models.TournamentPreregistration.tournament_id == tournament_id)
         )
 
         # 3. Borrar el Torneo
