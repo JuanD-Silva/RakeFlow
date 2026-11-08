@@ -2125,6 +2125,24 @@ async def delete_tournament(
             .where(models.TournamentPreregistration.tournament_id == tournament_id)
         )
 
+        # 2.c Mesas del torneo y lo que cuelga de ellas. Sin esto, borrar un
+        # torneo que alguna vez tuvo mesas reventaba con FK (500). Orden:
+        # alertas de dealer y turnos apuntan a la mesa; la mesa al torneo. Los
+        # TournamentPlayer (table_id) ya se borraron en el paso 2.
+        table_ids = select(models.TournamentTable.id).where(
+            models.TournamentTable.tournament_id == tournament_id
+        )
+        await db.execute(
+            delete(models.DealerAlert).where(models.DealerAlert.tournament_table_id.in_(table_ids))
+        )
+        await db.execute(
+            delete(models.TournamentDealerShift)
+            .where(models.TournamentDealerShift.tournament_id == tournament_id)
+        )
+        await db.execute(
+            delete(models.TournamentTable).where(models.TournamentTable.tournament_id == tournament_id)
+        )
+
         # 3. Borrar el Torneo
         await db.execute(delete(models.Tournament).where(models.Tournament.id == tournament_id))
         await log_action(
