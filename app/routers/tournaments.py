@@ -580,11 +580,36 @@ async def delete_tournament_table(
     for tp in seated:
         tp.table_id = None
         tp.seat_number = None
-    await db.delete(table)
-    await log_action(
-        db, request=request, club=current_club, action=AuditAction.TOURNAMENT_TABLE_DELETE,
-        entity_type="TournamentTable", entity_id=table_id, meta={"unseated": len(seated)},
-    )
+
+    # ¿La mesa tuvo dealer? Sus turnos son PLATA (pago por horas, resta del
+    # neto): no se pueden borrar, y la FK impide borrar la mesa (antes = 500).
+    # Se CIERRA en su lugar, igual que la consolidación: termina el turno
+    # abierto y la mesa sale del juego conservando el historial de pago.
+    shifts = (await db.execute(
+        select(models.TournamentDealerShift)
+        .where(models.TournamentDealerShift.club_id == current_club.id)
+        .where(models.TournamentDealerShift.table_id == table_id)
+    )).scalars().all()
+    if shifts:
+        now = datetime.utcnow()
+        for sh in shifts:
+            if sh.end_time is None:
+                sh.end_time = now
+        table.status = "CLOSED"
+        await log_action(
+            db, request=request, club=current_club, action=AuditAction.TOURNAMENT_TABLE_UPDATE,
+            entity_type="TournamentTable", entity_id=table_id,
+            meta={"status": "CLOSED", "reason": "delete-with-dealer-history", "unseated": len(seated)},
+        )
+    else:
+        await db.execute(
+            delete(models.DealerAlert).where(models.DealerAlert.tournament_table_id == table_id)
+        )
+        await db.delete(table)
+        await log_action(
+            db, request=request, club=current_club, action=AuditAction.TOURNAMENT_TABLE_DELETE,
+            entity_type="TournamentTable", entity_id=table_id, meta={"unseated": len(seated)},
+        )
     await db.commit()
     return await _tables_response(db, tournament_id)
 
