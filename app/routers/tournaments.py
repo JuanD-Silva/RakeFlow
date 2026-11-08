@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 import logging
 from ..dependencies import get_db, get_current_club, require_role
 from ..audit import log_action, AuditAction
-from .. import tournament_clock, tournament_prereg
+from .. import tournament_clock, tournament_prereg, services
 
 logger = logging.getLogger(__name__)
 
@@ -2138,6 +2138,40 @@ async def delete_tournament(
     if tournament.club_id != current_club.id:
         raise HTTPException(status_code=403, detail="No tienes permiso para eliminar este torneo")
 
+    # Snapshot financiero ANTES de borrar (coherente con borrar sesión de cash):
+    # todo lo del torneo se evapora; queda en la auditoría para poder
+    # reconstruir el efecto de la eliminación.
+    money_rows = (await db.execute(
+        select(models.Transaction.type, func.count(models.Transaction.id), func.coalesce(func.sum(models.Transaction.amount), 0))
+        .where(models.Transaction.tournament_id == tournament_id)
+        .group_by(models.Transaction.type)
+    )).all()
+    shifts = (await db.execute(
+        select(models.TournamentDealerShift).where(models.TournamentDealerShift.tournament_id == tournament_id)
+    )).scalars().all()
+    dealer_cost = 0.0
+    for sh in shifts:
+        if sh.end_time is None:
+            continue
+        # Misma fórmula que services.tournament_dealer_cost_in_range (fuente única).
+        elapsed_min = max(0, int((sh.end_time - sh.start_time).total_seconds() // 60))
+        dealer_cost += services.shift_payment_breakdown(
+            round(elapsed_min / 60.0, 2), sh.tournament_hourly_rate_cop or 0, 0, None
+        )["club_payment"]
+    players_count = (await db.execute(
+        select(func.count(models.TournamentPlayer.id)).where(models.TournamentPlayer.tournament_id == tournament_id)
+    )).scalar() or 0
+    snapshot = {
+        "name": tournament.name,
+        "status": tournament.status,
+        "players": players_count,
+        "transactions_deleted": sum(int(n) for _, n, _ in money_rows),
+        "money_by_type": {str(getattr(ty, "value", ty)): float(total) for ty, _, total in money_rows},
+        "rake_percentage": tournament.rake_percentage,
+        "dealer_shifts": len(shifts),
+        "dealer_cost": round(dealer_cost, 2),
+    }
+
     try:
         # C. LIMPIEZA EN CASCADA (El orden es vital) 🧹
         
@@ -2184,7 +2218,7 @@ async def delete_tournament(
             db, request=request, club=current_club,
             action=AuditAction.TOURNAMENT_DELETE,
             entity_type="Tournament", entity_id=tournament_id,
-            meta={"name": tournament.name, "status": tournament.status},
+            meta=snapshot,
         )
         await db.commit()
 

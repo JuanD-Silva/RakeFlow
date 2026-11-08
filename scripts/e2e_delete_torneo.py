@@ -122,6 +122,12 @@ def main():
             check(r.status_code == 204, f"borrar torneo con mesas/turnos/alertas → 204 (got {r.status_code}: {r.text[:150]})")
             check(psql(q) == "0|0|0|0|0", f"después: todo lo del torneo borrado (got {psql(q)})")
             check(psql(f"SELECT count(*) FROM tournaments WHERE id={tid}") == "0", "el torneo ya no existe")
+            snap = psql(f"SELECT meta::text FROM audit_logs WHERE club_id={cid} AND action='TOURNAMENT_DELETE' AND entity_id={tid}")
+            import json as _json
+            snap = _json.loads(snap) if snap else {}
+            check(snap.get("transactions_deleted") == 1 and snap.get("players") == 1 and snap.get("dealer_shifts") == 1,
+                  f"auditoría: foto financiera del torneo borrado (got {snap})")
+            check(snap.get("money_by_type", {}).get("TOURNAMENT_ENTRY") == 50000, "la foto guarda la plata por tipo (buy-in $50.000)")
 
             # --- Borrar UNA mesa en pleno torneo ---
             r = c.post("/tournaments/", headers=headers, json={
