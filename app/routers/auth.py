@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import delete, or_
+from sqlalchemy import delete, func, or_
 from pydantic import BaseModel
 from .. import models, schemas, auth_utils
 from ..phone_utils import normalize_phone
@@ -497,8 +497,10 @@ async def forgot_password(request: Request, data: ForgotPasswordRequest, db: Asy
 @limiter.limit("5/hour")
 @limiter.limit("60/hour", key_func=global_key)  # respaldo anti bombardeo de correos
 async def reset_password(request: Request, data: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
-    if len(data.new_password) < 6:
-        raise HTTPException(status_code=400, detail="La contrasena debe tener al menos 6 caracteres.")
+    pw = data.new_password or ""
+    if len(pw) < 8 or not any(c.isupper() for c in pw) or not any(c.islower() for c in pw) or not any(c.isdigit() for c in pw):
+        raise HTTPException(status_code=400,
+            detail="La contraseña debe tener al menos 8 caracteres, con mayúscula, minúscula y número.")
 
     result = await db.execute(
         select(models.Club).where(models.Club.password_reset_token == data.token)
@@ -513,7 +515,20 @@ async def reset_password(request: Request, data: ResetPasswordRequest, db: Async
 
     import asyncio
     loop = asyncio.get_event_loop()
-    club.hashed_password = await loop.run_in_executor(None, auth_utils.get_password_hash, data.new_password)
+    new_hash = await loop.run_in_executor(None, auth_utils.get_password_hash, data.new_password)
+    club.hashed_password = new_hash
+    # El login valida contra users (no clubs): sin esto el reset "funcionaba"
+    # pero la clave nueva no servía y la vieja seguía viva.
+    owner = (await db.execute(
+        select(models.User).where(
+            models.User.club_id == club.id,
+            models.User.role == models.UserRole.OWNER,
+            func.lower(models.User.email) == (club.email or "").lower(),
+        )
+    )).scalars().first()
+    if owner is None:
+        raise HTTPException(status_code=400, detail="No encontramos la cuenta del dueño de este club. Escríbenos por WhatsApp.")
+    owner.hashed_password = new_hash
     club.password_reset_token = None
     club.password_reset_expires = None
     await log_action(

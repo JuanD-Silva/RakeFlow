@@ -111,8 +111,8 @@ export default function ResetPassword() {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       className="w-full bg-gray-900/60 text-white border border-gray-700 rounded-xl py-3.5 pl-12 pr-12 placeholder-gray-600 transition-all duration-300 focus:outline-none focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/10 hover:border-gray-600"
-                      placeholder="Minimo 6 caracteres"
-                      minLength="6"
+                      placeholder="Mínimo 8, con mayúscula, minúscula y número"
+                      minLength="8"
                       required
                     />
                     <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-emerald-400 transition-colors p-1">
@@ -135,7 +135,7 @@ export default function ResetPassword() {
                         : 'border-gray-700 focus:border-emerald-500/50 focus:ring-emerald-500/10'
                       }`}
                       placeholder="Repite la contrasena"
-                      minLength="6"
+                      minLength="8"
                       required
                     />
                     <button type="button" onClick={() => setShowConfirm(!showConfirm)} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-emerald-400 transition-colors p-1">

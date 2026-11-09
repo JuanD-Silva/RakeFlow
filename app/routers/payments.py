@@ -97,7 +97,9 @@ async def activate_test(
     Solo disponible en modo test (WOMPI_TEST=true). Activa la suscripcion
     sin pago real. Util para desarrollo y demos.
     """
-    if os.getenv("WOMPI_TEST", "true").lower() == "false":
+    # Fail-closed: solo con WOMPI_TEST=true EXPLÍCITO (si falta la variable,
+    # no se regala PRO).
+    if os.getenv("WOMPI_TEST", "false").lower() != "true":
         raise HTTPException(status_code=403, detail="Solo disponible en modo test.")
 
     if current_club.subscription_active and current_club.plan_type == "PRO":

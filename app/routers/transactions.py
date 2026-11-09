@@ -26,6 +26,20 @@ class TransactionUpdate(BaseModel):
     # cualquier transacción DIGITAL al editarle el monto → la auditoría de
     # "dinero físico esperado" y el descuadre del cierre quedaban mal.
     method: str | None = None  # CASH o DIGITAL
+
+async def assert_player_in_club(db: AsyncSession, player_id: int | None, club_id: int):
+    """Aislamiento: el player_id del payload debe ser de ESTE club. Sin esto,
+    un club podía registrar movimientos con jugadores de otro club (ids
+    secuenciales) y luego leer su nombre y teléfono en las estadísticas."""
+    if player_id is None:
+        return
+    ok = (await db.execute(
+        select(models.Player.id).where(models.Player.id == player_id, models.Player.club_id == club_id)
+    )).scalar()
+    if not ok:
+        raise HTTPException(status_code=404, detail="Jugador no encontrado en este club")
+
+
 # ---------------------------------------------------------
 # HELPER: Buscar Sesión Activa (Actualizado para SaaS)
 # ---------------------------------------------------------
@@ -81,6 +95,7 @@ async def create_buyin(
     Registra la compra de fichas (Entrada inicial o Recompra).
     """
     session = await get_active_session(db, current_club.id, tx.session_id)
+    await assert_player_in_club(db, tx.player_id, current_club.id)
 
     # Si el jugador tenía un BUST (salió de la mesa) y vuelve a comprar fichas,
     # está de vuelta en juego: borramos el BUST huérfano para que no subcuente
@@ -127,6 +142,7 @@ async def create_cashout(
     current_club: models.Club = Depends(get_current_club)
 ):
     session = await get_active_session(db, current_club.id, tx.session_id)
+    await assert_player_in_club(db, tx.player_id, current_club.id)
 
     new_tx = models.Transaction(
         session_id=session.id,
@@ -277,6 +293,7 @@ async def create_spend(
     Registra cuando un jugador paga bebidas/comida con fichas.
     """
     session = await get_active_session(db, current_club.id, tx.session_id)
+    await assert_player_in_club(db, tx.player_id, current_club.id)
 
     new_tx = models.Transaction(
         session_id=session.id,
@@ -304,6 +321,7 @@ async def create_tip(
     Opcionalmente se asigna al dealer que la recibió (dealer_id).
     """
     session = await get_active_session(db, current_club.id, tx.session_id)
+    await assert_player_in_club(db, tx.player_id, current_club.id)
 
     # Validar que el dealer (si viene) sea de ESTE club
     dealer_id = None
@@ -346,6 +364,8 @@ async def create_jackpot_payout(
     Valida que existan fondos reales (Historial Ingresos - Egresos) de ESTE club.
     """
     
+    await assert_player_in_club(db, tx.player_id, current_club.id)
+
     # --- A. VALIDACIÓN DE FONDOS ---
     # FUENTE ÚNICA: services.club_jackpot (ingresos de cierres − pagos + ajuste
     # manual). Este guard tenía su PROPIA copia SIN el ajuste: con el ajuste
@@ -405,6 +425,7 @@ async def create_bonus(
     session = (await db.execute(stmt)).scalars().first()
     if not session:
         raise HTTPException(status_code=404, detail="Sesión no encontrada o cerrada")
+    await assert_player_in_club(db, tx_data.player_id, current_club.id)
 
     # 2. Crear la transacción tipo BONUS
     new_tx = models.Transaction(
@@ -491,6 +512,7 @@ async def toggle_bust(
     (deshacer click erroneo); si no existe lo crea con amount=0.
     """
     session = await get_active_session(db, current_club.id, data.session_id)
+    await assert_player_in_club(db, data.player_id, current_club.id)
 
     existing_stmt = select(models.Transaction).where(
         models.Transaction.session_id == session.id,
