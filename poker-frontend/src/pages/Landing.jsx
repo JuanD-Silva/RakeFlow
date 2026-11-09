@@ -140,12 +140,14 @@ export default function Landing() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#0a0f1a] text-gray-100 font-sans overflow-x-hidden relative noise-bg">
+    // pl/pr safe-area: con el iPhone acostado, el notch (modelos sin isla
+    // dinámica) queda a un lado y se comía el borde del contenido.
+    <div className="min-h-screen bg-[#0a0f1a] text-gray-100 font-sans overflow-x-hidden relative noise-bg pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
 
-      {/* NAVBAR — pt safe-area: con viewport-fit=cover el iPhone mete la página
-          bajo la isla/status bar y tapaba Entrar/Crear Club */}
-      <nav className={`fixed top-0 w-full z-50 pt-[env(safe-area-inset-top)] transition-all duration-500 ${navSolid ? 'bg-[#0a0f1a]/95 backdrop-blur-xl border-b border-gray-800/50 shadow-2xl shadow-black/20' : 'bg-transparent'}`}>
-        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+      {/* NAVBAR — safe-area arriba (vertical: isla/status bar) y a los lados
+          (horizontal: el notch tapaba Entrar/Crear Club, que van pegados al borde) */}
+      <nav className={`fixed top-0 inset-x-0 z-50 pt-[env(safe-area-inset-top)] transition-all duration-500 ${navSolid ? 'bg-[#0a0f1a]/95 backdrop-blur-xl border-b border-gray-800/50 shadow-2xl shadow-black/20' : 'bg-transparent'}`}>
+        <div className="max-w-6xl mx-auto pl-[max(1.5rem,env(safe-area-inset-left))] pr-[max(1.5rem,env(safe-area-inset-right))] h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 group cursor-pointer">
             <img src="/rakeflow-logo.svg" alt="" className="w-8 h-8 rounded-lg" />
             <span className="text-white font-black text-xl tracking-tighter uppercase">
@@ -570,7 +572,7 @@ export default function Landing() {
 
       {/* CTA móvil fijo: pasada la primera pantalla, la oferta viaja contigo */}
       <div className={`sm:hidden fixed bottom-0 inset-x-0 z-50 transition-transform duration-300 ${showMobileCta ? 'translate-y-0' : 'translate-y-full'}`}>
-        <div className="flex gap-2 px-3 pt-2 pb-[calc(0.75rem+env(safe-area-inset-bottom))] bg-[#0a0f1a]/95 backdrop-blur-xl border-t border-gray-800">
+        <div className="flex gap-2 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pt-2 pb-[calc(0.75rem+env(safe-area-inset-bottom))] bg-[#0a0f1a]/95 backdrop-blur-xl border-t border-gray-800">
           <Link to="/register" className="flex-1 min-h-12 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 text-white font-bold text-sm uppercase tracking-wide flex items-center justify-center gap-2 active:scale-[0.98]">
             Probar 14 días gratis
           </Link>
@@ -587,7 +589,7 @@ export default function Landing() {
         target="_blank"
         rel="noopener noreferrer"
         aria-label="Agendar demo por WhatsApp"
-        className="group/fab hidden sm:flex fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] right-6 z-50 items-center gap-2.5 bg-[#25D366] hover:bg-[#20bd5a] text-white font-bold rounded-full pl-4 pr-5 py-3.5 shadow-[0_8px_30px_rgba(37,211,102,0.4)] hover:shadow-[0_8px_45px_rgba(37,211,102,0.65)] hover:-translate-y-0.5 transition-all duration-300 active:scale-95"
+        className="group/fab hidden sm:flex fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] right-[max(1.5rem,env(safe-area-inset-right))] z-50 items-center gap-2.5 bg-[#25D366] hover:bg-[#20bd5a] text-white font-bold rounded-full pl-4 pr-5 py-3.5 shadow-[0_8px_30px_rgba(37,211,102,0.4)] hover:shadow-[0_8px_45px_rgba(37,211,102,0.65)] hover:-translate-y-0.5 transition-all duration-300 active:scale-95"
       >
         <span className="absolute inset-0 rounded-full bg-[#25D366] animate-ping opacity-20 group-hover/fab:opacity-0"></span>
         <WhatsAppIcon className="w-6 h-6 relative z-10 shrink-0" />
