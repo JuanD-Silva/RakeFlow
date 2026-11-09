@@ -1,5 +1,5 @@
 # app/models.py
-from sqlalchemy import Column, Integer, String, Float, DateTime, Date, ForeignKey, Boolean, Enum as SqEnum, JSON, Index, text
+from sqlalchemy import Column, Integer, BigInteger, String, Float, DateTime, Date, ForeignKey, Boolean, Enum as SqEnum, JSON, Index, text
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
@@ -738,3 +738,47 @@ class PushSubscription(Base):
     p256dh = Column(String, nullable=False)
     auth = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class PasskeyCredential(Base):
+    """Passkey (WebAuthn) de un jugador: entrar con huella o cara.
+
+    La llave PRIVADA nunca sale del teléfono; acá solo vive la pública para
+    verificar la firma. Hoy solo la registra el rol PLAYER.
+
+    `opens` = las cuentas que la CLAVE de la sesión abría cuando se activó la
+    huella (el claim `uids`), cada una con la huella digital de su hash:
+    [{"uid": 12, "fp": "<sha256(hashed_password)>"}]. Al entrar con la huella
+    solo se ofrecen las cuentas cuyo hash NO cambió: si la clave se cambia o la
+    cuenta se libera y la activa otra persona, la huella deja de abrirla sola,
+    sin tener que perseguir cada lugar donde se escribe una clave. Igual que el
+    login multi-cuenta: nunca se re-deriva del teléfono (ver app/accounts.py)."""
+    __tablename__ = "passkey_credentials"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    # id de la credencial (base64url) que manda el navegador: así se busca al entrar.
+    credential_id = Column(String, nullable=False, unique=True, index=True)
+    public_key = Column(String, nullable=False)        # COSE, base64url
+    sign_count = Column(BigInteger, nullable=False, default=0)
+    transports = Column(String, nullable=True)         # "internal,hybrid"
+    device_label = Column(String, nullable=True)       # "iPhone", "Android" (del user-agent)
+    opens = Column(JSON, nullable=False, default=list)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    last_used_at = Column(DateTime, nullable=True)
+
+
+class PasskeyChallenge(Base):
+    """Desafío WebAuthn de un solo uso (5 min). Se BORRA al usarse: la misma
+    firma no se puede reenviar (muchas passkeys sincronizadas reportan
+    sign_count=0 siempre, así que el contador no protege contra replay)."""
+    __tablename__ = "passkey_challenges"
+
+    id = Column(Integer, primary_key=True, index=True)
+    challenge = Column(String, nullable=False, unique=True)   # base64url
+    purpose = Column(String, nullable=False)                  # 'register' | 'login'
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
+    # Solo en 'register': las cuentas que la clave confirmada abrió (pasan tal
+    # cual a PasskeyCredential.opens si la huella se verifica).
+    opens = Column(JSON, nullable=True)
+    expires_at = Column(DateTime, nullable=False, index=True)

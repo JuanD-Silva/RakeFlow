@@ -131,6 +131,10 @@ class AuditAction:
     PUSH_TABLE_OPEN = "PUSH_TABLE_OPEN"        # "hoy hay mesa" por club (1/día)
     PUSH_ANNOUNCEMENT = "PUSH_ANNOUNCEMENT"    # anuncio del club (1/día)
 
+    # Passkeys (huella/cara) del jugador
+    PASSKEY_ADDED = "PASSKEY_ADDED"
+    PASSKEY_REMOVED = "PASSKEY_REMOVED"
+
 
 async def log_action(
     db: AsyncSession,
