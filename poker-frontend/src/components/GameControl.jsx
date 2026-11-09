@@ -9,6 +9,7 @@ import TransactionForm from './TransactionForm';
 import CloseSessionForm from './CloseSessionForm';
 import StatsPanel from './StatsPanel';
 import DealerPanel from './DealerPanel';
+import SessionRakeSummary from './SessionRakeSummary';
 import PlayerTable from './PlayerTable';
 import api from '../api/axios';
 import ConfirmModal from './ConfirmModal';
@@ -635,7 +636,12 @@ const handleCreateTournament = async (formData) => {
            <ActionButton color="yellow" label="🤝 Propina Dealer" onClick={() => handleOpenModal("tip", "Registrar Propina")} />
 
            <div className="col-span-2 md:col-span-3 mt-2">
-              <DealerPanel sessionId={activeSession?.id} publicToken={activeSession?.public_token} refreshTrigger={refreshKey} />
+              <DealerPanel sessionId={activeSession?.id} publicToken={activeSession?.public_token} refreshTrigger={refreshKey} onChanged={refresh} />
+           </div>
+
+           {/* Rake recolectado + gastos de la mesa (OWNER/MANAGER; el cajero no lo ve) */}
+           <div className="col-span-2 md:col-span-3">
+              <SessionRakeSummary sessionId={activeSession?.id} refreshTrigger={refreshKey} />
            </div>
 
            <div className="col-span-2 md:col-span-3 mt-2">

@@ -19,7 +19,7 @@ function formatElapsed(minutes) {
  * El cronómetro usa elapsed_minutes que calcula el backend (no parsea
  * datetimes naive en el front) y tickea localmente cada 30s.
  */
-export default function DealerPanel({ sessionId, publicToken, refreshTrigger }) {
+export default function DealerPanel({ sessionId, publicToken, refreshTrigger, onChanged }) {
   const { isOwner, isManager } = useAuth();
   const [openShift, setOpenShift] = useState(null);
   const [localMinutes, setLocalMinutes] = useState(0);
@@ -67,6 +67,7 @@ export default function DealerPanel({ sessionId, publicToken, refreshTrigger }) 
   const handleSuccess = () => {
     setModalMode(null);
     setReloadKey(k => k + 1);
+    onChanged?.(); // p.ej. la sección de rake de la mesa se refresca al instante
   };
 
   if (!sessionId) return null;

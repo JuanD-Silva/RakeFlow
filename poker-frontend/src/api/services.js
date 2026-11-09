@@ -577,6 +577,11 @@ export const dealerService = {
         const res = await api.get(`/sessions/${sessionId}/dealer-payments`);
         return res.data;
     },
+    // Rake recolectado + gastos (dealers, cortesías) de UNA mesa cash. OWNER/MANAGER.
+    getSessionRakeSummary: async (sessionId) => {
+        const res = await api.get(`/sessions/${sessionId}/rake-summary`);
+        return res.data;
+    },
     getPayouts: async (startDate = null, endDate = null, dealerId = null) => {
         const params = new URLSearchParams();
         if (startDate) params.append('start_date', startDate);
