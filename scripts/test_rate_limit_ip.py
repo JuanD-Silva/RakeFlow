@@ -12,6 +12,7 @@ Antes, detrás del proxy de Railway, todos los usuarios compartían una sola IP
   6. (revisión) XFF en dos líneas: cuenta la última línea, no la del cliente.
   7. (revisión) Vincular 2ª cuenta probando la clave hermana: freno por persona.
   8. (revisión) Inundar con cuentas inventadas no desaloja el bloqueo de la víctima.
+  9. X-Real-IP (documentado por Railway) manda sobre X-Forwarded-For.
 
 Uso: python scripts/test_rate_limit_ip.py
 """
@@ -168,6 +169,20 @@ def main():
             check(r.status_code == 429, "10 claves hermanas malas desde 10 IPs → bloqueado (ya no es oráculo)")
             check(login("3008880003", "ClaveBuena1", "198.51.106.51").status_code == 429,
                   "y comparte freno con el login del mismo teléfono")
+
+            print("\n[9] X-Real-IP (el que Railway documenta y sobrescribe)")
+            for i in range(10):
+                c.post(f"{BASE}/auth/login", data={"username": f"y{i}@x.co", "password": "x"},
+                       headers={"X-Real-IP": "198.51.107.1", "X-Forwarded-For": f"198.51.108.{i}, 10.0.0.1"})
+            r = c.post(f"{BASE}/auth/login", data={"username": "y99@x.co", "password": "x"},
+                       headers={"X-Real-IP": "198.51.107.1", "X-Forwarded-For": "198.51.108.99, 10.0.0.1"})
+            check(r.status_code == 429, "X-Real-IP manda sobre X-Forwarded-For")
+            r = c.post(f"{BASE}/auth/login", data={"username": "y100@x.co", "password": "x"},
+                       headers={"X-Real-IP": "198.51.107.2", "X-Forwarded-For": "198.51.108.1, 10.0.0.1"})
+            check(r.status_code == 401, "otro X-Real-IP = otro cupo (aunque el salto interno sea el mismo)")
+            r = c.post(f"{BASE}/auth/login", data={"username": "y101@x.co", "password": "x"},
+                       headers={"X-Real-IP": "no-es-ip", "X-Forwarded-For": "198.51.109.1"})
+            check(r.status_code == 401, "X-Real-IP inválido → cae al respaldo sin romper")
 
             print("\n[8] Desalojo de memoria")
             th = FailureThrottle(max_failures=3, window_seconds=900, max_keys=100)

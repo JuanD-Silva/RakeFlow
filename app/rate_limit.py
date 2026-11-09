@@ -7,25 +7,33 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 
+def _ip(value):
+    try:
+        return str(ipaddress.ip_address((value or "").strip()))
+    except ValueError:
+        return None
+
+
 def client_ip(request) -> str:
     """IP real del cliente detrás del proxy de Railway.
 
-    get_remote_address ve la IP del PROXY (uvicorn no le cree al proxy), así que
-    todos los usuarios compartían UN solo cupo: los límites eran globales para
-    todo RakeFlow (8 activaciones/hora en total, 10 logins/minuto en total...).
+    get_remote_address ve la IP del PROXY, así que todos compartían UN cupo.
 
-    Se usa la ÚLTIMA IP de X-Forwarded-For: la agrega el proxy de Railway y el
-    cliente no la puede falsificar (las de la izquierda sí: las manda él). Si
-    no hay encabezado (local), la IP de la conexión."""
-    # getlist: si el proxy AGREGA una línea nueva del encabezado (en vez de
-    # unirla con coma), .get() devolvería la primera = la que mandó el cliente.
+    1) X-Real-IP: es el encabezado que Railway documenta para la IP del
+       cliente y su borde lo SOBRESCRIBE en cada request (el cliente no lo
+       puede falsificar). Verificado en prod: X-Forwarded-For llega siempre
+       con 2 entradas aunque el cliente mande una falsa, o sea que Railway lo
+       reescribe y la última es un salto interno, no el cliente.
+    2) Respaldo: última entrada de X-Forwarded-For (última línea).
+    3) Sin encabezados (local): la IP de la conexión."""
+    real = _ip(request.headers.get("x-real-ip"))
+    if real:
+        return real
     lines = request.headers.getlist("x-forwarded-for")
     if lines:
-        last = lines[-1].split(",")[-1].strip()
-        try:
-            return str(ipaddress.ip_address(last))
-        except ValueError:
-            pass
+        last = _ip(lines[-1].split(",")[-1])
+        if last:
+            return last
     return get_remote_address(request)
 
 
