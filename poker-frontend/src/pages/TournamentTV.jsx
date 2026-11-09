@@ -110,7 +110,7 @@ export default function TournamentTV() {
       : { txt: '■ POR INICIAR', cls: 'bg-gray-600/20 text-gray-300 ring-gray-500/40' };
 
   return (
-    <div className="relative h-[100dvh] w-full flex flex-col text-white overflow-hidden bg-[#070b14]">
+    <div className="rf-vh relative w-full flex flex-col text-white overflow-hidden bg-[#070b14]">
       {/* Fondo: glows + grilla sutil */}
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
         <div className={`absolute -top-1/4 left-1/4 w-[60vw] h-[60vw] rounded-full blur-[140px] ${isBreak ? 'bg-sky-600/10' : 'bg-violet-600/10'}`} />
