@@ -10,9 +10,16 @@ input[type="number"] {
   -moz-appearance: textfield;
 }
 
-/* Estilos globales */
+/* Estilos globales.
+   Fondo = el mismo navy de la marca (theme-color #0a0f1a). Safari 26 en iPhone
+   ignora theme-color y tiñe sus barras (arriba/abajo) con el fondo de html/body;
+   con el gris #1a1a1a anterior la landing quedaba con franjas grises sobre el
+   azul, y el rebote del scroll también mostraba gris. */
+html,
 body {
-  background-color: #1a1a1a;
+  background-color: #0a0f1a;
+}
+body {
   color: #ffffff;
 }
 
