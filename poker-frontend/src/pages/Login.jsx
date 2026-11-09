@@ -33,7 +33,7 @@ export default function Login() {
   // dentro del toque, y esperar al servidor en medio hace que lo rechace.
   const [passkeyReady, setPasskeyReady] = useState(false);
   const [pkBusy, setPkBusy] = useState(false);
-  const pkOpts = useRef(null); // {challenge_id, options, at}
+  const pkOpts = useRef(null); // {options, at}
 
   const prefetchPasskey = useCallback(async () => {
     try {
@@ -49,10 +49,21 @@ export default function Login() {
       if (!ok || cancelled) return;
       setPasskeyReady(true);
       prefetchPasskey();
-      // El desafío vence a los 5 min: se renueva mientras la pantalla está abierta.
+      // El desafío vence a los 5 min: se renueva mientras la pantalla está
+      // abierta. Con el celular bloqueado el intervalo se congela, así que
+      // también al volver a la pantalla.
       timer = setInterval(prefetchPasskey, 4 * 60 * 1000);
     });
-    return () => { cancelled = true; clearInterval(timer); };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible'
+          && (!pkOpts.current || Date.now() - pkOpts.current.at > 60 * 1000)) prefetchPasskey();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [prefetchPasskey]);
 
   // Entra con el token recibido (login directo o cuenta ya elegida). El router
@@ -87,14 +98,19 @@ export default function Login() {
   const handlePasskey = async () => {
     setPkBusy(true);
     setError('');
+    // Si hubo que pedir el desafío DENTRO del toque, iOS puede rechazar la
+    // huella (el toque "se vence" esperando al servidor): ahí se avisa en vez
+    // de callar como en una cancelación normal.
+    let fetchedInTap = false;
     try {
       let opts = pkOpts.current;
       pkOpts.current = null; // un desafío, un intento
       if (!opts || Date.now() - opts.at > 4 * 60 * 1000) {
+        fetchedInTap = true;
         opts = await passkeyService.loginOptions();
       }
       const credential = await getPasskey(opts.options);
-      const data = await passkeyService.loginVerify(opts.challenge_id, credential);
+      const data = await passkeyService.loginVerify(credential);
       if (data.multi_account) {
         setAccounts(data.accounts);
         setSelectToken(data.select_token);
@@ -103,7 +119,9 @@ export default function Login() {
         return;
       }
     } catch (err) {
-      if (!isCancel(err)) {
+      if (isCancel(err)) {
+        if (fetchedInTap) setError('Toca "Entrar con huella o cara" otra vez.');
+      } else {
         const { code, message } = passkeyError(err, 'No pudimos entrar con la huella. Entra con tu clave.');
         if (code === 'passkey_unknown' || code === 'passkey_revoked') {
           // Ya no sirve en este celular: fuera el botón, vuelve la clave.

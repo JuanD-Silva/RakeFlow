@@ -687,8 +687,9 @@ export const passkeyService = {
     list: async () => (await api.get('/player/passkeys')).data,
     remove: async (id) => (await api.delete(`/player/passkeys/${id}`)).data,
     loginOptions: async () => (await publicApi.post('/auth/passkey/options')).data,
-    loginVerify: async (challengeId, credential) =>
-        (await publicApi.post('/auth/passkey/verify', { challenge_id: challengeId, credential })).data,
+    // El desafío va firmado dentro de la credencial: no hay id que mandar.
+    loginVerify: async (credential) =>
+        (await publicApi.post('/auth/passkey/verify', { credential })).data,
 };
 
 export const pushService = {

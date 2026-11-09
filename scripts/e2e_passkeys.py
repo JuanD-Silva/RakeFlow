@@ -12,7 +12,11 @@ ECDSA), así se prueba el backend completo sin navegador:
   4. Cambio de clave: esa cuenta deja de abrirse; si cambian todas, la
      passkey se borra (passkey_revoked).
   5. Quitar: solo las propias (otro jugador → 404); después ya no entra.
-  6. Desafío vencido → 400. Borrar el usuario borra sus passkeys (CASCADE).
+  6. Desafío vencido o falsificado → 400. Borrar el usuario borra sus
+     passkeys (CASCADE).
+  7. Revisión: login sin escribir en DB; nadie quema el desafío de activación
+     de otro; cuentas de staff con la misma clave NO entran por huella; quitar
+     desde la otra cuenta de la misma sesión (multi-cuenta).
 
 Uso: python scripts/e2e_passkeys.py
 """
@@ -25,6 +29,8 @@ import struct
 import subprocess
 import sys
 import time
+
+import hmac
 
 import cbor2
 import httpx
@@ -172,6 +178,7 @@ def main():
             p_b = seed_user(cb, "PLAYER", "JugadorB", PW)              # misma persona, otro club, MISMA clave
             d_a = seed_user(ca, "DEALER", "DealerA", "OtraClave999")   # mismo número, OTRA clave
             q_a = seed_user(ca, "PLAYER", "OtroJugador", "ClaveQ1234", phone="573009990222")
+            s_a = seed_user(ca, "CASHIER", "CajeroA", PW)              # misma clave, cuenta de STAFF
             h_pa = {"Authorization": f"Bearer {jwt_for(p_a, ca, 'player', [p_a, p_b])}"}
             h_q = {"Authorization": f"Bearer {jwt_for(q_a, ca, 'player')}"}
             h_d = {"Authorization": f"Bearer {jwt_for(d_a, ca, 'dealer')}"}
@@ -194,7 +201,8 @@ def main():
             check(r.status_code == 201, f"verify → 201 (got {r.status_code}: {r.text[:120]})")
             opens = json.loads(psql(f"SELECT opens FROM passkey_credentials WHERE credential_id='{b64(phone.cred_id)}'"))
             got = sorted(o["uid"] for o in opens)
-            check(got == sorted([p_a, p_b]), f"abre jugador A y B (misma clave), NO el dealer (otra clave): {got}")
+            check(got == sorted([p_a, p_b]),
+                  f"abre jugador A y B (misma clave), NO el dealer (otra clave) NI el cajero (staff): {got}")
             r = c.post(f"{BASE}/player/passkeys/register/verify", headers=h_pa,
                        json={"challenge_id": opt["challenge_id"], "credential": phone.create(opt["options"])})
             check(r.status_code == 400 and r.json()["detail"]["code"] == "challenge_expired", "reusar el desafío → 400")
@@ -207,21 +215,31 @@ def main():
             lst = c.get(f"{BASE}/player/passkeys", headers=h_pa).json()["passkeys"]
             check(len(lst) == 1, "lista: 1 dispositivo")
 
-            def login(auth, **kw):
-                o = c.post(f"{BASE}/auth/passkey/options").json()
+            def login(auth, options=None, **kw):
+                o = options or c.post(f"{BASE}/auth/passkey/options").json()
                 cred = auth.get(o["options"], user_handle=f"rf-u{p_a}".encode(), **kw)
-                return o, cred, c.post(f"{BASE}/auth/passkey/verify",
-                                       json={"challenge_id": o["challenge_id"], "credential": cred})
+                return o, cred, c.post(f"{BASE}/auth/passkey/verify", json={"credential": cred})
+
+            def forged_challenge(exp_delta, key=auth_utils.SECRET_KEY):
+                body = os.urandom(16) + int(time.time() + exp_delta).to_bytes(8, "big")
+                mac = hmac.new(key.encode(), b"rf-passkey-login|" + body, hashlib.sha256).digest()[:16]
+                return {"options": {"challenge": b64(body + mac)}}
 
             print("\n[2] Entrar")
+            n0 = psql("SELECT count(*) FROM passkey_challenges")
             o, cred, r = login(phone)
             check(r.status_code == 200 and r.json().get("multi_account") is True, "huella → selector multi-cuenta")
+            check(int(psql("SELECT count(*) FROM passkey_challenges")) == int(n0) + 1,
+                  "pedir el desafío de login no escribe en DB; solo la firma válida anota 1 fila")
             ids = sorted(a["user_id"] for a in r.json()["accounts"])
             check(ids == sorted([p_a, p_b]), f"ofrece A y B, no el dealer: {ids}")
             r2 = c.post(f"{BASE}/auth/select-account", json={"select_token": r.json()["select_token"], "user_id": p_a})
             check(r2.status_code == 200 and r2.json()["role"] == "player", "elegir cuenta → token de jugador")
-            r = c.post(f"{BASE}/auth/passkey/verify", json={"challenge_id": o["challenge_id"], "credential": cred})
-            check(r.status_code == 400, "reenviar la misma firma (replay) → 400")
+            r = c.post(f"{BASE}/auth/passkey/verify", json={"credential": cred})
+            check(r.status_code in (400, 401), f"reenviar la misma firma (replay) → rechazado ({r.status_code})")
+            _, _, r = login(phone, options=forged_challenge(300, key="no-es-la-clave"))
+            check(r.status_code == 400 and r.json()["detail"]["code"] == "challenge_expired",
+                  "desafío inventado (firma HMAC falsa) → 400")
             _, _, r = login(phone, signer=ec.generate_private_key(ec.SECP256R1()))
             check(r.status_code == 401 and r.json()["detail"]["code"] == "verify_failed", "firma falsa → 401")
             _, _, r = login(phone, flags=0x01)
@@ -257,14 +275,27 @@ def main():
             check(n_audit >= 4, f"auditoría: activaciones y retiros registrados ({n_audit})")
 
             print("\n[5] Desafío vencido + borrado en cascada")
-            o = c.post(f"{BASE}/auth/passkey/options").json()
-            psql(f"UPDATE passkey_challenges SET expires_at = now() - interval '1 minute' WHERE id={o['challenge_id']};")
-            r = c.post(f"{BASE}/auth/passkey/verify", json={"challenge_id": o["challenge_id"], "credential": phone2.get(o["options"])})
+            _, _, r = login(phone2, options=forged_challenge(-60))
             check(r.status_code == 400 and r.json()["detail"]["code"] == "challenge_expired", "desafío vencido → 400")
             opt = c.post(f"{BASE}/player/passkeys/register/options", headers=h_pa, json={"password": "NuevaA1234"}).json()
             c.post(f"{BASE}/player/passkeys/register/verify", headers=h_pa,
                    json={"challenge_id": opt["challenge_id"], "credential": SoftAuthenticator().create(opt["options"])})
             check(psql(f"SELECT count(*) FROM passkey_credentials WHERE user_id={p_a}") == "1", "passkey activa antes de borrar")
+            print("\n[6] Hallazgos de la revisión")
+            opt_v = c.post(f"{BASE}/player/passkeys/register/options", headers=h_pa, json={"password": "NuevaA1234"}).json()
+            r = c.post(f"{BASE}/player/passkeys/register/verify", headers=h_q,
+                       json={"challenge_id": opt_v["challenge_id"], "credential": SoftAuthenticator().create(opt_v["options"])})
+            check(r.status_code == 400, "otro jugador manda MI challenge_id → 400")
+            r = c.post(f"{BASE}/player/passkeys/register/verify", headers=h_pa,
+                       json={"challenge_id": opt_v["challenge_id"], "credential": SoftAuthenticator().create(opt_v["options"])})
+            check(r.status_code == 201, "…y mi desafío sigue sirviendo (no lo quemó)")
+            psql(f"UPDATE users SET hashed_password='{new_hash('NuevaA1234')}' WHERE id={p_b};")
+            h_pb = {"Authorization": f"Bearer {jwt_for(p_b, cb, 'player', [p_a, p_b])}"}
+            lst = c.get(f"{BASE}/player/passkeys", headers=h_pb).json()["passkeys"]
+            check(len(lst) == 2, f"desde la cuenta B de la misma sesión se ven las huellas de A ({len(lst)})")
+            check(c.delete(f"{BASE}/player/passkeys/{lst[0]['id']}", headers=h_pb).status_code == 200,
+                  "…y se pueden quitar (multi-cuenta)")
+
             cleanup_users()
             check(psql(f"SELECT count(*) FROM passkey_credentials WHERE user_id={p_a}") == "0",
                   "borrar el usuario borra sus passkeys (ON DELETE CASCADE)")
