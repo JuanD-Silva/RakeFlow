@@ -60,17 +60,25 @@ async def _reconcile_pending(db: AsyncSession, summary: dict[str, Any]) -> None:
     DECLINED/ERROR/VOIDED libera la reserva. Sin transacción conocida y con
     más de 24 h, se marca ERROR: Wompi nunca registró el cobro."""
     old = datetime.utcnow() - timedelta(hours=1)
-    rows = (await db.execute(
-        select(models.SubscriptionPayment)
+    row_ids = (await db.execute(
+        select(models.SubscriptionPayment.id)
         .where(models.SubscriptionPayment.status == ledger.PENDING)
         .where(models.SubscriptionPayment.created_at <= old)
         .limit(MAX_BATCH)
     )).scalars().all()
-    for row in rows:
+    # Por id y releída en cada vuelta: un rollback expira los objetos de la
+    # sesión y un lazy load en async revienta (MissingGreenlet).
+    for rid in row_ids:
         try:
+            row = await db.get(models.SubscriptionPayment, rid, populate_existing=True)
+            if row is None or row.status != ledger.PENDING:
+                continue
             if not row.provider_tx_id:
                 # Cobro en el aire sin transaction_id: se busca por referencia.
                 found = await payments_wompi.find_transactions_by_reference(row.reference)
+                if found:
+                    # Solo transacciones de ESTA referencia (por si el filtro no se aplicó).
+                    found = [x for x in found if x.get("reference") == row.reference] or None
                 if found:
                     row.provider_tx_id = found[0].get("id")
                     await db.commit()
@@ -112,7 +120,7 @@ async def _reconcile_pending(db: AsyncSession, summary: dict[str, Any]) -> None:
                 await ledger.mark(db, row, ledger.DECLINED if st == "DECLINED" else ledger.ERROR)
                 summary["reconciled"] += 1
         except Exception:
-            logger.exception("renewal_reconcile_failed ref=%s", row.reference)
+            logger.exception("renewal_reconcile_failed id=%s", rid)
             await db.rollback()
 
 
@@ -134,6 +142,7 @@ async def run_renewals(db: AsyncSession, plan_price_cop: int, *, dry_run: bool =
         .limit(MAX_BATCH)
     )
     candidates = (await db.execute(stmt)).scalars().all()
+    candidate_ids = [c.id for c in candidates]  # antes de cualquier rollback (expira objetos)
 
     summary: dict[str, Any] = {
         "ts": now.isoformat(),
@@ -162,12 +171,25 @@ async def run_renewals(db: AsyncSession, plan_price_cop: int, *, dry_run: bool =
 
     await _reconcile_pending(db, summary)
 
-    for club in candidates:
+    for club_id in candidate_ids:
         try:
             # Releer el club: la conciliación, un webhook o /subscribe pudieron
-            # renovarlo después de armar la lista de candidatos.
-            await db.refresh(club)
+            # renovarlo después de armar la lista (y un rollback expira objetos).
+            club = await db.get(models.Club, club_id, populate_existing=True)
+            if club is None or not club.subscription_active or not club.wompi_payment_source_id:
+                continue
             if club.subscription_period_end and club.subscription_period_end > cutoff:
+                summary["skipped_recent"] += 1
+                continue
+            # Un /wompi/subscribe en vuelo (el dueño pagando ahora): no cobrar encima.
+            sub_pending = (await db.execute(
+                select(models.SubscriptionPayment.id)
+                .where(models.SubscriptionPayment.club_id == club_id)
+                .where(models.SubscriptionPayment.kind == "subscribe")
+                .where(models.SubscriptionPayment.status == ledger.PENDING)
+                .limit(1)
+            )).scalar()
+            if sub_pending:
                 summary["skipped_recent"] += 1
                 continue
             if await _had_recent_attempt(db, club.id):
@@ -304,7 +326,7 @@ async def run_renewals(db: AsyncSession, plan_price_cop: int, *, dry_run: bool =
                 summary["details"].append({"club_id": club.id, "status": status, "tx": transaction_id})
 
         except Exception:
-            logger.exception("renewal_unexpected_error club=%s", getattr(club, "id", "?"))
+            logger.exception("renewal_unexpected_error club=%s", club_id)
             summary["errors"] += 1
             await db.rollback()
 

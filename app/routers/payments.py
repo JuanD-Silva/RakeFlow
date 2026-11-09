@@ -360,8 +360,17 @@ async def wompi_subscribe(
             reference=reference,
         )
     except httpx.HTTPStatusError as e:
-        # Wompi rechazó la solicitud: no hubo cobro → se libera la reserva.
         logger.error("wompi_subscribe_charge_failed: %s", e.response.text)
+        if e.response.status_code >= 500:
+            # 5xx: Wompi pudo haber procesado el cobro → queda PENDING (incierto)
+            # y lo cierra el webhook o la conciliación por referencia.
+            return {
+                "subscription_active": False,
+                "transaction_id": None,
+                "wompi_status": "PENDING",
+                "message": "Pago en proceso. Te avisamos cuando se acredite; no lo intentes de nuevo todavía.",
+            }
+        # 4xx: Wompi rechazó la solicitud, no hubo cobro → se libera la reserva.
         await ledger.mark(db, attempt, ledger.ERROR)
         raise HTTPException(status_code=400, detail="No se pudo procesar el cobro. La tarjeta quedó registrada pero el primer pago falló.")
     except Exception as e:

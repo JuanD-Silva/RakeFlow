@@ -71,6 +71,9 @@ CHARGE_MODE = {"mode": "approved", "delay": 0.0}
 
 
 async def fake_get_transaction(tx_id):
+    if tx_id not in TXS:
+        raise httpx.HTTPStatusError("404", request=httpx.Request("GET", "http://w"),
+                                    response=httpx.Response(404))
     return dict(TXS[tx_id])
 
 
@@ -302,6 +305,52 @@ async def main():
             check(len(mine) == 2 and days(period_end(cid), tomorrow) == 30,
                   "Wompi confirma que no existe → libera, cobra y renueva")
             FIND["result"] = None
+
+            # Robustez de la conciliación: una fila que revienta no tumba el cron.
+            psql(f"DELETE FROM audit_logs WHERE club_id={cid} AND action LIKE 'SUBSCRIPTION_RENEW%'")
+            psql(f"DELETE FROM subscription_payments WHERE club_id={cid} AND kind='renew'")
+            psql(f"UPDATE clubs SET subscription_period_end='{tomorrow.isoformat()}' WHERE id={cid}")
+            psql(f"INSERT INTO subscription_payments (club_id, reference, provider_tx_id, kind, status, created_at) "
+                 f"VALUES ({cid}, 'rakeflow-club-{cid}-chk-bad', 'tx-no-existe', 'checkout', 'PENDING', now() - interval '2 hours')")
+            ok_ref = f"rakeflow-club-{cid}-chk-good"
+            ok_tx = add_tx(ok_ref)
+            psql(f"INSERT INTO subscription_payments (club_id, reference, provider_tx_id, kind, status, created_at) "
+                 f"VALUES ({cid}, '{ok_ref}', '{ok_tx}', 'checkout', 'PENDING', now() - interval '2 hours')")
+            CHARGE_MODE.update(mode="approved")
+            n5 = len(CHARGES)
+            s = await run()
+            check(psql(f"SELECT status FROM subscription_payments WHERE reference='{ok_ref}'") == "APPROVED",
+                  "una fila que falla en la conciliación no impide conciliar las demás")
+            check(days(period_end(cid), tomorrow) == 30, "la conciliada suma 30 días")
+            mine = [x for x in CHARGES[n5:] if x["reference"].startswith(f"rakeflow-club-{cid}-")]
+            check(len(mine) == 0, "y el cron no cobra encima (ya quedó cubierto)")
+            psql(f"DELETE FROM subscription_payments WHERE reference='rakeflow-club-{cid}-chk-bad'")
+
+            # La búsqueda por referencia devuelve una transacción AJENA → no se usa.
+            psql(f"DELETE FROM subscription_payments WHERE club_id={cid} AND kind='renew'")
+            psql(f"DELETE FROM audit_logs WHERE club_id={cid} AND action LIKE 'SUBSCRIPTION_RENEW%'")
+            psql(f"UPDATE clubs SET subscription_period_end='{tomorrow.isoformat()}' WHERE id={cid}")
+            foreign = add_tx("rakeflow-club-999999-renew-x")
+            FIND["result"] = [dict(TXS[foreign])]
+            amb = f"rakeflow-club-{cid}-renew-{key_t}-amb"
+            psql(f"INSERT INTO subscription_payments (club_id, reference, kind, status, period_key, created_at) "
+                 f"VALUES ({cid}, '{amb}', 'renew', 'PENDING', '{key_t}', now() - interval '2 hours')")
+            pe_before = period_end(cid)
+            await run()
+            check(psql(f"SELECT status, provider_tx_id IS NULL FROM subscription_payments WHERE reference='{amb}'") == "PENDING\tt"
+                  and period_end(cid) == pe_before, "transacción de otra referencia → se ignora, sigue PENDING")
+            FIND["result"] = None
+            psql(f"DELETE FROM subscription_payments WHERE reference='{amb}'")
+
+            # /wompi/subscribe en vuelo → el cron no cobra encima.
+            psql(f"DELETE FROM audit_logs WHERE club_id={cid} AND action LIKE 'SUBSCRIPTION_RENEW%'")
+            psql(f"INSERT INTO subscription_payments (club_id, reference, kind, status) "
+                 f"VALUES ({cid}, 'rakeflow-club-{cid}-sub-inflight', 'subscribe', 'PENDING')")
+            n6 = len(CHARGES)
+            await run()
+            mine = [x for x in CHARGES[n6:] if x["reference"].startswith(f"rakeflow-club-{cid}-")]
+            check(len(mine) == 0, "subscribe en vuelo → el cron no cobra")
+            psql(f"DELETE FROM subscription_payments WHERE reference='rakeflow-club-{cid}-sub-inflight'")
 
             # DECLINED libera el periodo para reintentar otro día.
             psql(f"DELETE FROM audit_logs WHERE club_id={cid} AND action LIKE 'SUBSCRIPTION_RENEW%'")
