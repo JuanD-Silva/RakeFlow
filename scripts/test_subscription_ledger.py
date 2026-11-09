@@ -92,6 +92,13 @@ async def fake_charge(*, payment_source_id, customer_email, amount_cop, referenc
     return {**TXS[tx_id], "status": first}
 
 
+FIND = {"result": None}          # find_transactions_by_reference: None = falla, [] = no existe
+
+
+async def fake_find(reference):
+    return FIND["result"]
+
+
 async def fast_sleep(_):
     return None
 
@@ -99,6 +106,7 @@ async def fast_sleep(_):
 payments_wompi.get_transaction = fake_get_transaction
 payments_wompi.create_payment_source = fake_create_payment_source
 payments_wompi.charge_payment_source = fake_charge
+payments_wompi.find_transactions_by_reference = fake_find
 payments_wompi.verify_webhook_signature = lambda raw, h: True
 payments_router.asyncio = types.SimpleNamespace(sleep=fast_sleep)
 from app import email_service  # noqa: E402
@@ -155,8 +163,10 @@ async def main():
             r = await c.post("/payments/wompi/confirm", headers=h,
                              json={"transaction_id": add_tx(f"rakeflow-club-{cid}-chk-3", currency="USD")})
             check(r.status_code == 400 and period_end(cid) == pe1, "moneda USD → 400, no suma")
-            check(psql(f"SELECT count(*) FROM audit_logs WHERE club_id={cid} AND action='SUBSCRIPTION_PAYMENT_REJECTED'") == "1",
-                  "el monto rechazado queda en auditoría")
+            check(psql(f"SELECT count(*) FROM audit_logs WHERE club_id={cid} AND action='SUBSCRIPTION_PAYMENT_REJECTED'") == "2",
+                  "monto y moneda rechazados quedan en auditoría")
+            check(psql(f"SELECT count(*) FROM subscription_payments WHERE club_id={cid} AND status='REVIEW'") == "2",
+                  "y en REVIEW (no quedan PENDING para siempre)")
             legacy_tx = add_tx(f"rakeflow-club-{cid}-old-9")
             psql(f"INSERT INTO subscription_payments (club_id, reference, provider_tx_id, kind, status) "
                  f"VALUES ({cid}, 'legacy-{legacy_tx}', '{legacy_tx}', 'legacy', 'APPROVED')")
@@ -178,6 +188,11 @@ async def main():
             t_low = add_tx(f"rakeflow-club-{cid}-chk-5", cents=500000)
             await c.post("/payments/wompi/webhook", json=webhook_body(t_low))
             check(period_end(cid) == pe2, "webhook con monto menor al plan → no suma")
+            ta, tb = add_tx(f"rakeflow-club-{cid}-chk-6"), add_tx(f"rakeflow-club-{cid}-chk-7")
+            await asyncio.gather(c.post("/payments/wompi/webhook", json=webhook_body(ta)),
+                                 c.post("/payments/wompi/webhook", json=webhook_body(tb)))
+            check(days(period_end(cid), pe2) == 60, "dos pagos distintos a la vez → +60 (sin lost update)")
+            pe2 = period_end(cid)
 
             print("\n[3] /wompi/subscribe")
             sub = {"card_token": "tok", "acceptance_token": "acc", "accept_personal_auth": "pa"}
@@ -193,7 +208,16 @@ async def main():
             await c.post("/payments/wompi/webhook", json=webhook_body(sub_tx))
             check(period_end(cid) == pe3, "el webhook del cobro de subscribe no vuelve a sumar")
 
-            CHARGE_MODE.update(mode="timeout")
+            CHARGE_MODE.update(mode="approved", delay=0.3)
+            n_par = len(CHARGES)
+            ra, rb = await asyncio.gather(c.post("/payments/wompi/subscribe", headers=h, json=sub),
+                                          c.post("/payments/wompi/subscribe", headers=h, json=sub))
+            check(len(CHARGES) == n_par + 1 and sorted([ra.status_code, rb.status_code]) == [200, 409],
+                  "dos subscribe simultáneos → UN cobro y un 409")
+            check(days(period_end(cid), pe3) == 30, "y suma 30 días una vez")
+            pe3 = period_end(cid)
+
+            CHARGE_MODE.update(mode="timeout", delay=0)
             r = await c.post("/payments/wompi/subscribe", headers=h, json=sub)
             check(r.status_code == 200 and r.json()["wompi_status"] == "PENDING", "timeout al cobrar → PENDING (no error)")
             check(psql(f"SELECT count(*) FROM subscription_payments WHERE club_id={cid} AND kind='subscribe' AND status='PENDING'") == "1",
@@ -244,6 +268,40 @@ async def main():
             mine = [x for x in CHARGES[n3:] if x["reference"].startswith(f"rakeflow-club-{cid}-")]
             check(s["reconciled"] >= 1 and days(period_end(cid), soon) == 30, "concilia el PENDING aprobado (+30)")
             check(len(mine) == 0, "y no vuelve a cobrar ese club en la misma corrida")
+
+            # Cobro en el aire SIN transaction_id (timeout del cron).
+            psql(f"DELETE FROM audit_logs WHERE club_id={cid} AND action LIKE 'SUBSCRIPTION_RENEW%'")
+            psql(f"DELETE FROM subscription_payments WHERE club_id={cid} AND kind='renew'")
+            psql(f"UPDATE clubs SET subscription_period_end='{tomorrow.isoformat()}' WHERE id={cid}")
+            CHARGE_MODE.update(mode="timeout")
+            n4 = len(CHARGES)
+            await run()
+            key_t = tomorrow.date().isoformat()
+            check(psql(f"SELECT status, provider_tx_id IS NULL FROM subscription_payments WHERE club_id={cid} "
+                       f"AND kind='renew' AND period_key='{key_t}'") == "PENDING\tt", "timeout del cron → PENDING sin tx")
+            psql(f"DELETE FROM audit_logs WHERE club_id={cid} AND action LIKE 'SUBSCRIPTION_RENEW%'")
+            psql(f"UPDATE subscription_payments SET created_at = now() - interval '2 hours' WHERE club_id={cid} AND period_key='{key_t}'")
+            FIND["result"] = None
+            CHARGE_MODE.update(mode="approved")
+            await run()
+            mine = [x for x in CHARGES[n4:] if x["reference"].startswith(f"rakeflow-club-{cid}-")]
+            check(len(mine) == 1, "sin poder consultar a Wompi (2 h) → sigue bloqueado, no recobra")
+            psql(f"UPDATE subscription_payments SET created_at = now() - interval '25 hours' WHERE club_id={cid} AND period_key='{key_t}'")
+            await run()
+            mine = [x for x in CHARGES[n4:] if x["reference"].startswith(f"rakeflow-club-{cid}-")]
+            check(psql(f"SELECT status FROM subscription_payments WHERE club_id={cid} AND period_key='{key_t}'") == "REVIEW"
+                  and len(mine) == 1, "a las 24 h → REVIEW y NUNCA recobra ese vencimiento")
+            check(psql(f"SELECT count(*) FROM audit_logs WHERE club_id={cid} AND action='SUBSCRIPTION_PAYMENT_REVIEW'") == "1",
+                  "queda en auditoría para revisión manual")
+            # Wompi responde que no existe → se libera y se cobra.
+            psql(f"UPDATE subscription_payments SET status='PENDING', created_at = now() - interval '2 hours' "
+                 f"WHERE club_id={cid} AND period_key='{key_t}'")
+            FIND["result"] = []
+            await run()
+            mine = [x for x in CHARGES[n4:] if x["reference"].startswith(f"rakeflow-club-{cid}-")]
+            check(len(mine) == 2 and days(period_end(cid), tomorrow) == 30,
+                  "Wompi confirma que no existe → libera, cobra y renueva")
+            FIND["result"] = None
 
             # DECLINED libera el periodo para reintentar otro día.
             psql(f"DELETE FROM audit_logs WHERE club_id={cid} AND action LIKE 'SUBSCRIPTION_RENEW%'")

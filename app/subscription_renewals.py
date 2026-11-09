@@ -21,6 +21,8 @@ mismo cobro no vuelve a sumar 30 días.
 
 import logging
 import secrets
+
+import httpx
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -67,10 +69,32 @@ async def _reconcile_pending(db: AsyncSession, summary: dict[str, Any]) -> None:
     for row in rows:
         try:
             if not row.provider_tx_id:
-                if row.created_at <= datetime.utcnow() - timedelta(hours=24):
+                # Cobro en el aire sin transaction_id: se busca por referencia.
+                found = await payments_wompi.find_transactions_by_reference(row.reference)
+                if found:
+                    row.provider_tx_id = found[0].get("id")
+                    await db.commit()
+                elif found == []:
+                    # Wompi respondió y no tiene esa referencia: no hubo cobro.
                     await ledger.mark(db, row, ledger.ERROR)
                     summary["reconciled"] += 1
-                continue
+                    continue
+                else:
+                    # No se pudo consultar. Pasadas 24 h se escala a revisión
+                    # manual (REVIEW sigue bloqueando el periodo: nunca se
+                    # vuelve a cobrar a ciegas un cobro que pudo haber salido).
+                    if row.created_at <= datetime.utcnow() - timedelta(hours=24):
+                        await ledger.mark(db, row, ledger.REVIEW)
+                        club = await db.get(models.Club, row.club_id)
+                        if club is not None:
+                            await log_action(db, club=club, action="SUBSCRIPTION_PAYMENT_REVIEW",
+                                             entity_type="Subscription",
+                                             meta={"reference": row.reference, "kind": row.kind,
+                                                   "reason": "uncertain_charge_unreconciled"})
+                            await db.commit()
+                        logger.error("subscription_payment_needs_review ref=%s club=%s", row.reference, row.club_id)
+                        summary["reconciled"] += 1
+                    continue
             tx = await payments_wompi.get_transaction(row.provider_tx_id)
             st = tx.get("status")
             if st == "APPROVED":
@@ -140,7 +164,9 @@ async def run_renewals(db: AsyncSession, plan_price_cop: int, *, dry_run: bool =
 
     for club in candidates:
         try:
-            # La conciliación pudo haber renovado este club recién: no cobrar otra vez.
+            # Releer el club: la conciliación, un webhook o /subscribe pudieron
+            # renovarlo después de armar la lista de candidatos.
+            await db.refresh(club)
             if club.subscription_period_end and club.subscription_period_end > cutoff:
                 summary["skipped_recent"] += 1
                 continue
@@ -167,6 +193,24 @@ async def run_renewals(db: AsyncSession, plan_price_cop: int, *, dry_run: bool =
                     reference=reference,
                     recurrent=True,
                 )
+            except httpx.HTTPStatusError as e:
+                # Wompi rechazó la solicitud (4xx/5xx con respuesta): en un 4xx
+                # no hubo cobro → se libera la reserva. Un 5xx queda PENDING
+                # (incierto) y lo concilia la próxima corrida.
+                code = e.response.status_code if e.response is not None else 0
+                logger.error("renewal_charge_http_error club=%s status=%s", club.id, code)
+                summary["errors"] += 1
+                if 400 <= code < 500:
+                    attempt.status = ledger.ERROR
+                    attempt.updated_at = datetime.utcnow()
+                await log_action(
+                    db, club=club,
+                    action="SUBSCRIPTION_RENEW_FAILED",
+                    entity_type="Subscription",
+                    meta={"reason": "charge_http_error", "status_code": code, "reference": reference},
+                )
+                await db.commit()
+                continue
             except Exception as e:
                 # Sin respuesta de Wompi no sabemos si cobró: la reserva queda
                 # PENDING (bloquea otro cobro de este vencimiento) y la concilia

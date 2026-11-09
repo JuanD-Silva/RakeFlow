@@ -15,7 +15,6 @@ reusar una transacción vieja. Ahora:
 import logging
 from datetime import datetime, timedelta
 
-from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -29,6 +28,10 @@ PLAN_PRICE = 199000  # COP — precio default del Plan Pro
 PERIOD_DAYS = 30
 
 APPROVED, PENDING, DECLINED, ERROR = "APPROVED", "PENDING", "DECLINED", "ERROR"
+# Terminal y manual: pago que no cuadra (monto/moneda) o cobro incierto que no
+# se pudo conciliar. En renovaciones BLOQUEA el periodo (índice parcial): mejor
+# no renovar que cobrar dos veces; queda en auditoría para revisarlo a mano.
+REVIEW = "REVIEW"
 
 
 def price_for(club: models.Club) -> int:
@@ -72,25 +75,12 @@ async def apply_approved(db: AsyncSession, club: models.Club, *, reference: str,
                          amount_in_cents: int | None, currency: str | None, kind: str, via: str,
                          request=None, extra_meta: dict | None = None) -> dict:
     """Aplica un pago APPROVED una sola vez. NO hace commit (lo hace el caller,
-    junto con sus propios cambios). Devuelve:
+    junto con sus propios cambios). Orden: idempotencia → bloqueo del club →
+    monto. Devuelve:
       {"applied": True,  "period_end": dt}             → se sumaron 30 días
       {"applied": False, "reason": "already_applied"}  → ya estaba aplicado
-      {"applied": False, "reason": "amount_mismatch" | "currency_mismatch"}
+      {"applied": False, "reason": "amount_mismatch" | "currency_mismatch"} → fila en REVIEW
     """
-    price = price_for(club)
-    if currency and currency.upper() != "COP":
-        logger.warning("subscription_currency_mismatch club=%s ref=%s cur=%s", club.id, reference, currency)
-        return {"applied": False, "reason": "currency_mismatch"}
-    if amount_in_cents is not None and int(amount_in_cents) < price * 100:
-        logger.warning("subscription_amount_mismatch club=%s ref=%s cents=%s price=%s",
-                       club.id, reference, amount_in_cents, price)
-        await log_action(db, club=club, request=request, action="SUBSCRIPTION_PAYMENT_REJECTED",
-                         entity_type="Subscription",
-                         meta={"reason": "amount_mismatch", "reference": reference,
-                               "transaction_id": provider_tx_id, "amount_cop": int(amount_in_cents) // 100,
-                               "expected_cop": price, "via": via})
-        return {"applied": False, "reason": "amount_mismatch"}
-
     # 1) ¿Esta transacción ya se aplicó con otra referencia (p.ej. backfill legacy)?
     if provider_tx_id:
         by_tx = (await db.execute(
@@ -98,35 +88,59 @@ async def apply_approved(db: AsyncSession, club: models.Club, *, reference: str,
             .where(models.SubscriptionPayment.provider_tx_id == provider_tx_id)
             .with_for_update()
         )).scalars().first()
-        if by_tx is not None and by_tx.status == APPROVED:
+        if by_tx is not None and by_tx.reference != reference and by_tx.status in (APPROVED, REVIEW):
             return {"applied": False, "reason": "already_applied", "period_end": club.subscription_period_end}
 
     # 2) Fila de la referencia (bloqueada). Si no existe, se crea.
-    row = (await db.execute(
-        select(models.SubscriptionPayment)
-        .where(models.SubscriptionPayment.reference == reference)
-        .with_for_update()
-    )).scalars().first()
+    stmt = (select(models.SubscriptionPayment)
+            .where(models.SubscriptionPayment.reference == reference)
+            .with_for_update())
+    row = (await db.execute(stmt)).scalars().first()
     if row is None:
+        now = datetime.utcnow()
         await db.execute(
             pg_insert(models.SubscriptionPayment.__table__)
             .values(club_id=club.id, reference=reference, kind=kind, status=PENDING,
-                    amount_cop=(int(amount_in_cents) // 100) if amount_in_cents is not None else price,
-                    created_at=datetime.utcnow(), updated_at=datetime.utcnow())
+                    amount_cop=(int(amount_in_cents) // 100) if amount_in_cents is not None else None,
+                    created_at=now, updated_at=now)
             .on_conflict_do_nothing()
         )
-        row = (await db.execute(
-            select(models.SubscriptionPayment)
-            .where(models.SubscriptionPayment.reference == reference)
-            .with_for_update()
-        )).scalars().first()
-    if row is None or row.status == APPROVED:
+        row = (await db.execute(stmt)).scalars().first()
+    if row is None or row.status in (APPROVED, REVIEW):
         return {"applied": False, "reason": "already_applied", "period_end": club.subscription_period_end}
     if row.club_id != club.id:
         logger.error("subscription_reference_club_mismatch ref=%s row_club=%s club=%s", reference, row.club_id, club.id)
         return {"applied": False, "reason": "club_mismatch"}
 
-    # 3) Extender desde el vencimiento vigente (o desde hoy si ya venció).
+    # 3) Bloquear el club y releerlo: dos pagos distintos del mismo club a la vez
+    #    no pueden leer el mismo vencimiento (cada uno suma sus 30 días).
+    await db.execute(
+        select(models.Club).where(models.Club.id == club.id)
+        .with_for_update().execution_options(populate_existing=True)
+    )
+
+    # 4) Monto y moneda (sin monto = no se aplica: fail-closed).
+    price = price_for(club)
+    reason = None
+    if currency and currency.upper() != "COP":
+        reason = "currency_mismatch"
+    elif amount_in_cents is None or int(amount_in_cents) < price * 100:
+        reason = "amount_mismatch"
+    if reason:
+        logger.warning("subscription_%s club=%s ref=%s cents=%s cur=%s price=%s",
+                       reason, club.id, reference, amount_in_cents, currency, price)
+        row.status = REVIEW
+        if provider_tx_id and not row.provider_tx_id:
+            row.provider_tx_id = provider_tx_id
+        row.updated_at = datetime.utcnow()
+        await log_action(db, club=club, request=request, action="SUBSCRIPTION_PAYMENT_REJECTED",
+                         entity_type="Subscription",
+                         meta={"reason": reason, "reference": reference, "transaction_id": provider_tx_id,
+                               "amount_cop": (int(amount_in_cents) // 100) if amount_in_cents is not None else None,
+                               "currency": currency, "expected_cop": price, "via": via})
+        return {"applied": False, "reason": reason}
+
+    # 5) Extender desde el vencimiento vigente (o desde hoy si ya venció).
     now = datetime.utcnow()
     base = club.subscription_period_end if (club.subscription_period_end and club.subscription_period_end > now) else now
     period_end = base + timedelta(days=PERIOD_DAYS)
@@ -137,8 +151,7 @@ async def apply_approved(db: AsyncSession, club: models.Club, *, reference: str,
     row.status = APPROVED
     if provider_tx_id:
         row.provider_tx_id = provider_tx_id
-    if amount_in_cents is not None:
-        row.amount_cop = int(amount_in_cents) // 100
+    row.amount_cop = int(amount_in_cents) // 100
     row.period_end_applied = period_end
     row.updated_at = now
 
@@ -160,16 +173,3 @@ async def mark_by_reference(db: AsyncSession, reference: str, status: str, provi
     )).scalars().first()
     if row is not None and row.status == PENDING:
         await mark(db, row, status, provider_tx_id)
-
-
-async def pending_subscribe_recent(db: AsyncSession, club_id: int, minutes: int = 15) -> bool:
-    since = datetime.utcnow() - timedelta(minutes=minutes)
-    n = (await db.execute(
-        select(func.count(models.SubscriptionPayment.id)).where(
-            models.SubscriptionPayment.club_id == club_id,
-            models.SubscriptionPayment.kind == "subscribe",
-            models.SubscriptionPayment.status == PENDING,
-            models.SubscriptionPayment.created_at >= since,
-        )
-    )).scalar()
-    return bool(n)

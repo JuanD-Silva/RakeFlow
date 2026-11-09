@@ -316,7 +316,12 @@ async def wompi_subscribe(
 
     # Doble toque / reintento tras timeout: si hay un cobro en proceso, no se
     # crea otro (antes: cada reintento registraba otra tarjeta y cobraba otra vez).
-    if await ledger.pending_subscribe_recent(db, current_club.id):
+    # La reserva va PRIMERO (índice único: un subscribe PENDING por club), así
+    # dos solicitudes simultáneas no pasan ambas el chequeo.
+    monthly_price = _price_for(current_club)
+    reference = f"rakeflow-club-{current_club.id}-sub-{int(time.time())}-{secrets.token_hex(3)}"
+    attempt = await ledger.reserve(db, current_club, reference=reference, kind="subscribe", amount_cop=monthly_price)
+    if attempt is None:
         raise HTTPException(status_code=409, detail="Ya hay un pago en proceso. Espera unos minutos y recarga la página antes de intentar de nuevo.")
 
     # 1. Crear payment_source
@@ -329,19 +334,19 @@ async def wompi_subscribe(
         )
     except httpx.HTTPStatusError as e:
         logger.error("wompi_subscribe_payment_source_failed: %s", e.response.text)
+        await ledger.mark(db, attempt, ledger.ERROR)
         raise HTTPException(status_code=400, detail="No se pudo registrar la tarjeta. Verifica los datos e intenta de nuevo.")
+    except Exception:
+        # Sin tarjeta registrada no hay cobro posible: se libera la reserva.
+        await ledger.mark(db, attempt, ledger.ERROR)
+        raise
 
     payment_source_id = ps.get("id")
     if not payment_source_id:
+        await ledger.mark(db, attempt, ledger.ERROR)
         raise HTTPException(status_code=500, detail="Wompi no devolvio un payment_source_id valido")
 
     # 2. Cobrar primer mes (con grandfather pricing si aplica)
-    monthly_price = _price_for(current_club)
-    reference = f"rakeflow-club-{current_club.id}-sub-{int(time.time())}-{secrets.token_hex(3)}"
-    # Reserva ANTES de cobrar (commit): bloquea el doble cobro por reintento.
-    attempt = await ledger.reserve(db, current_club, reference=reference, kind="subscribe", amount_cop=monthly_price)
-    if attempt is None:
-        raise HTTPException(status_code=409, detail="Ya hay un pago en proceso. Espera unos minutos y recarga la página.")
     # La tarjeta queda guardada desde ya: si el cobro queda en el aire, el
     # webhook lo cierra y el cron puede seguir cobrando.
     current_club.wompi_payment_source_id = payment_source_id
@@ -400,6 +405,15 @@ async def wompi_subscribe(
             kind="subscribe", via="subscribe_endpoint", request=request,
             extra_meta={"payment_source_id": payment_source_id, "card_brand": card_brand, "card_last4": card_last4},
         )
+        if not res["applied"] and res["reason"] != "already_applied":
+            # Monto/moneda no cuadran: la fila quedó en REVIEW (auditoría).
+            await db.commit()
+            return {
+                "subscription_active": False,
+                "transaction_id": transaction_id,
+                "wompi_status": "REVIEW",
+                "message": "Recibimos el pago pero el valor no corresponde al plan. Escríbenos por WhatsApp para revisarlo.",
+            }
         period_end = res.get("period_end") or current_club.subscription_period_end
         current_club.wompi_payment_source_id = payment_source_id
         current_club.wompi_customer_email = customer_email

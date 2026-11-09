@@ -31,12 +31,19 @@ def upgrade() -> None:
     op.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_subscription_payments_reference ON subscription_payments (reference)")
     op.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_subscription_payments_provider_tx ON subscription_payments (provider_tx_id)")
     op.execute("CREATE INDEX IF NOT EXISTS ix_subscription_payments_club_id ON subscription_payments (club_id)")
-    # Un intento vivo (PENDING o APPROVED) por club y vencimiento: dos corridas
-    # del cron no pueden reservar el mismo periodo.
+    # Un intento vivo por club y vencimiento: dos corridas del cron no pueden
+    # reservar el mismo periodo. REVIEW (cobro incierto / monto raro) también
+    # bloquea: mejor no renovar que cobrar dos veces.
     op.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_subscription_payments_renew_period "
         "ON subscription_payments (club_id, period_key) "
-        "WHERE kind = 'renew' AND status IN ('PENDING', 'APPROVED')"
+        "WHERE kind = 'renew' AND status IN ('PENDING', 'APPROVED', 'REVIEW')"
+    )
+    # Un solo /wompi/subscribe en proceso por club (doble toque, dos pestañas).
+    op.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_subscription_payments_subscribe_pending "
+        "ON subscription_payments (club_id) "
+        "WHERE kind = 'subscribe' AND status = 'PENDING'"
     )
 
     # Backfill: los pagos ya aplicados (audit_logs) quedan registrados, para que
