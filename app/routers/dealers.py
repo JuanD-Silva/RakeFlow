@@ -1117,6 +1117,95 @@ async def list_shifts(
     return [_shift_to_dict(s, n, now=now) for s, n in result.all()]
 
 
+@shifts_router.get("/{session_id}/rake-summary")
+async def session_rake_summary(
+    session_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_club: models.Club = Depends(get_current_club),
+    _: models.User = Depends(require_role([models.UserRole.OWNER, models.UserRole.MANAGER])),
+):
+    """Rake recolectado y gastos de UNA mesa cash, de un vistazo. OWNER/MANAGER.
+
+    En vivo el rake sale de lo que el cajero ya declara por turno de dealer
+    (botón "Rake" / cambio de turno: total acumulado de cada turno). No se anota
+    nada nuevo. Gastos = pago a dealers (horas × tarifa + % del rake, fuente
+    única services.shift_payment_breakdown) + cortesías (Σ BONUS), que son
+    exactamente lo que el cierre resta del rake. Con la mesa CERRADA manda lo
+    persistido en el cierre (la verdad contable), no un recálculo."""
+    session = (await db.execute(
+        select(models.Session).where(
+            models.Session.id == session_id,
+            models.Session.club_id == current_club.id,
+        )
+    )).scalars().first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Mesa no encontrada")
+
+    is_open = session.status == models.SessionStatus.OPEN
+    now = datetime.utcnow()
+    shift_rows = (await db.execute(
+        select(models.DealerShift, models.Dealer.name)
+        .join(models.Dealer, models.Dealer.id == models.DealerShift.dealer_id)
+        .where(
+            models.DealerShift.session_id == session_id,
+            models.DealerShift.club_id == current_club.id,
+            models.Dealer.club_id == current_club.id,
+        )
+        .order_by(models.DealerShift.start_time)
+    )).all()
+
+    shifts = []
+    for shift, name in shift_rows:
+        end = shift.end_time or now
+        hours = dealer_view.shift_hours(shift.start_time, end)
+        bd = services.shift_payment_breakdown(
+            hours, shift.hourly_rate_cop, shift.rake_pct, shift.declared_rake)
+        shifts.append({
+            "id": shift.id,
+            "dealer_name": name,
+            "start_time": shift.start_time,
+            "end_time": shift.end_time,
+            "open": shift.end_time is None,
+            "elapsed_minutes": max(0, int((end - shift.start_time).total_seconds() // 60)),
+            # Clamp como el breakdown: un remanente negativo del cierre no suma.
+            "rake": max(0.0, float(shift.declared_rake or 0)),
+            "rake_declared": shift.declared_rake is not None,
+            "dealer_payment": bd["club_payment"],
+        })
+
+    courtesy = float((await db.execute(
+        select(func.coalesce(func.sum(models.Transaction.amount), 0.0)).where(
+            models.Transaction.session_id == session_id,
+            models.Transaction.type == models.TransactionType.BONUS,
+        )
+    )).scalar() or 0)
+
+    if is_open:
+        rake_total = sum(s["rake"] for s in shifts)
+        dealer_cost = sum(s["dealer_payment"] for s in shifts)
+    else:
+        rake_total = float(session.declared_rake_cash or 0)
+        dealer_cost = float(session.dealer_cost or 0)
+        courtesy = float(session.courtesy_cost or 0)
+
+    return {
+        "session_id": session_id,
+        "session_open": is_open,
+        "rake_total": round(rake_total),
+        "shifts": shifts,
+        # Sin turnos de dealer no hay de dónde leer el rake en vivo: se sabe al cerrar.
+        "has_live_source": bool(shifts),
+        "open_shift_undeclared": any(s["open"] and not s["rake_declared"] for s in shifts),
+        "expenses": {
+            "dealers": round(dealer_cost),
+            "courtesies": round(courtesy),
+            "total": round(dealer_cost + courtesy),
+        },
+        "net": round(float(session.net_rake or 0)) if not is_open else round(rake_total - dealer_cost - courtesy),
+        "jackpot_declared": None if is_open else round(float(session.declared_jackpot_cash or 0)),
+    }
+
+
 @shifts_router.get("/{session_id}/dealer-payments")
 async def session_dealer_payments(
     session_id: int,
