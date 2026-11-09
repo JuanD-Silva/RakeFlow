@@ -15,7 +15,7 @@ from .. import models, schemas, accounts, auth_utils, player_stats, phone_verify
 from ..dependencies import get_db, get_current_club, require_role
 from ..audit import log_action, AuditAction
 from ..phone_utils import normalize_phone
-from ..rate_limit import limiter
+from ..rate_limit import global_key, limiter, login_failures
 
 router = APIRouter(
     prefix="/players",
@@ -559,7 +559,10 @@ class PlayerActivateIn(BaseModel):
 
 
 @router.post("/activate")
-@limiter.limit("8/hour")
+# 30/h por IP: la noche de activación todos están en el WiFi del club (misma
+# IP). La fuerza bruta del código ya la frena el bloqueo POR CUENTA (5 intentos).
+@limiter.limit("30/hour")
+@limiter.limit("300/hour", key_func=global_key)  # respaldo: rotar IPs no da volumen ilimitado
 async def activate_player(
     data: PlayerActivateIn,
     request: Request,
@@ -571,6 +574,11 @@ async def activate_player(
     phone = normalize_phone(data.phone)
     if not phone:
         raise HTTPException(status_code=400, detail="Teléfono inválido")
+    # Vincular una 2ª cuenta prueba la clave de la cuenta hermana: mismo freno
+    # POR PERSONA que el login (si no, sería un oráculo de claves sin límite).
+    if login_failures.blocked(phone):
+        raise HTTPException(status_code=429,
+            detail="Demasiados intentos con este número. Espera 15 minutos e intenta de nuevo.")
 
     # MULTI-CUENTA: un teléfono puede tener varias cuentas de jugador (una por
     # club). La que se activa es la que tiene invitación PENDIENTE con ESTE
@@ -604,6 +612,7 @@ async def activate_player(
             raise HTTPException(status_code=503,
                 detail="No pudimos verificar el código ahora mismo. Intenta de nuevo en un momento.")
         if reason == "link_required":
+            login_failures.fail(phone)
             raise HTTPException(status_code=400, detail=accounts.LINK_REQUIRED_MSG)
         # Código incorrecto/vencido: lockout POR TELÉFONO (+ rate limit por IP).
         for u in pendientes:

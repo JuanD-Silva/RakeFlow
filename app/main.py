@@ -90,6 +90,9 @@ async def observability_middleware(request: Request, call_next):
                 "path": request.url.path,
                 "status": response.status_code,
                 "duration_ms": round(duration_ms, 2),
+                # Diagnóstico del proxy (sin IPs): cuántas entradas trae
+                # X-Forwarded-For. Confirma que la última es la del cliente.
+                "xff_hops": len([h for h in request.headers.get("x-forwarded-for", "").split(",") if h.strip()]),
             },
         )
         response.headers["X-Request-ID"] = req_id
