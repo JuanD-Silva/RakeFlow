@@ -12,12 +12,15 @@ cobra el plan via charge_payment_source y:
 - DECLINED/ERROR: manda email de pago fallido (no desactiva, da gracia)
 - PENDING: deja pasar; el webhook cerrara la operacion
 
-Diseno idempotente: si por error el cron corre 2 veces el mismo dia,
-el chequeo de "intento reciente" via audit_logs evita doble cobro.
+Diseno idempotente: antes de cobrar se RESERVA el periodo en
+subscription_payments (índice único por club + vencimiento, commit previo al
+cobro). Dos corridas simultáneas: una gana la reserva, la otra salta. El
+APPROVED se aplica por subscription_ledger.apply_approved, así el webhook del
+mismo cobro no vuelve a sumar 30 días.
 """
 
 import logging
-import time
+import secrets
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -26,6 +29,7 @@ from sqlalchemy.future import select
 from sqlalchemy import and_
 
 from . import models, payments_wompi
+from . import subscription_ledger as ledger
 from .audit import log_action
 
 logger = logging.getLogger(__name__)
@@ -46,6 +50,46 @@ async def _had_recent_attempt(db: AsyncSession, club_id: int, hours: int = 24) -
     )
     res = await db.execute(stmt)
     return res.scalars().first() is not None
+
+
+async def _reconcile_pending(db: AsyncSession, summary: dict[str, Any]) -> None:
+    """Reservas PENDING de más de 1 h (webhook perdido o timeout al cobrar):
+    se consulta el estado real en Wompi. APPROVED se aplica (una sola vez);
+    DECLINED/ERROR/VOIDED libera la reserva. Sin transacción conocida y con
+    más de 24 h, se marca ERROR: Wompi nunca registró el cobro."""
+    old = datetime.utcnow() - timedelta(hours=1)
+    rows = (await db.execute(
+        select(models.SubscriptionPayment)
+        .where(models.SubscriptionPayment.status == ledger.PENDING)
+        .where(models.SubscriptionPayment.created_at <= old)
+        .limit(MAX_BATCH)
+    )).scalars().all()
+    for row in rows:
+        try:
+            if not row.provider_tx_id:
+                if row.created_at <= datetime.utcnow() - timedelta(hours=24):
+                    await ledger.mark(db, row, ledger.ERROR)
+                    summary["reconciled"] += 1
+                continue
+            tx = await payments_wompi.get_transaction(row.provider_tx_id)
+            st = tx.get("status")
+            if st == "APPROVED":
+                club = await db.get(models.Club, row.club_id)
+                if club is None:
+                    continue
+                await ledger.apply_approved(
+                    db, club, reference=row.reference, provider_tx_id=row.provider_tx_id,
+                    amount_in_cents=tx.get("amount_in_cents"), currency=tx.get("currency"),
+                    kind=row.kind, via="reconcile",
+                )
+                await db.commit()
+                summary["reconciled"] += 1
+            elif st in ("DECLINED", "ERROR", "VOIDED"):
+                await ledger.mark(db, row, ledger.DECLINED if st == "DECLINED" else ledger.ERROR)
+                summary["reconciled"] += 1
+        except Exception:
+            logger.exception("renewal_reconcile_failed ref=%s", row.reference)
+            await db.rollback()
 
 
 async def run_renewals(db: AsyncSession, plan_price_cop: int, *, dry_run: bool = False) -> dict[str, Any]:
@@ -75,6 +119,7 @@ async def run_renewals(db: AsyncSession, plan_price_cop: int, *, dry_run: bool =
         "pending": 0,
         "skipped_recent": 0,
         "errors": 0,
+        "reconciled": 0,
         "details": [],
     }
 
@@ -91,15 +136,28 @@ async def run_renewals(db: AsyncSession, plan_price_cop: int, *, dry_run: bool =
     # Importar email service tarde para evitar circularidad
     from . import email_service
 
+    await _reconcile_pending(db, summary)
+
     for club in candidates:
         try:
+            # La conciliación pudo haber renovado este club recién: no cobrar otra vez.
+            if club.subscription_period_end and club.subscription_period_end > cutoff:
+                summary["skipped_recent"] += 1
+                continue
             if await _had_recent_attempt(db, club.id):
                 summary["skipped_recent"] += 1
                 continue
 
-            reference = f"rakeflow-club-{club.id}-renew-{int(time.time())}"
             customer_email = club.wompi_customer_email or club.email
             club_price = int(club.subscription_price_cop) if club.subscription_price_cop else plan_price_cop
+            period_key = ledger.renew_period_key(club)
+            reference = f"rakeflow-club-{club.id}-renew-{period_key}-{secrets.token_hex(3)}"
+            attempt = await ledger.reserve(db, club, reference=reference, kind="renew",
+                                           amount_cop=club_price, period_key=period_key)
+            if attempt is None:
+                # Otra corrida ya está cobrando (o cobró) este vencimiento.
+                summary["skipped_recent"] += 1
+                continue
 
             try:
                 tx = await payments_wompi.charge_payment_source(
@@ -110,6 +168,9 @@ async def run_renewals(db: AsyncSession, plan_price_cop: int, *, dry_run: bool =
                     recurrent=True,
                 )
             except Exception as e:
+                # Sin respuesta de Wompi no sabemos si cobró: la reserva queda
+                # PENDING (bloquea otro cobro de este vencimiento) y la concilia
+                # el webhook o _reconcile_pending en la próxima corrida.
                 logger.exception("renewal_charge_exception club=%s: %s", club.id, e)
                 summary["errors"] += 1
                 await log_action(
@@ -123,23 +184,22 @@ async def run_renewals(db: AsyncSession, plan_price_cop: int, *, dry_run: bool =
 
             transaction_id = tx.get("id", "")
             status = tx.get("status", "PENDING")
+            if transaction_id and not attempt.provider_tx_id:
+                attempt.provider_tx_id = transaction_id
+                await db.commit()
 
             if status == "APPROVED":
-                period_end = (club.subscription_period_end or now) + timedelta(days=30)
-                club.subscription_period_end = period_end
-                await log_action(
-                    db, club=club,
-                    action="SUBSCRIPTION_RENEWED",
-                    entity_type="Subscription",
-                    meta={
-                        "provider": "wompi",
-                        "via": "cron",
-                        "transaction_id": transaction_id,
-                        "amount_cop": club_price,
-                        "period_end": period_end.isoformat(),
-                    },
+                res = await ledger.apply_approved(
+                    db, club, reference=reference, provider_tx_id=transaction_id or None,
+                    amount_in_cents=tx.get("amount_in_cents"), currency=tx.get("currency"),
+                    kind="renew", via="cron",
                 )
                 await db.commit()
+                if not res["applied"]:
+                    summary["details"].append({"club_id": club.id, "status": "APPROVED_NOT_APPLIED",
+                                               "reason": res["reason"], "tx": transaction_id})
+                    continue
+                period_end = res["period_end"]
 
                 try:
                     email_service.send_payment_succeeded_email(
@@ -169,6 +229,8 @@ async def run_renewals(db: AsyncSession, plan_price_cop: int, *, dry_run: bool =
 
             else:  # DECLINED, ERROR, VOIDED
                 status_msg = tx.get("status_message") or status
+                attempt.status = ledger.DECLINED if status == "DECLINED" else ledger.ERROR
+                attempt.updated_at = datetime.utcnow()
                 await log_action(
                     db, club=club,
                     action="SUBSCRIPTION_RENEW_FAILED",

@@ -519,6 +519,29 @@ class BlindTemplate(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
+class SubscriptionPayment(Base):
+    """Libro de pagos de suscripción: UNA fila por referencia de Wompi.
+
+    Es la fuente de idempotencia de la plata de suscripciones. Todo camino que
+    extiende el plan (confirm, webhook, subscribe, cron) pasa por
+    subscription_ledger.apply_approved(): una referencia o transacción que ya
+    quedó APPROVED no vuelve a sumar días. El cron reserva la fila (PENDING)
+    ANTES de cobrar, así dos corridas no cobran el mismo periodo."""
+    __tablename__ = "subscription_payments"
+
+    id = Column(Integer, primary_key=True)
+    club_id = Column(Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False, index=True)
+    reference = Column(String, nullable=False, unique=True)
+    provider_tx_id = Column(String, nullable=True, unique=True)
+    kind = Column(String, nullable=False)        # renew / subscribe / checkout / legacy
+    status = Column(String, nullable=False)      # PENDING / APPROVED / DECLINED / ERROR
+    amount_cop = Column(Integer, nullable=True)
+    period_key = Column(String, nullable=True)   # renovación: vencimiento que cubre (YYYY-MM-DD)
+    period_end_applied = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 class AuditLog(Base):
     """
     Registro de acciones relevantes por club para trazabilidad legal y operativa.
