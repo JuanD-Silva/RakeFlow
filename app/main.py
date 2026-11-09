@@ -43,6 +43,14 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
+def _is_private(value):
+    import ipaddress
+    try:
+        return ipaddress.ip_address((value or "").strip()).is_private
+    except ValueError:
+        return None
+
+
 @app.middleware("http")
 async def observability_middleware(request: Request, call_next):
     req_id = request.headers.get("X-Request-ID") or new_request_id()
@@ -90,9 +98,14 @@ async def observability_middleware(request: Request, call_next):
                 "path": request.url.path,
                 "status": response.status_code,
                 "duration_ms": round(duration_ms, 2),
-                # Diagnóstico del proxy (sin IPs): cuántas entradas trae
-                # X-Forwarded-For. Confirma que la última es la del cliente.
+                # Diagnóstico del proxy SIN guardar IPs. 192.0.2.0/24 es un
+                # rango de documentación (nunca un cliente real): si un test
+                # manda X-Real-IP 192.0.2.x y llega "spoof_xri": true, el
+                # borde NO lo sobrescribe y el límite por IP sería falsificable.
                 "xff_hops": len([h for h in request.headers.get("x-forwarded-for", "").split(",") if h.strip()]),
+                "has_xri": bool(request.headers.get("x-real-ip")),
+                "spoof_xri": request.headers.get("x-real-ip", "").startswith("192.0.2."),
+                "xri_private": _is_private(request.headers.get("x-real-ip")),
             },
         )
         response.headers["X-Request-ID"] = req_id
