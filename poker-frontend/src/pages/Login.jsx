@@ -49,7 +49,12 @@ export default function Login() {
       }
     } catch (err) {
       console.error(err);
-      setError('Credenciales inválidas. Verifica tu correo/teléfono y tu contraseña.');
+      if (err?.response?.status === 429) {
+        const d = err.response.data?.detail;
+        setError(typeof d === 'string' ? d : 'Demasiados intentos. Espera unos minutos e intenta de nuevo.');
+      } else {
+        setError('Credenciales inválidas. Verifica tu correo/teléfono y tu contraseña.');
+      }
     } finally {
       setLoading(false);
     }

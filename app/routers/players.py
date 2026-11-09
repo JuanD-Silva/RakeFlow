@@ -559,7 +559,9 @@ class PlayerActivateIn(BaseModel):
 
 
 @router.post("/activate")
-@limiter.limit("8/hour")
+# 30/h por IP: la noche de activación todos están en el WiFi del club (misma
+# IP). La fuerza bruta del código ya la frena el bloqueo POR CUENTA (5 intentos).
+@limiter.limit("30/hour")
 async def activate_player(
     data: PlayerActivateIn,
     request: Request,
