@@ -14,7 +14,7 @@ from ..phone_utils import normalize_phone
 from .. import accounts
 from ..dependencies import get_db, get_current_club, get_current_user, get_token_claims, require_role
 from ..email_service import send_password_reset_email, send_verification_email
-from ..rate_limit import limiter, login_failures
+from ..rate_limit import global_key, limiter, login_failures
 from ..audit import log_action, log_standalone, AuditAction
 
 logger = logging.getLogger(__name__)
@@ -29,6 +29,7 @@ class LoginJSON(BaseModel):
 # ---------------------------------------------------------
 @router.post("/auth/register", status_code=status.HTTP_201_CREATED)
 @limiter.limit("3/hour")
+@limiter.limit("30/hour", key_func=global_key)  # respaldo: rotar IPs no da volumen ilimitado
 async def register_club(request: Request, club_data: schemas.ClubCreate, db: AsyncSession = Depends(get_db)):
     """
     Crea un nuevo Club (Cliente SaaS) y le configura reglas iniciales.
@@ -471,6 +472,7 @@ class ResetPasswordRequest(BaseModel):
 
 @router.post("/auth/forgot-password")
 @limiter.limit("5/hour")
+@limiter.limit("60/hour", key_func=global_key)  # respaldo anti bombardeo de correos
 async def forgot_password(request: Request, data: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(models.Club).where(models.Club.email == data.email))
     club = result.scalars().first()
@@ -493,6 +495,7 @@ async def forgot_password(request: Request, data: ForgotPasswordRequest, db: Asy
 
 @router.post("/auth/reset-password")
 @limiter.limit("5/hour")
+@limiter.limit("60/hour", key_func=global_key)  # respaldo anti bombardeo de correos
 async def reset_password(request: Request, data: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
     if len(data.new_password) < 6:
         raise HTTPException(status_code=400, detail="La contrasena debe tener al menos 6 caracteres.")

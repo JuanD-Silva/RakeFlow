@@ -1,6 +1,7 @@
+import ipaddress
 import threading
 import time
-from collections import deque
+from collections import OrderedDict, deque
 
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -16,12 +17,23 @@ def client_ip(request) -> str:
     Se usa la ÚLTIMA IP de X-Forwarded-For: la agrega el proxy de Railway y el
     cliente no la puede falsificar (las de la izquierda sí: las manda él). Si
     no hay encabezado (local), la IP de la conexión."""
-    fwd = request.headers.get("x-forwarded-for", "")
-    if fwd:
-        last = fwd.split(",")[-1].strip()
-        if last:
-            return last
+    # getlist: si el proxy AGREGA una línea nueva del encabezado (en vez de
+    # unirla con coma), .get() devolvería la primera = la que mandó el cliente.
+    lines = request.headers.getlist("x-forwarded-for")
+    if lines:
+        last = lines[-1].split(",")[-1].strip()
+        try:
+            return str(ipaddress.ip_address(last))
+        except ValueError:
+            pass
     return get_remote_address(request)
+
+
+def global_key(request) -> str:
+    """Un solo cupo para todo el sitio: tope de respaldo encima del límite por
+    IP en endpoints que mandan correos o crean cosas (registro, recuperar
+    clave, activar). Así rotar IPs no permite volumen ilimitado."""
+    return "global"
 
 
 limiter = Limiter(key_func=client_ip)
@@ -38,7 +50,9 @@ class FailureThrottle:
         self.max_failures = max_failures
         self.window = window_seconds
         self.max_keys = max_keys
-        self._fails: dict[str, deque] = {}
+        # OrderedDict: el más recientemente fallado al final (para desalojar
+        # primero lo vencido y después lo más viejo, sin ordenar todo).
+        self._fails: "OrderedDict[str, deque]" = OrderedDict()
         self._lock = threading.Lock()
 
     def _prune(self, key: str, now: float) -> int:
@@ -59,18 +73,24 @@ class FailureThrottle:
     def fail(self, key: str) -> None:
         now = time.monotonic()
         with self._lock:
-            if len(self._fails) >= self.max_keys and key not in self._fails:
-                # Tope de memoria: fuera las cuentas cuyo último fallo es más viejo.
-                oldest = sorted(self._fails, key=lambda k: self._fails[k][-1])[: self.max_keys // 10]
-                for k in oldest:
-                    self._fails.pop(k, None)
             self._prune(key, now)
+            if len(self._fails) >= self.max_keys and key not in self._fails:
+                # Tope de memoria: primero se va lo vencido; si no alcanza, lo
+                # que lleva más tiempo sin fallar. Una cuenta que sigue siendo
+                # atacada siempre está al final y no se desaloja.
+                for k in [k for k, q in self._fails.items() if not q or now - q[-1] > self.window]:
+                    self._fails.pop(k, None)
+                while len(self._fails) >= self.max_keys:
+                    self._fails.popitem(last=False)
             self._fails.setdefault(key, deque()).append(now)
+            self._fails.move_to_end(key)
 
     def reset(self, key: str) -> None:
         with self._lock:
             self._fails.pop(key, None)
 
 
-# Login: 10 claves malas por cuenta cada 15 min.
+# Claves malas por PERSONA (teléfono o email): 10 cada 15 min. Lo usan el
+# login y la vinculación de una 2ª cuenta en la activación (que prueba la
+# clave de la cuenta hermana).
 login_failures = FailureThrottle(max_failures=10, window_seconds=15 * 60)

@@ -9,6 +9,9 @@ Antes, detrás del proxy de Railway, todos los usuarios compartían una sola IP
      afecta a otras cuentas.
   4. Entrar bien reinicia el contador de esa cuenta.
   5. Activación de jugador: 30/h por IP (antes 8/h... en total).
+  6. (revisión) XFF en dos líneas: cuenta la última línea, no la del cliente.
+  7. (revisión) Vincular 2ª cuenta probando la clave hermana: freno por persona.
+  8. (revisión) Inundar con cuentas inventadas no desaloja el bloqueo de la víctima.
 
 Uso: python scripts/test_rate_limit_ip.py
 """
@@ -43,6 +46,7 @@ for k, v in load_env(".env").items():
 assert "localhost:5433" in os.environ.get("DATABASE_URL", ""), "DATABASE_URL debe ser la DB LOCAL"
 sys.path.insert(0, str(ROOT))
 from app import auth_utils  # noqa: E402
+from app.rate_limit import FailureThrottle  # noqa: E402
 
 
 def psql(sql):
@@ -71,6 +75,7 @@ def main():
                              "--port", str(PORT)], cwd=ROOT, env={**os.environ},
                             stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
     club = None
+    club2 = None
     try:
         for _ in range(25):
             time.sleep(1)
@@ -133,9 +138,55 @@ def main():
                             json={"phone": f"30077700{i:02d}", "code": "123456", "password": "ClaveBuena1"}).status_code
                      for i in range(12)]
             check(429 not in codes, f"12 activaciones desde el WiFi del club no se bloquean (antes: la 9.ª) {sorted(set(codes))}")
+
+            print("\n[6] Encabezado en dos líneas")
+            for i in range(10):
+                c.post(f"{BASE}/auth/login", data={"username": f"z{i}@x.co", "password": "x"},
+                       headers=[("X-Forwarded-For", f"192.0.2.{i}"), ("X-Forwarded-For", "198.51.105.1")])
+            r = c.post(f"{BASE}/auth/login", data={"username": "z99@x.co", "password": "x"},
+                       headers=[("X-Forwarded-For", "192.0.2.200"), ("X-Forwarded-For", "198.51.105.1")])
+            check(r.status_code == 429, "cambiar la 1.ª línea (la del cliente) no da cupo nuevo: cuenta la última")
+
+            print("\n[7] Vincular 2ª cuenta (clave hermana)")
+            c.post(f"{BASE}/auth/register", json={"name": "Club RL2", "email": "rl2@rakeflow.local",
+                                                  "password": "OwnerPass123", "accept_terms": True},
+                   headers={"X-Forwarded-For": "203.0.113.249"})
+            club2 = int(psql("SELECT id FROM clubs WHERE email='rl2@rakeflow.local'"))
+            h = auth_utils.get_password_hash("ClaveBuena1")
+            psql(f"INSERT INTO users (club_id, role, is_active, hashed_password, phone, name, last_login_at) "
+                 f"VALUES ({club}, 'PLAYER', true, '{h}', '573008880003', '{TAG}C1', now());")
+            psql(f"INSERT INTO users (club_id, role, is_active, phone, name, invitation_token, invitation_expires_at, "
+                 f"verification_channel) VALUES ({club2}, 'PLAYER', true, '573008880003', '{TAG}C2', '111111', "
+                 f"now() + interval '1 day', 'manual');")
+            act = lambda pw, ip: c.post(f"{BASE}/players/activate", headers={"X-Forwarded-For": ip},
+                                        json={"phone": "3008880003", "code": "111111", "password": pw})
+            r = act("ClaveMala1", "198.51.106.0")
+            check(r.status_code == 400, "clave hermana mala → 400 (pide la clave de su otra cuenta)")
+            for i in range(1, 10):
+                act("ClaveMala1", f"198.51.106.{i}")
+            r = act("ClaveBuena1", "198.51.106.50")
+            check(r.status_code == 429, "10 claves hermanas malas desde 10 IPs → bloqueado (ya no es oráculo)")
+            check(login("3008880003", "ClaveBuena1", "198.51.106.51").status_code == 429,
+                  "y comparte freno con el login del mismo teléfono")
+
+            print("\n[8] Desalojo de memoria")
+            th = FailureThrottle(max_failures=3, window_seconds=900, max_keys=100)
+            for _ in range(3):
+                th.fail("victima")
+            for i in range(500):
+                th.fail(f"basura{i}")
+                if i % 50 == 0:
+                    th.fail("victima")  # el atacante sigue atacando a la víctima
+            check(th.blocked("victima"), "500 cuentas inventadas no sacan de memoria a la víctima atacada")
+            check(len(th._fails) <= 100, f"la memoria queda acotada ({len(th._fails)} ≤ 100)")
     finally:
         try:
             psql(f"DELETE FROM users WHERE name LIKE '{TAG}%';")
+            for em in ("rl2@rakeflow.local",) if club2 else ():
+                tk = httpx.post(f"{BASE}/auth/login", data={"username": em, "password": "OwnerPass123"},
+                                headers={"X-Forwarded-For": "203.0.113.252"}).json().get("access_token")
+                if tk:
+                    httpx.delete(f"{BASE}/me/delete-account", headers={"Authorization": f"Bearer {tk}"})
             if club:
                 tok = httpx.post(f"{BASE}/auth/login", data={"username": "rl@rakeflow.local", "password": "OwnerPass123"},
                                  headers={"X-Forwarded-For": "203.0.113.251"}).json().get("access_token")

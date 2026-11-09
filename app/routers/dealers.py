@@ -27,7 +27,7 @@ from .. import models, schemas, accounts, services, dealer_view, auth_utils, pho
 from ..dependencies import get_db, get_current_club, require_role
 from ..audit import log_action, AuditAction
 from ..phone_utils import normalize_phone
-from ..rate_limit import limiter
+from ..rate_limit import global_key, limiter, login_failures
 
 router = APIRouter(prefix="/dealers", tags=["Dealers"])
 shifts_router = APIRouter(prefix="/sessions", tags=["DealerShifts"])
@@ -902,6 +902,7 @@ class DealerActivateIn(BaseModel):
 # 30/h por IP: la noche de activación todos están en el WiFi del club (misma
 # IP). La fuerza bruta del código ya la frena el bloqueo POR CUENTA (5 intentos).
 @limiter.limit("30/hour")
+@limiter.limit("300/hour", key_func=global_key)  # respaldo: rotar IPs no da volumen ilimitado
 async def activate_dealer(
     data: DealerActivateIn,
     request: Request,
@@ -912,6 +913,11 @@ async def activate_dealer(
     phone = normalize_phone(data.phone)
     if not phone:
         raise HTTPException(status_code=400, detail="Teléfono inválido")
+    # Vincular una 2ª cuenta prueba la clave de la cuenta hermana: mismo freno
+    # POR PERSONA que el login (si no, sería un oráculo de claves sin límite).
+    if login_failures.blocked(phone):
+        raise HTTPException(status_code=429,
+            detail="Demasiados intentos con este número. Espera 15 minutos e intenta de nuevo.")
 
     # MULTI-CUENTA: un teléfono puede tener cuenta de dealer en varios clubes
     # (y de jugador). Se activa la que tiene invitación PENDIENTE con ESTE código.
@@ -942,6 +948,7 @@ async def activate_dealer(
             raise HTTPException(status_code=503,
                 detail="No pudimos verificar el código ahora mismo. Intenta de nuevo en un momento.")
         if reason == "link_required":
+            login_failures.fail(phone)
             raise HTTPException(status_code=400, detail=accounts.LINK_REQUIRED_MSG)
         for u in pendientes:
             u.invitation_attempts = (u.invitation_attempts or 0) + 1
