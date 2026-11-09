@@ -2,6 +2,7 @@
 import os
 import asyncio
 import logging
+import secrets
 import time
 import httpx
 from datetime import datetime, timedelta
@@ -14,6 +15,7 @@ from ..dependencies import get_db, get_current_club, require_role, verify_intern
 from ..audit import log_action, AuditAction
 from .. import payments_wompi
 from .. import subscription_renewals
+from .. import subscription_ledger as ledger
 
 logger = logging.getLogger(__name__)
 
@@ -24,14 +26,12 @@ router = APIRouter(
 
 # Precio default del Plan Pro. Clubes "fundadores" (grandfathered) tienen
 # su propio precio en clubs.subscription_price_cop.
-PLAN_PRICE = 199000  # COP
+PLAN_PRICE = ledger.PLAN_PRICE  # COP (fuente: subscription_ledger)
 PLAN_NAME = "RakeFlow Pro"
 TRIAL_DAYS = 14
 
 
-def _price_for(club: models.Club) -> int:
-    """Precio aplicable a un club: el grandfathered si lo tiene, sino el default."""
-    return int(club.subscription_price_cop) if club.subscription_price_cop else PLAN_PRICE
+_price_for = ledger.price_for
 
 
 @router.get("/status")
@@ -171,16 +171,29 @@ async def wompi_confirm_transaction(
         logger.warning("wompi_confirm_reference_mismatch club=%s ref=%s", current_club.id, reference)
         raise HTTPException(status_code=400, detail="Referencia no corresponde a este club")
 
-    # Activar suscripcion 30 dias
-    now = datetime.utcnow()
-    period_end = now + timedelta(days=30)
-    current_club.subscription_active = True
-    current_club.plan_type = "PRO"
-    current_club.subscription_period_end = period_end
-
-    # Guardar el payment_source_id para cobros recurrentes
+    # Aplicar UNA sola vez por referencia/transacción, con monto y moneda
+    # verificados (antes: cualquier APPROVED del club sumaba 30 días, también
+    # una transacción vieja reusada).
     pm = tx.get("payment_method", {}) or {}
     extra = pm.get("extra", {}) or {}
+    res = await ledger.apply_approved(
+        db, current_club, reference=reference, provider_tx_id=data.transaction_id,
+        amount_in_cents=tx.get("amount_in_cents"), currency=tx.get("currency"),
+        kind="checkout", via="confirm", request=request,
+        extra_meta={"card_brand": extra.get("brand"), "card_last4": extra.get("last_four")},
+    )
+    if not res["applied"]:
+        await db.commit()
+        if res["reason"] == "already_applied":
+            pe = current_club.subscription_period_end
+            return {"subscription_active": bool(current_club.subscription_active), "wompi_status": status_w,
+                    "already_applied": True, "period_end": pe.isoformat() if pe else None}
+        if res["reason"] == "in_review":
+            raise HTTPException(status_code=400, detail="Este pago está en revisión. Escríbenos por WhatsApp y lo resolvemos.")
+        raise HTTPException(status_code=400, detail="El pago no corresponde al valor del plan. Escríbenos por WhatsApp para revisarlo.")
+    period_end = res["period_end"]
+
+    # Guardar el payment_source_id para cobros recurrentes
     if tx.get("payment_source_id"):
         current_club.wompi_payment_source_id = tx["payment_source_id"]
     if tx.get("customer_email"):
@@ -190,21 +203,6 @@ async def wompi_confirm_transaction(
     if extra.get("last_four"):
         current_club.wompi_card_last4 = extra["last_four"]
 
-    amount_in_cents = tx.get("amount_in_cents", 0)
-    await log_action(
-        db, request=request, club=current_club,
-        action="SUBSCRIPTION_PAID",
-        entity_type="Subscription", entity_id=None,
-        meta={
-            "provider": "wompi",
-            "transaction_id": data.transaction_id,
-            "reference": reference,
-            "amount_cop": amount_in_cents // 100 if amount_in_cents else None,
-            "card_brand": extra.get("brand"),
-            "card_last4": extra.get("last_four"),
-            "period_end": period_end.isoformat(),
-        },
-    )
     await db.commit()
     logger.info("wompi_subscription_activated club=%s tx=%s", current_club.id, data.transaction_id)
     return {
@@ -239,7 +237,14 @@ async def wompi_webhook(request: Request, db: AsyncSession = Depends(get_db)):
 
     logger.info("wompi_webhook event=%s status=%s ref=%s tx=%s", event, status_w, reference, transaction_id)
 
-    if event != "transaction.updated" or status_w != "APPROVED":
+    if event != "transaction.updated":
+        return {"status": "ok"}
+    if status_w in ("DECLINED", "ERROR", "VOIDED") and reference:
+        # Libera la reserva (subscribe/cron) para que se pueda reintentar.
+        await ledger.mark_by_reference(db, reference, ledger.DECLINED if status_w == "DECLINED" else ledger.ERROR,
+                                       transaction_id or None)
+        return {"status": "ok"}
+    if status_w != "APPROVED":
         return {"status": "ok"}
 
     # Extraer club_id de la reference: rakeflow-club-{id}-{rand}
@@ -257,13 +262,17 @@ async def wompi_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     if not club:
         return {"status": "ok"}
 
-    # Activar / renovar
-    now = datetime.utcnow()
-    base = club.subscription_period_end if (club.subscription_period_end and club.subscription_period_end > now) else now
-    period_end = base + timedelta(days=30)
-    club.subscription_active = True
-    club.plan_type = "PRO"
-    club.subscription_period_end = period_end
+    # Activar / renovar UNA sola vez: Wompi reintenta entregas, y el cobro del
+    # cron también llega por acá (antes cada entrega sumaba otros 30 días).
+    res = await ledger.apply_approved(
+        db, club, reference=reference, provider_tx_id=transaction_id or None,
+        amount_in_cents=tx.get("amount_in_cents"), currency=tx.get("currency"),
+        kind="renew" if "-renew-" in reference else "checkout", via="webhook",
+    )
+    if not res["applied"]:
+        await db.commit()
+        logger.info("wompi_webhook_not_applied ref=%s reason=%s", reference, res["reason"])
+        return {"status": "ok"}
 
     pm = tx.get("payment_method", {}) or {}
     extra = pm.get("extra", {}) or {}
@@ -276,19 +285,6 @@ async def wompi_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     if extra.get("last_four"):
         club.wompi_card_last4 = extra["last_four"]
 
-    await log_action(
-        db, club=club,
-        action="SUBSCRIPTION_PAID",
-        entity_type="Subscription",
-        meta={
-            "provider": "wompi",
-            "via": "webhook",
-            "transaction_id": transaction_id,
-            "reference": reference,
-            "amount_cop": (tx.get("amount_in_cents") or 0) // 100,
-            "period_end": period_end.isoformat(),
-        },
-    )
     await db.commit()
     return {"status": "ok"}
 
@@ -320,6 +316,16 @@ async def wompi_subscribe(
     """
     customer_email = (data.customer_email or current_club.email).strip()
 
+    # Doble toque / reintento tras timeout: si hay un cobro en proceso, no se
+    # crea otro (antes: cada reintento registraba otra tarjeta y cobraba otra vez).
+    # La reserva va PRIMERO (índice único: un subscribe PENDING por club), así
+    # dos solicitudes simultáneas no pasan ambas el chequeo.
+    monthly_price = _price_for(current_club)
+    reference = f"rakeflow-club-{current_club.id}-sub-{int(time.time())}-{secrets.token_hex(3)}"
+    attempt = await ledger.reserve(db, current_club, reference=reference, kind="subscribe", amount_cop=monthly_price)
+    if attempt is None:
+        raise HTTPException(status_code=409, detail="Ya hay un pago en proceso. Espera unos minutos y recarga la página antes de intentar de nuevo.")
+
     # 1. Crear payment_source
     try:
         ps = await payments_wompi.create_payment_source(
@@ -330,15 +336,24 @@ async def wompi_subscribe(
         )
     except httpx.HTTPStatusError as e:
         logger.error("wompi_subscribe_payment_source_failed: %s", e.response.text)
+        await ledger.mark(db, attempt, ledger.ERROR)
         raise HTTPException(status_code=400, detail="No se pudo registrar la tarjeta. Verifica los datos e intenta de nuevo.")
+    except Exception:
+        # Sin tarjeta registrada no hay cobro posible: se libera la reserva.
+        await ledger.mark(db, attempt, ledger.ERROR)
+        raise
 
     payment_source_id = ps.get("id")
     if not payment_source_id:
+        await ledger.mark(db, attempt, ledger.ERROR)
         raise HTTPException(status_code=500, detail="Wompi no devolvio un payment_source_id valido")
 
     # 2. Cobrar primer mes (con grandfather pricing si aplica)
-    monthly_price = _price_for(current_club)
-    reference = f"rakeflow-club-{current_club.id}-sub-{int(time.time())}"
+    # La tarjeta queda guardada desde ya: si el cobro queda en el aire, el
+    # webhook lo cierra y el cron puede seguir cobrando.
+    current_club.wompi_payment_source_id = payment_source_id
+    current_club.wompi_customer_email = customer_email
+    await db.commit()
     try:
         tx = await payments_wompi.charge_payment_source(
             payment_source_id=payment_source_id,
@@ -348,14 +363,42 @@ async def wompi_subscribe(
         )
     except httpx.HTTPStatusError as e:
         logger.error("wompi_subscribe_charge_failed: %s", e.response.text)
-        raise HTTPException(status_code=400, detail="No se pudo procesar el cobro. La tarjeta quedo registrada pero el primer pago fallo.")
+        if e.response.status_code >= 500:
+            # 5xx: Wompi pudo haber procesado el cobro → queda PENDING (incierto)
+            # y lo cierra el webhook o la conciliación por referencia.
+            return {
+                "subscription_active": False,
+                "transaction_id": None,
+                "wompi_status": "PENDING",
+                "message": "Pago en proceso. Te avisamos cuando se acredite; no lo intentes de nuevo todavía.",
+            }
+        # 4xx: Wompi rechazó la solicitud, no hubo cobro → se libera la reserva.
+        await ledger.mark(db, attempt, ledger.ERROR)
+        raise HTTPException(status_code=400, detail="No se pudo procesar el cobro. La tarjeta quedó registrada pero el primer pago falló.")
+    except Exception as e:
+        # Timeout o corte: el cobro PUDO haber salido. Se deja PENDING (bloquea
+        # reintentos 15 min) y el webhook lo cierra por la referencia.
+        logger.error("wompi_subscribe_charge_uncertain ref=%s: %s", reference, e)
+        return {
+            "subscription_active": False,
+            "transaction_id": None,
+            "wompi_status": "PENDING",
+            "message": "Pago en proceso. Te avisamos cuando se acredite; no lo intentes de nuevo todavía.",
+        }
 
     transaction_id = tx.get("id")
+    if transaction_id and not attempt.provider_tx_id:
+        attempt.provider_tx_id = transaction_id
+        await db.commit()
 
     # 3. Polling rapido (max 10s) para ver si APPROVED inmediato
     for _ in range(5):
         await asyncio.sleep(2)
-        latest = await payments_wompi.get_transaction(transaction_id)
+        try:
+            latest = await payments_wompi.get_transaction(transaction_id)
+        except Exception as e:
+            logger.warning("wompi_subscribe_poll_failed tx=%s: %s", transaction_id, e)
+            continue
         if latest.get("status") in ("APPROVED", "DECLINED", "ERROR", "VOIDED"):
             tx = latest
             break
@@ -367,32 +410,28 @@ async def wompi_subscribe(
     card_last4 = extra.get("last_four")
 
     if status == "APPROVED":
-        period_end = datetime.utcnow() + timedelta(days=30)
-        current_club.subscription_active = True
-        current_club.plan_type = "PRO"
-        current_club.subscription_period_end = period_end
+        res = await ledger.apply_approved(
+            db, current_club, reference=reference, provider_tx_id=transaction_id,
+            amount_in_cents=tx.get("amount_in_cents"), currency=tx.get("currency"),
+            kind="subscribe", via="subscribe_endpoint", request=request,
+            extra_meta={"payment_source_id": payment_source_id, "card_brand": card_brand, "card_last4": card_last4},
+        )
+        if not res["applied"] and res["reason"] != "already_applied":
+            # Monto/moneda no cuadran: la fila quedó en REVIEW (auditoría).
+            await db.commit()
+            return {
+                "subscription_active": False,
+                "transaction_id": transaction_id,
+                "wompi_status": "REVIEW",
+                "message": "Recibimos el pago pero el valor no corresponde al plan. Escríbenos por WhatsApp para revisarlo.",
+            }
+        period_end = res.get("period_end") or current_club.subscription_period_end
         current_club.wompi_payment_source_id = payment_source_id
         current_club.wompi_customer_email = customer_email
         if card_brand:
             current_club.wompi_card_brand = card_brand
         if card_last4:
             current_club.wompi_card_last4 = card_last4
-
-        await log_action(
-            db, request=request, club=current_club,
-            action="SUBSCRIPTION_PAID",
-            entity_type="Subscription",
-            meta={
-                "provider": "wompi",
-                "via": "subscribe_endpoint",
-                "transaction_id": transaction_id,
-                "payment_source_id": payment_source_id,
-                "amount_cop": monthly_price,
-                "card_brand": card_brand,
-                "card_last4": card_last4,
-                "period_end": period_end.isoformat(),
-            },
-        )
         await db.commit()
         return {
             "subscription_active": True,
@@ -404,10 +443,7 @@ async def wompi_subscribe(
         }
 
     if status == "PENDING":
-        # Webhook eventualmente cerrara la operacion. Guardamos payment_source_id
-        # para que el cron pueda cobrar en el futuro aunque este no haya cerrado.
-        current_club.wompi_payment_source_id = payment_source_id
-        current_club.wompi_customer_email = customer_email
+        # Webhook eventualmente cerrara la operacion (la reserva sigue PENDING).
         if card_brand:
             current_club.wompi_card_brand = card_brand
         if card_last4:
@@ -420,6 +456,7 @@ async def wompi_subscribe(
             "message": "Pago en proceso. Te avisaremos cuando se acredite.",
         }
 
+    await ledger.mark(db, attempt, ledger.DECLINED if status == "DECLINED" else ledger.ERROR, transaction_id)
     return {
         "subscription_active": False,
         "transaction_id": transaction_id,

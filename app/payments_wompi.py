@@ -103,6 +103,28 @@ async def get_transaction(transaction_id: str) -> dict:
         return r.json().get("data", {})
 
 
+async def find_transactions_by_reference(reference: str) -> list | None:
+    """Busca transacciones por referencia (llave privada). Best-effort para
+    conciliar cobros que quedaron en el aire (timeout sin transaction_id).
+    Devuelve la lista (vacía = Wompi no tiene esa referencia) o None si la
+    consulta falló: en ese caso NO se debe asumir que no hubo cobro."""
+    private_key = os.getenv("WOMPI_PRIVATE_KEY", "")
+    if not private_key:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(f"{_api_base()}/transactions", params={"reference": reference},
+                                 headers={"Authorization": f"Bearer {private_key}"})
+        if r.status_code != 200:
+            logger.warning("wompi_find_by_reference status=%s ref=%s", r.status_code, reference)
+            return None
+        data = r.json().get("data")
+        return data if isinstance(data, list) else None
+    except Exception as e:
+        logger.warning("wompi_find_by_reference_failed ref=%s: %s", reference, e)
+        return None
+
+
 async def charge_payment_source(*, payment_source_id: int, customer_email: str, amount_cop: int, reference: str, recurrent: bool = True) -> dict:
     """
     Cobra un payment_source ya tokenizado (cobro recurrente real).
