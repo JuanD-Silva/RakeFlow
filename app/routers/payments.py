@@ -188,6 +188,8 @@ async def wompi_confirm_transaction(
             pe = current_club.subscription_period_end
             return {"subscription_active": bool(current_club.subscription_active), "wompi_status": status_w,
                     "already_applied": True, "period_end": pe.isoformat() if pe else None}
+        if res["reason"] == "in_review":
+            raise HTTPException(status_code=400, detail="Este pago está en revisión. Escríbenos por WhatsApp y lo resolvemos.")
         raise HTTPException(status_code=400, detail="El pago no corresponde al valor del plan. Escríbenos por WhatsApp para revisarlo.")
     period_end = res["period_end"]
 

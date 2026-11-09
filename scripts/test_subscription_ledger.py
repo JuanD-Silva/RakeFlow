@@ -352,6 +352,14 @@ async def main():
             check(len(mine) == 0, "subscribe en vuelo → el cron no cobra")
             psql(f"DELETE FROM subscription_payments WHERE reference='rakeflow-club-{cid}-sub-inflight'")
 
+            # Al revés: renovación PENDING del cron → /subscribe responde 409 sin cobrar.
+            psql(f"INSERT INTO subscription_payments (club_id, reference, kind, status, period_key) "
+                 f"VALUES ({cid}, 'rakeflow-club-{cid}-renew-inflight', 'renew', 'PENDING', 'x')")
+            n7 = len(CHARGES)
+            r = await c.post("/payments/wompi/subscribe", headers=h, json=sub)
+            check(r.status_code == 409 and len(CHARGES) == n7, "renovación en vuelo → /subscribe 409, sin cobrar")
+            psql(f"DELETE FROM subscription_payments WHERE reference='rakeflow-club-{cid}-renew-inflight'")
+
             # DECLINED libera el periodo para reintentar otro día.
             psql(f"DELETE FROM audit_logs WHERE club_id={cid} AND action LIKE 'SUBSCRIPTION_RENEW%'")
             psql(f"UPDATE clubs SET subscription_period_end='{tomorrow.isoformat()}' WHERE id={cid}")

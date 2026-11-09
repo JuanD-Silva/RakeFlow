@@ -49,6 +49,22 @@ async def reserve(db: AsyncSession, club: models.Club, *, reference: str, kind: 
     si otro proceso ya reservó (misma referencia o mismo periodo de renovación).
     ON CONFLICT DO NOTHING en vez de capturar IntegrityError: un rollback
     expiraría los objetos de la sesión (el club del loop del cron)."""
+    # Serializa las reservas del club (cron vs. /subscribe): lock de la fila del
+    # club (solo el id, no toca el objeto ORM) y, bajo ese lock, ningún intento
+    # PENDING del otro tipo. Así nunca salen dos cobros por el mismo vencimiento.
+    await db.execute(select(models.Club.id).where(models.Club.id == club.id).with_for_update())
+    other = {"renew": "subscribe", "subscribe": "renew"}.get(kind)
+    if other:
+        busy = (await db.execute(
+            select(models.SubscriptionPayment.id)
+            .where(models.SubscriptionPayment.club_id == club.id)
+            .where(models.SubscriptionPayment.kind == other)
+            .where(models.SubscriptionPayment.status == PENDING)
+            .limit(1)
+        )).scalar()
+        if busy:
+            await db.commit()  # suelta el lock
+            return None
     now = datetime.utcnow()
     new_id = (await db.execute(
         pg_insert(models.SubscriptionPayment.__table__)
