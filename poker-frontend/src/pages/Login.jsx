@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
-import { authService } from '../api/services';
+import { authService, passkeyService } from '../api/services';
+import { getPasskey, isCancel, localPasskey, passkeyAvailable, passkeyError } from '../utils/passkey';
 import { useAuth } from '../context/AuthContext';
 import { ROLE_META } from '../utils/accountMeta';
 import {
@@ -9,7 +10,8 @@ import {
   ArrowRightIcon,
   ExclamationTriangleIcon,
   EyeIcon,
-  EyeSlashIcon
+  EyeSlashIcon,
+  FingerPrintIcon
 } from '@heroicons/react/24/outline';
 
 export default function Login() {
@@ -25,6 +27,44 @@ export default function Login() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { login } = useAuth();
+
+  // Huella/cara: el botón solo aparece en el celular donde el jugador la
+  // activó. El desafío se pide ANTES del toque: iOS solo deja pedir la huella
+  // dentro del toque, y esperar al servidor en medio hace que lo rechace.
+  const [passkeyReady, setPasskeyReady] = useState(false);
+  const [pkBusy, setPkBusy] = useState(false);
+  const pkOpts = useRef(null); // {options, at}
+
+  const prefetchPasskey = useCallback(async () => {
+    try {
+      pkOpts.current = { ...(await passkeyService.loginOptions()), at: Date.now() };
+    } catch { pkOpts.current = null; }
+  }, []);
+
+  useEffect(() => {
+    if (!localPasskey.get()) return undefined;
+    let cancelled = false;
+    let timer;
+    passkeyAvailable().then((ok) => {
+      if (!ok || cancelled) return;
+      setPasskeyReady(true);
+      prefetchPasskey();
+      // El desafío vence a los 5 min: se renueva mientras la pantalla está
+      // abierta. Con el celular bloqueado el intervalo se congela, así que
+      // también al volver a la pantalla.
+      timer = setInterval(prefetchPasskey, 4 * 60 * 1000);
+    });
+    const onVisible = () => {
+      if (document.visibilityState === 'visible'
+          && (!pkOpts.current || Date.now() - pkOpts.current.at > 60 * 1000)) prefetchPasskey();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [prefetchPasskey]);
 
   // Entra con el token recibido (login directo o cuenta ya elegida). El router
   // reenvía jugador→/jugador y dealer→/dealer desde /dashboard.
@@ -53,6 +93,47 @@ export default function Login() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handlePasskey = async () => {
+    setPkBusy(true);
+    setError('');
+    // Si hubo que pedir el desafío DENTRO del toque, iOS puede rechazar la
+    // huella (el toque "se vence" esperando al servidor): ahí se avisa en vez
+    // de callar como en una cancelación normal.
+    let fetchedInTap = false;
+    try {
+      let opts = pkOpts.current;
+      pkOpts.current = null; // un desafío, un intento
+      if (!opts || Date.now() - opts.at > 4 * 60 * 1000) {
+        fetchedInTap = true;
+        opts = await passkeyService.loginOptions();
+      }
+      const credential = await getPasskey(opts.options);
+      const data = await passkeyService.loginVerify(credential);
+      if (data.multi_account) {
+        setAccounts(data.accounts);
+        setSelectToken(data.select_token);
+      } else {
+        finishLogin(data);
+        return;
+      }
+    } catch (err) {
+      if (isCancel(err)) {
+        if (fetchedInTap) setError('Toca "Entrar con huella o cara" otra vez.');
+      } else {
+        const { code, message } = passkeyError(err, 'No pudimos entrar con la huella. Entra con tu clave.');
+        if (code === 'passkey_unknown' || code === 'passkey_revoked') {
+          // Ya no sirve en este celular: fuera el botón, vuelve la clave.
+          localPasskey.clear();
+          setPasskeyReady(false);
+        }
+        setError(message);
+      }
+    } finally {
+      setPkBusy(false);
+    }
+    prefetchPasskey();
   };
 
   const pickAccount = async (userId) => {
@@ -151,6 +232,25 @@ export default function Login() {
                 <h1 className="text-2xl font-black text-white tracking-tight">Bienvenido de vuelta</h1>
                 <p className="text-gray-500 mt-1 text-sm">Ingresa a tu club de poker</p>
               </div>
+
+              {passkeyReady && (
+                <div className="mb-6">
+                  <button
+                    type="button"
+                    onClick={handlePasskey}
+                    disabled={pkBusy || loading}
+                    className="rf-tap w-full flex items-center justify-center gap-2.5 rounded-xl border border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20 text-white font-bold py-4 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    <FingerPrintIcon className="w-6 h-6 text-emerald-400" aria-hidden="true" />
+                    {pkBusy ? 'Esperando al celular…' : 'Entrar con huella o cara'}
+                  </button>
+                  <div className="flex items-center gap-3 mt-6" aria-hidden="true">
+                    <span className="h-px flex-1 bg-gray-700/60" />
+                    <span className="text-[11px] text-gray-500 font-bold uppercase tracking-wider">o con tu clave</span>
+                    <span className="h-px flex-1 bg-gray-700/60" />
+                  </div>
+                </div>
+              )}
 
               <form onSubmit={handleLogin} className="space-y-5">
                 <div>

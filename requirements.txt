@@ -44,3 +44,8 @@ slowapi==0.1.9
 python-json-logger==3.2.1
 sentry-sdk[fastapi]==2.19.2
 pywebpush==2.3.0
+# Passkeys (huella/cara) — app/routers/passkeys.py
+webauthn==3.0.1
+cbor2==6.1.5
+pyOpenSSL==26.4.0
+pyasn1-modules==0.4.2

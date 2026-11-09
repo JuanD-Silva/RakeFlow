@@ -677,6 +677,21 @@ export const playerSelfService = {
 };
 
 // Web Push del panel del jugador (toggle 🔔)
+// Passkeys (huella/cara) del jugador. Activar/listar/quitar van con sesión;
+// entrar va por publicApi (sin interceptor 401→logout: estamos en el login).
+export const passkeyService = {
+    registerOptions: async (password) =>
+        (await api.post('/player/passkeys/register/options', { password })).data,
+    registerVerify: async (challengeId, credential) =>
+        (await api.post('/player/passkeys/register/verify', { challenge_id: challengeId, credential })).data,
+    list: async () => (await api.get('/player/passkeys')).data,
+    remove: async (id) => (await api.delete(`/player/passkeys/${id}`)).data,
+    loginOptions: async () => (await publicApi.post('/auth/passkey/options')).data,
+    // El desafío va firmado dentro de la credencial: no hay id que mandar.
+    loginVerify: async (credential) =>
+        (await publicApi.post('/auth/passkey/verify', { credential })).data,
+};
+
 export const pushService = {
     config: async () => (await api.get('/player/push/config')).data,
     subscribe: async (subscription) =>

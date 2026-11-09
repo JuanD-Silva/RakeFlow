@@ -8,6 +8,7 @@ import AchievementShareCard from '../components/AchievementShareCard';
 import InstallAppBanner from '../components/InstallAppBanner';
 import AccountSwitcher from '../components/AccountSwitcher';
 import PushToggle from '../components/PushToggle';
+import PasskeyOffer, { PasskeyDeviceStatus } from '../components/PasskeyOffer';
 import { cop, signCop, fmtDate, monthName, setRegional } from '../utils/formatters';
 
 // Panel del Jugador (clon estructural de DealerWorkspace: móvil-first, max-w-md,
@@ -168,6 +169,7 @@ export default function PlayerWorkspace() {
 
         <InstallAppBanner />
         <PushToggle />
+        <PasskeyOffer />
 
         {/* flex-1 empuja el footer al fondo cuando el contenido es corto (Ranking),
             sin afectar las vistas largas (Inicio). */}
@@ -179,6 +181,7 @@ export default function PlayerWorkspace() {
         </div>
 
         <footer className="mt-10 text-center">
+          <PasskeyDeviceStatus />
           <p className="text-[10px] text-gray-600 font-black tracking-[0.25em] uppercase">RakeFlow</p>
         </footer>
       </div>
