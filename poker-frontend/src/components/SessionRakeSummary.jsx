@@ -17,6 +17,9 @@ export default function SessionRakeSummary({ sessionId, refreshTrigger }) {
   const { canSeeReports } = useAuth();
   const [data, setData] = useState(null);
   const [open, setOpen] = useState(true);
+  // Mesa de la que son los datos: al cambiar de mesa no se muestran (ni un
+  // instante) los números de la anterior.
+  const [dataFor, setDataFor] = useState(null);
 
   // Igual que SessionDealerPayments: sin flag de loading para no parpadear en
   // cada poll de 15s; se muestran los datos previos mientras refetchea.
@@ -26,19 +29,24 @@ export default function SessionRakeSummary({ sessionId, refreshTrigger }) {
     (async () => {
       try {
         const res = await dealerService.getSessionRakeSummary(sessionId);
-        if (!cancelled) setData(res);
-      } catch {
-        if (!cancelled) setData(null);
+        if (!cancelled) { setData(res); setDataFor(sessionId); }
+      } catch (e) {
+        // 403/404 = no corresponde mostrarla. Un error de red pasajero NO borra
+        // la tarjeta: se queda con los últimos números (resiliencia de polling).
+        const st = e?.response?.status;
+        if (!cancelled && (st === 403 || st === 404)) { setData(null); setDataFor(null); }
       }
     })();
     return () => { cancelled = true; };
   }, [sessionId, refreshTrigger, canSeeReports]);
 
-  if (!canSeeReports || !data) return null;
+  if (!canSeeReports || !data || dataFor !== sessionId) return null;
 
   const ex = data.expenses || {};
   const shifts = data.shifts || [];
   const netNegative = data.net < 0;
+  // Sin dealer no hay rake en vivo: mostrar "$0" engañaría (parece un conteo).
+  const live = data.has_live_source;
 
   return (
     <section className="bg-gray-800/40 border border-emerald-500/25 rounded-xl overflow-hidden" aria-label="Rake y gastos de la mesa">
@@ -46,11 +54,13 @@ export default function SessionRakeSummary({ sessionId, refreshTrigger }) {
         className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-gray-800/40 transition-colors">
         <div className="min-w-0">
           <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-300/90">Rake de la mesa</p>
-          <p className="text-2xl font-black text-white tabular-nums leading-tight">{formatMoney(data.rake_total)}</p>
+          <p className="text-2xl font-black text-white tabular-nums leading-tight">
+            {live ? formatMoney(data.rake_total) : <span className="text-base text-gray-400 font-bold">Se sabe al cierre</span>}
+          </p>
         </div>
         <div className="text-right shrink-0">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Neto estimado</p>
-          <p className={`text-lg font-black tabular-nums ${netNegative ? 'text-red-400' : 'text-emerald-400'}`}>{formatMoney(data.net)}</p>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">{data.session_open ? 'Neto estimado' : 'Neto'}</p>
+          <p className={`text-lg font-black tabular-nums ${!live ? 'text-gray-500' : netNegative ? 'text-red-400' : 'text-emerald-400'}`}>{live ? formatMoney(data.net) : '—'}</p>
         </div>
       </button>
 
@@ -91,7 +101,7 @@ export default function SessionRakeSummary({ sessionId, refreshTrigger }) {
             </div>
             <div className="flex justify-between gap-3 border-t border-gray-700/60 pt-2 mt-2">
               <span className="text-white font-bold">{data.session_open ? 'Rake neto estimado' : 'Rake neto'}</span>
-              <span className={`tabular-nums font-black ${netNegative ? 'text-red-400' : 'text-emerald-400'}`}>{formatMoney(data.net)}</span>
+              <span className={`tabular-nums font-black ${!live ? 'text-gray-500' : netNegative ? 'text-red-400' : 'text-emerald-400'}`}>{live ? formatMoney(data.net) : '—'}</span>
             </div>
           </div>
 

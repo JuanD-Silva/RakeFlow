@@ -176,6 +176,18 @@ def main():
             check(d["expenses"] == {"dealers": 70000, "courtesies": 20000, "total": 90000}, f"gastos persistidos (got {d['expenses']})")
             check(d["net"] == 210000 and d["jackpot_declared"] == 40000, "neto y jackpot del cierre")
 
+            print("\n[4b] Redondeo y mesa cerrada sin dealer")
+            s_dec = seed_session(c1, "decimales")
+            seed_shift(c1, s_dec, a, now - timedelta(hours=2), now - timedelta(hours=1), 100000.6, 0, 7)
+            psql(f"INSERT INTO transactions (session_id, type, amount, timestamp) VALUES ({s_dec}, 'BONUS', 1000.4, now());")
+            d = c.get(url(s_dec), headers=auth1).json()
+            check(d["net"] == d["rake_total"] - d["expenses"]["dealers"] - d["expenses"]["courtesies"],
+                  f"neto cuadra al peso con lo mostrado (got {d['rake_total']} − {d['expenses']} = {d['net']})")
+            s_cl2 = seed_session(c1, "cerrada-sin-dealer", "CLOSED",
+                                 ", declared_rake_cash, dealer_cost, courtesy_cost, net_rake", ", 150000, 0, 0, 150000")
+            d = c.get(url(s_cl2), headers=auth1).json()
+            check(d["has_live_source"] is True and d["rake_total"] == 150000, "cerrada sin dealer: muestra el rake del cierre")
+
             print("\n[5] Tenant y roles")
             s2 = seed_session(c2, "ajena")
             check(c.get(url(s2), headers=auth1).status_code == 404, "mesa de otro club → 404")

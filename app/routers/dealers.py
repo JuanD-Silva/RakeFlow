@@ -1188,20 +1188,25 @@ async def session_rake_summary(
         dealer_cost = float(session.dealer_cost or 0)
         courtesy = float(session.courtesy_cost or 0)
 
+    # Redondear CADA componente antes de restar: así el neto que se muestra
+    # cuadra al peso con "rake − dealers − cortesías" de la misma tarjeta.
+    rake_r, dealers_r, courtesy_r = round(rake_total), round(dealer_cost), round(courtesy)
+    net = round(float(session.net_rake or 0)) if not is_open else rake_r - dealers_r - courtesy_r
+
     return {
         "session_id": session_id,
         "session_open": is_open,
-        "rake_total": round(rake_total),
+        "rake_total": rake_r,
         "shifts": shifts,
         # Sin turnos de dealer no hay de dónde leer el rake en vivo: se sabe al cerrar.
-        "has_live_source": bool(shifts),
+        "has_live_source": bool(shifts) or not is_open,
         "open_shift_undeclared": any(s["open"] and not s["rake_declared"] for s in shifts),
         "expenses": {
-            "dealers": round(dealer_cost),
-            "courtesies": round(courtesy),
-            "total": round(dealer_cost + courtesy),
+            "dealers": dealers_r,
+            "courtesies": courtesy_r,
+            "total": dealers_r + courtesy_r,
         },
-        "net": round(float(session.net_rake or 0)) if not is_open else round(rake_total - dealer_cost - courtesy),
+        "net": net,
         "jackpot_declared": None if is_open else round(float(session.declared_jackpot_cash or 0)),
     }
 
