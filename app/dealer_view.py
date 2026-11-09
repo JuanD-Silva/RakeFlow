@@ -67,6 +67,7 @@ async def session_players(db: AsyncSession, session_id: int) -> list[dict]:
             MAX(CASE WHEN CAST(t.type AS TEXT) = 'CASHOUT' THEN t.timestamp END) AS last_cashout
         FROM players p
         JOIN transactions t ON p.id = t.player_id
+        JOIN sessions s ON s.id = t.session_id AND s.club_id = p.club_id  -- defensa: mismo club
         WHERE t.session_id = :sid
         GROUP BY p.id, p.name
         HAVING MIN(CASE WHEN CAST(t.type AS TEXT) IN ('BUYIN','REBUY') THEN t.timestamp END) IS NOT NULL

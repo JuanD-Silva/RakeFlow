@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 from .. import models, schemas, auth_utils
 from ..dependencies import get_db, get_current_user, require_role
+from ..rate_limit import limiter
 from ..audit import log_action, AuditAction
 from ..email_service import send_invitation_email
 
@@ -231,6 +232,7 @@ async def delete_user(
 
 
 @router.post("/accept-invitation")
+@limiter.limit("20/hour")
 async def accept_invitation(
     data: schemas.AcceptInvitation,
     request: Request,
@@ -245,7 +247,10 @@ async def accept_invitation(
     user = (await db.execute(
         select(models.User).where(
             models.User.invitation_token == data.token,
-            models.User.role != models.UserRole.DEALER,
+            # SOLO staff (token de 32 bytes). Dealers Y jugadores usan un OTP
+            # de 6 dígitos en la misma columna: por acá serían fuerza-bruteables
+            # contra TODOS los clubes a la vez (sin teléfono ni lockout).
+            models.User.role.in_([models.UserRole.OWNER, models.UserRole.MANAGER, models.UserRole.CASHIER]),
         )
     )).scalars().first()
 

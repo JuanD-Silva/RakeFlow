@@ -224,6 +224,7 @@ async def compute_monthly_rankings(
         JOIN transactions t ON p.id = t.player_id
         JOIN sessions s ON t.session_id = s.id
         WHERE p.club_id = :cid
+          AND s.club_id = :cid  -- defensa: solo mesas de ESTE club
           AND s.end_time >= :start_date
           AND s.end_time < :end_date
           AND s.status = 'CLOSED'

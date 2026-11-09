@@ -167,6 +167,7 @@ async def _build_players_stats(db: AsyncSession, session: models.Session) -> dic
         FROM players p
         JOIN transactions t ON p.id = t.player_id
         WHERE t.session_id = :sid
+          AND p.club_id = :cid  -- defensa: solo jugadores de ESTE club
         GROUP BY p.id, p.name, p.phone
         -- Orden ESTABLE por llegada (primer buy-in): sin ORDER BY, Postgres
         -- devolvía orden arbitrario que cambiaba con cada UPDATE y la tabla
@@ -174,7 +175,7 @@ async def _build_players_stats(db: AsyncSession, session: models.Session) -> dic
         ORDER BY MIN(t.timestamp), p.id
     """)
     
-    result = await db.execute(sql, {"sid": session.id})
+    result = await db.execute(sql, {"sid": session.id, "cid": session.club_id})
     rows = result.fetchall()
 
     # Estatus VIP (pilar del club por volumen) para distinguir a los jugadores clave

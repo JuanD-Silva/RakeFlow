@@ -147,8 +147,10 @@ def verify_webhook_signature(raw_body: bytes, checksum_header: str) -> bool:
     """
     events_secret = os.getenv("WOMPI_EVENTS_KEY", "")
     if not events_secret:
-        logger.warning("WOMPI_EVENTS_KEY no configurada, saltando verificacion")
-        return True  # En desarrollo
+        # Fail-closed: sin la clave NO se puede probar que el evento viene de
+        # Wompi; aceptarlo regalaría suscripciones con un POST falso.
+        logger.error("WOMPI_EVENTS_KEY no configurada: webhook rechazado")
+        return False
     try:
         body = json.loads(raw_body)
         sig = body.get("signature", {})
