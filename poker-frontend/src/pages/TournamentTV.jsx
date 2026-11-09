@@ -119,12 +119,12 @@ export default function TournamentTV() {
       </div>
 
       {/* Encabezado: logo RakeFlow + club/torneo + estado */}
-      <header className="relative z-10 flex items-center justify-between px-6 md:px-12 pt-[3vh] shrink-0 gap-4">
+      <header className="relative z-10 flex items-center justify-between pl-[max(1.5rem,env(safe-area-inset-left))] pr-[max(1.5rem,env(safe-area-inset-right))] md:pl-[max(3rem,env(safe-area-inset-left))] md:pr-[max(3rem,env(safe-area-inset-right))] pt-[calc(3vh+env(safe-area-inset-top))] shrink-0 gap-4">
         <div className="flex items-center gap-3 md:gap-4 min-w-0">
           <img src="/rakeflow-logo.svg" alt="RakeFlow" className="h-[min(6rem,6vh)] w-auto drop-shadow-[0_0_12px_rgba(16,185,129,0.25)] shrink-0" />
           <div className="min-w-0">
             <p className="font-bold uppercase tracking-[0.3em] text-violet-300/80 truncate" style={fs(0.6875, 1.2, 1.8, 1.5)}>{data.club_name}</p>
-            <h1 className="font-black uppercase tracking-tight truncate leading-tight" style={fs(1.25, 3, 4, 4)}>{data.tournament_name}</h1>
+            <h1 className="font-black uppercase tracking-tight leading-tight line-clamp-2 md:line-clamp-1 break-words" style={fs(1.25, 3, 4, 4)}>{data.tournament_name}</h1>
           </div>
         </div>
         <span className={`shrink-0 font-black uppercase px-3 md:px-5 py-[min(0.625rem,1.2vh)] rounded-full ring-1 ${statusPill.cls}`} style={fs(0.75, 1.4, 2, 1)}>
@@ -190,7 +190,7 @@ export default function TournamentTV() {
       </main>
 
       {/* Pie: stats del torneo */}
-      <footer className="relative z-10 shrink-0 grid grid-cols-2 landscape:grid-cols-4 md:grid-cols-4 gap-[min(1rem,1.5vh)] px-6 md:px-12 pt-[1.5vh] pb-[3vh]">
+      <footer className="relative z-10 shrink-0 grid grid-cols-2 landscape:grid-cols-4 md:grid-cols-4 gap-[min(1rem,1.5vh)] pl-[max(1.5rem,env(safe-area-inset-left))] pr-[max(1.5rem,env(safe-area-inset-right))] md:pl-[max(3rem,env(safe-area-inset-left))] md:pr-[max(3rem,env(safe-area-inset-right))] pt-[1.5vh] pb-[calc(3vh+env(safe-area-inset-bottom))]">
         <StatCard label="Jugadores" emoji="👥"
           value={<><span className="text-emerald-300">{data.players_active}</span><span className="text-gray-600"> / {data.players_registered}</span></>} />
         <StatCard label="Rebuys" emoji="🔁" value={data.rebuys_total ?? 0} />
