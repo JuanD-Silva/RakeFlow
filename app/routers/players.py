@@ -6,7 +6,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import and_, text
+from sqlalchemy import and_, func, text
 from sqlalchemy.future import select
 from typing import List, Optional
 from datetime import datetime, timedelta
@@ -699,16 +699,33 @@ class PlayerSelfRegisterIn(BaseModel):
 async def _find_ficha_by_phone(db: AsyncSession, club_id: int, phone_normalized: str):
     """Ficha del CRM SIN cuenta cuyo teléfono normaliza al mismo. Compara
     normalizados en Python: fichas viejas pueden tener el teléfono sin
-    normalizar, y no queremos crear un duplicado del CRM por eso."""
+    normalizar, y no queremos crear un duplicado del CRM por eso.
+
+    Si hay VARIAS (el staff le creó otra ficha a la misma persona), elige de
+    forma determinística la de más historia (movimientos de cash + entradas de
+    torneo); empate → la más vieja (id menor). NO fusiona: mover plata entre
+    fichas es decisión del staff (pueden ser dos personas con un celular).
+    Devuelve (ficha | None, ids de las otras fichas con ese teléfono)."""
     fichas = (await db.execute(select(models.Player).where(
         models.Player.club_id == club_id,
         models.Player.user_id.is_(None),
         models.Player.phone.isnot(None),
-    ))).scalars().all()
-    for p in fichas:
-        if normalize_phone(p.phone) == phone_normalized:
-            return p
-    return None
+    ).order_by(models.Player.id))).scalars().all()
+    matches = [p for p in fichas if normalize_phone(p.phone) == phone_normalized]
+    if len(matches) <= 1:
+        return (matches[0] if matches else None), []
+
+    ids = [p.id for p in matches]
+    tx = dict((await db.execute(
+        select(models.Transaction.player_id, func.count())
+        .where(models.Transaction.player_id.in_(ids))
+        .group_by(models.Transaction.player_id))).all())
+    tp = dict((await db.execute(
+        select(models.TournamentPlayer.player_id, func.count())
+        .where(models.TournamentPlayer.player_id.in_(ids))
+        .group_by(models.TournamentPlayer.player_id))).all())
+    chosen = max(matches, key=lambda p: (tx.get(p.id, 0) + tp.get(p.id, 0), -p.id))
+    return chosen, [i for i in ids if i != chosen.id]
 
 
 @router.post("/self-register")
@@ -763,7 +780,7 @@ async def self_register_player(
     # ranking) o crear una nueva. stats_since = now esconde el histórico hasta que
     # lo compre en caja (unlock-history) — así reclamar una ficha ajena tampoco
     # expondría su plata.
-    player = await _find_ficha_by_phone(db, club.id, phone)
+    player, duplicate_fichas = await _find_ficha_by_phone(db, club.id, phone)
     user = models.User(
         club_id=club.id, email=None, phone=phone, phone_verified=False,
         name=name, role=models.UserRole.PLAYER, is_active=True,
@@ -786,11 +803,15 @@ async def self_register_player(
         via = "claim-ficha"
     await db.flush()
 
+    meta = {"phone": phone, "user_id": user.id,
+            "player_id": player.id if player else None, "via": f"self-register:{via}"}
+    if duplicate_fichas:
+        # Rastro para que el staff fusione a mano las otras fichas del mismo tel.
+        meta["duplicate_fichas"] = duplicate_fichas
     await log_action(
         db, request=request, club=club,
         action=AuditAction.PLAYER_ACTIVATE, entity_type="User", entity_id=user.id, user=user,
-        meta={"phone": phone, "user_id": user.id,
-              "player_id": player.id if player else None, "via": f"self-register:{via}"},
+        meta=meta,
     )
     await db.commit()
 

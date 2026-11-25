@@ -6,6 +6,8 @@ Casos:
      y stats_since seteados; el JWT devuelto abre /player/my-profile (auto-login).
   2. RECLAMAR FICHA: teléfono ya en el CRM sin cuenta → vincula a esa ficha (sin
      duplicar), self_registered_at seteado.
+  2b. FICHAS DUPLICADAS: mismo teléfono en varias fichas → reclama la de más
+     historia (no la de id menor) y anota las otras en la auditoría.
   3. DUPLICADO: teléfono ya activado → 409 (que inicie sesión).
   4. INVITACIÓN PENDIENTE: staff invitó (user sin password) → el self-register la
      completa, pero NO marca self_registered_at (nació de un invite).
@@ -61,7 +63,8 @@ from app.phone_utils import normalize_phone  # noqa: E402
 
 # Teléfonos reales (10 dígitos). La API recibe el crudo; la DB guarda el
 # normalizado (57 + número). Consultamos por el normalizado.
-RAW = {"new": "3009920001", "ficha": "3009920002", "pend": "3009920003", "x": "3009920009", "y": "3009920008"}
+RAW = {"new": "3009920001", "ficha": "3009920002", "pend": "3009920003", "x": "3009920009", "y": "3009920008",
+       "dup": "3009920004"}
 NORM = {k: normalize_phone(v) for k, v in RAW.items()}
 PHONE_LIKE = "57300992"
 
@@ -163,6 +166,28 @@ def main():
             check(cnt == 1, f"NO se duplica la ficha (sigue 1) — got {cnt}")
             row = psql(f"SELECT id, user_id IS NOT NULL, self_registered_at IS NOT NULL FROM players WHERE club_id={c1} AND phone='{NORM['ficha']}';")
             check(row == f"{pid}\tt\tt", f"misma ficha {pid}, ahora con cuenta + marcada (got {row})")
+
+            step("3b", "FICHAS DUPLICADAS: mismo teléfono en 2 fichas → reclama la de más historia")
+            # Vieja sin historia (tel crudo de 10 dígitos) + nueva con 2 movimientos
+            # (tel normalizado): debe ganar la NUEVA por historia, no la de id menor.
+            psql(f"INSERT INTO players (club_id, name, phone) VALUES ({c1}, '{NAME_TAG}DupVieja', '{RAW['dup']}');")
+            psql(f"INSERT INTO players (club_id, name, phone) VALUES ({c1}, '{NAME_TAG}DupNueva', '{NORM['dup']}');")
+            old_id = int(psql(f"SELECT id FROM players WHERE club_id={c1} AND name='{NAME_TAG}DupVieja';"))
+            new_id = int(psql(f"SELECT id FROM players WHERE club_id={c1} AND name='{NAME_TAG}DupNueva';"))
+            sid = int(psql(f"INSERT INTO sessions (club_id, status, start_time) "
+                           f"VALUES ({c1}, 'CLOSED', now()) RETURNING id;").splitlines()[0])
+            psql(f"INSERT INTO transactions (session_id, player_id, type, amount, timestamp) VALUES "
+                 f"({sid}, {new_id}, 'BUYIN', 1000, now()), ({sid}, {new_id}, 'CASHOUT', 1000, now());")
+            r = reg(c, f"{NAME_TAG}DupRegistro", RAW["dup"])
+            check(r.status_code == 200, f"self-register → 200 (got {r.status_code}: {r.text[:120]})")
+            linked = psql(f"SELECT id FROM players WHERE club_id={c1} AND user_id IS NOT NULL "
+                          f"AND id IN ({old_id},{new_id});")
+            check(linked == str(new_id), f"vinculó la ficha con historia #{new_id} (got {linked})")
+            meta = psql(f"SELECT meta->>'duplicate_fichas' FROM audit_logs WHERE club_id={c1} "
+                        f"AND action='PLAYER_ACTIVATE' ORDER BY id DESC LIMIT 1;")
+            check(meta == f"[{old_id}]", f"auditoría anota la otra ficha [{old_id}] (got {meta})")
+            psql(f"DELETE FROM transactions WHERE session_id={sid};")
+            psql(f"DELETE FROM sessions WHERE id={sid};")
 
             step(4, "DUPLICADO: teléfono ya activado → 409")
             r = reg(c, f"{NAME_TAG}Nuevo", RAW["new"])
